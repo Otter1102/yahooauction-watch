@@ -1,0 +1,134 @@
+/**
+ * ヤフオク RSSフィード スクレイパー
+ * 公式RSSを使用するためボット検知なし・安定稼働
+ */
+import { AuctionItem, SearchCondition } from './types'
+
+const USER_AGENT = 'Mozilla/5.0 (compatible; YahooAuctionWatch/1.0)'
+
+type RssParams = Pick<
+  SearchCondition,
+  'keyword' | 'maxPrice' | 'minPrice' | 'minBids' | 'sellerType' | 'itemCondition' | 'sortBy' | 'sortOrder' | 'buyItNow'
+>
+
+/**
+ * Yahoo Auction RSSフィードURL生成
+ */
+export function buildRssUrl(p: RssParams): string {
+  const params = new URLSearchParams({ p: p.keyword, pc: String(p.maxPrice) })
+
+  if (p.minPrice > 0) params.set('pf', String(p.minPrice))
+  if (p.minBids > 0) params.set('aucmin_bidorbuy', String(p.minBids))
+  if (p.sellerType === 'store') params.set('abatch', '1')
+  if (p.sellerType === 'individual') params.set('abatch', '2')
+  if (p.itemCondition === 'new') params.set('istatus', '1')
+  if (p.itemCondition === 'used') params.set('istatus', '2')
+  if (p.buyItNow) params.set('buynow', '1')
+
+  const sortMap: Record<string, string> = { endTime: 'end', bids: 'bids', price: 'price' }
+  params.set('s1', sortMap[p.sortBy] ?? 'end')
+  params.set('o1', p.sortOrder === 'desc' ? 'd' : 'a')
+
+  return `https://auctions.yahoo.co.jp/rss/search/search?${params}`
+}
+
+/**
+ * RSSフィードから商品リストを取得
+ */
+export async function fetchAuctionRss(p: RssParams): Promise<AuctionItem[]> {
+  const url = buildRssUrl(p)
+  let xml: string
+
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': USER_AGENT },
+      signal: AbortSignal.timeout(12000),
+    })
+    if (!res.ok) return []
+    xml = await res.text()
+  } catch {
+    return []
+  }
+
+  return parseRss(xml)
+}
+
+/**
+ * RSS XMLをパースして商品リストに変換
+ */
+export function parseRss(xml: string): AuctionItem[] {
+  const items: AuctionItem[] = []
+  const itemRegex = /<item>([\s\S]*?)<\/item>/g
+  let match: RegExpExecArray | null
+
+  while ((match = itemRegex.exec(xml)) !== null) {
+    const block = match[1]
+    try {
+      const item = parseRssItem(block)
+      if (item) items.push(item)
+    } catch {}
+  }
+
+  return items
+}
+
+function extractTag(block: string, tag: string): string {
+  const m = block.match(new RegExp(`<${tag}[^>]*>(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?<\\/${tag}>`, 'i'))
+  return m ? m[1].trim() : ''
+}
+
+function parseRssItem(block: string): AuctionItem | null {
+  const title = extractTag(block, 'title')
+  const link = extractTag(block, 'link').trim()
+  const description = extractTag(block, 'description')
+  const pubDate = extractTag(block, 'pubDate')
+
+  if (!title || !link) return null
+
+  const idMatch = link.match(/\/([a-zA-Z][0-9]+)(?:[?#]|$)/)
+  const auctionId = idMatch ? idMatch[1] : ''
+  if (!auctionId) return null
+
+  const priceFromTitle =
+    title.match(/現在\s*(?:価格)?[:\s]*([0-9,]+)\s*円/)?.[1] ||
+    title.match(/¥([0-9,]+)/)?.[1] ||
+    title.match(/([0-9,]+)\s*円/)?.[1] || ''
+
+  const priceInt = priceFromTitle ? parseInt(priceFromTitle.replace(/,/g, '')) : null
+  const priceStr = priceInt ? `¥${priceInt.toLocaleString()}` : '価格不明'
+
+  const bidsMatch = description.match(/入札[件数]*[:\s]*([0-9]+)/)
+  const bids = bidsMatch ? parseInt(bidsMatch[1]) : null
+
+  const endTimeMatch = description.match(/終了[:\s]*(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})/)
+  let remaining: string | null = null
+  if (endTimeMatch) {
+    const endTime = new Date(endTimeMatch[1])
+    const diffMs = endTime.getTime() - Date.now()
+    if (diffMs > 0) {
+      const diffH = Math.floor(diffMs / 3600000)
+      const diffM = Math.floor((diffMs % 3600000) / 60000)
+      remaining = diffH > 0 ? `残り${diffH}時間${diffM}分` : `残り${diffM}分`
+    }
+  }
+
+  const imgMatch = description.match(/src="([^"]+\.(?:jpg|jpeg|png|gif|webp)[^"]*)"/i)
+  const imageUrl = imgMatch ? imgMatch[1] : ''
+
+  const cleanTitle = title
+    .replace(/\s*[-–]\s*(?:現在|価格)?[\s:]*[¥¥][0-9,]+/g, '')
+    .replace(/\s*\(現在[^)]*\)/g, '')
+    .trim()
+
+  return {
+    auctionId,
+    title: cleanTitle || title,
+    price: priceStr,
+    priceInt,
+    bids,
+    remaining,
+    url: link,
+    imageUrl,
+    pubDate,
+  }
+}

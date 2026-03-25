@@ -1,0 +1,133 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #F2F2F7;
+  --card: #FFFFFF;
+  --accent: #FF6600;
+  --accent-light: #FFF4EE;
+  --accent-dark: #D45200;
+  --text-primary: #1C1C1E;
+  --text-secondary: #636366;
+  --text-tertiary: #AEAEB2;
+  --border: #E5E5EA;
+  --success: #34C759;
+  --danger: #FF3B30;
+  --warning: #FF9500;
+}
+
+* { -webkit-tap-highlight-color: transparent; }
+
+body {
+  background: var(--bg);
+  color: var(--text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Hiragino Kaku Gothic ProN',
+    'Noto Sans JP', 'Yu Gothic', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.card {
+  background: var(--card);
+  border-radius: 16px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: white;
+  font-weight: 700;
+  border-radius: 12px;
+  padding: 14px 24px;
+  font-size: 15px;
+  transition: all 0.15s;
+  active: scale(0.97);
+}
+.btn-primary:hover { background: var(--accent-dark); }
+.btn-primary:active { transform: scale(0.97); }
+
+.btn-secondary {
+  background: var(--accent-light);
+  color: var(--accent);
+  font-weight: 600;
+  border-radius: 12px;
+  padding: 12px 20px;
+  font-size: 14px;
+  transition: all 0.15s;
+}
+.btn-secondary:hover { background: #FFE8D6; }
+
+.section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0 4px;
+  margin-bottom: 8px;
+}
+
+input, textarea {
+  background: var(--bg);
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 15px;
+  color: var(--text-primary);
+  width: 100%;
+  outline: none;
+  transition: border-color 0.15s;
+  -webkit-appearance: none;
+}
+input:focus, textarea:focus {
+  border-color: var(--accent);
+  background: #FFFAF7;
+}
+
+/* Toggle Switch */
+.toggle {
+  position: relative;
+  width: 51px;
+  height: 31px;
+  flex-shrink: 0;
+}
+.toggle input { opacity: 0; width: 0; height: 0; }
+.toggle-track {
+  position: absolute;
+  inset: 0;
+  border-radius: 31px;
+  background: #E5E5EA;
+  transition: background 0.2s;
+  cursor: pointer;
+}
+.toggle input:checked + .toggle-track { background: var(--success); }
+.toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 27px;
+  height: 27px;
+  border-radius: 50%;
+  background: white;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  transition: transform 0.2s;
+  pointer-events: none;
+}
+.toggle input:checked ~ .toggle-thumb { transform: translateX(20px); }
+
+/* Pill badge */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.badge-orange { background: var(--accent-light); color: var(--accent); }
+.badge-green  { background: #E8F9ED; color: var(--success); }
+.badge-gray   { background: var(--bg); color: var(--text-secondary); }
+
+/* Scrollbar hidden on mobile */
+::-webkit-scrollbar { display: none; }
