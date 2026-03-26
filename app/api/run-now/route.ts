@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getConditions, getNotifiedIds, markNotified, addHistory, updateCondition } from '@/lib/storage'
 import { getSupabaseAdmin } from '@/lib/supabase'
-import { fetchAuctionRss } from '@/lib/scraper'
+import { fetchAuctionRssWithMeta, fetchAuctionRssSimple } from '@/lib/scraper'
 import { notifyUser } from '@/lib/notifier'
 import { User, SearchCondition, AuctionItem } from '@/lib/types'
 
@@ -42,7 +42,18 @@ export async function POST(req: NextRequest) {
 
     const notifiedIds = await getNotifiedIds(userId)
     let totalNotified = 0
-    const results: { name: string; fetched: number; newItems: number; notified: number; priceWarning?: boolean }[] = []
+    type ResultRow = {
+      name: string
+      fetched: number
+      rawCount: number
+      newItems: number
+      notified: number
+      priceWarning?: boolean
+      simpleCount?: number
+      rssUrl?: string
+      httpStatus?: number
+    }
+    const results: ResultRow[] = []
 
     for (const cond of enabled) {
       const priceWarning = cond.minPrice > 0 && cond.minPrice >= cond.maxPrice
@@ -52,9 +63,16 @@ export async function POST(req: NextRequest) {
         itemCondition: cond.itemCondition ?? 'all', sortBy: cond.sortBy ?? 'endTime',
         sortOrder: cond.sortOrder ?? 'asc', buyItNow: cond.buyItNow ?? false,
       }
-      const items = await fetchAuctionRss(key)
+
+      const { items, url: rssUrl, httpStatus, rawCount } = await fetchAuctionRssWithMeta(key)
       const freshItems = items.filter((item: AuctionItem) => !notifiedIds.has(item.auctionId))
       let condNotified = 0
+
+      // 0件取得時は診断: フィルターなし（キーワード+価格のみ）でも試す
+      let simpleCount: number | undefined
+      if (rawCount === 0) {
+        simpleCount = await fetchAuctionRssSimple(cond.keyword, cond.maxPrice, cond.minPrice)
+      }
 
       for (const item of freshItems.slice(0, 5)) { // 手動実行は最大5件
         const sent = await notifyUser(item, user)
@@ -82,7 +100,7 @@ export async function POST(req: NextRequest) {
         lastFoundCount: items.length,
       })
 
-      results.push({ name: cond.name, fetched: items.length, newItems: freshItems.length, notified: condNotified, priceWarning })
+      results.push({ name: cond.name, fetched: items.length, rawCount, newItems: freshItems.length, notified: condNotified, priceWarning, simpleCount, rssUrl, httpStatus })
     }
 
     return NextResponse.json({ notified: totalNotified, checked: enabled.length, results })

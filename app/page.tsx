@@ -34,7 +34,8 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [notifyReady, setNotifyReady] = useState(false)
   const [runState, setRunState] = useState<'idle' | 'running' | 'done'>('idle')
-  const [runResult, setRunResult] = useState<{ notified: number; checked: number; results?: { name: string; fetched: number; newItems: number; notified: number; priceWarning?: boolean }[] } | null>(null)
+  type RunResultRow = { name: string; fetched: number; rawCount: number; newItems: number; notified: number; priceWarning?: boolean; simpleCount?: number; rssUrl?: string; httpStatus?: number }
+  const [runResult, setRunResult] = useState<{ notified: number; checked: number; results?: RunResultRow[] } | null>(null)
   const [resetting, setResetting] = useState(false)
   const [activeTab, setActiveTab] = useState('すべて')
 
@@ -324,22 +325,42 @@ export default function Dashboard() {
                   {runResult.notified > 0 ? `✅ ${runResult.notified}件を通知送信！` : '📭 新着なし'}
                 </p>
                 {runResult.results?.map((r, i) => (
-                  <div key={i} style={{ paddingTop: i > 0 ? 6 : 0, marginTop: i > 0 ? 6 : 0, borderTop: i > 0 ? '1px solid var(--border)' : 'none' }}>
-                    <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>{r.name}</p>
+                  <div key={i} style={{ paddingTop: i > 0 ? 8 : 0, marginTop: i > 0 ? 8 : 0, borderTop: i > 0 ? '1px solid var(--border)' : 'none' }}>
+                    <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 3 }}>{r.name}</p>
                     {r.priceWarning ? (
-                      <p style={{ fontSize: 11, color: 'var(--danger)', marginTop: 2 }}>
-                        ⚠️ 価格下限 ≥ 上限のため0件 → 条件を編集して修正してください
-                      </p>
+                      <p style={{ fontSize: 11, color: 'var(--danger)' }}>⚠️ 価格下限 ≥ 上限 → 条件を編集してください</p>
+                    ) : r.rawCount === 0 ? (
+                      <>
+                        <p style={{ fontSize: 11, color: 'var(--danger)', marginBottom: 3 }}>
+                          ⚠️ RSS取得0件（HTTP {r.httpStatus}）
+                        </p>
+                        {r.simpleCount !== undefined && r.simpleCount > 0 && (
+                          <p style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 3 }}>
+                            💡 フィルターなしでは {r.simpleCount}件あります → フィルター設定が原因です
+                          </p>
+                        )}
+                        {r.simpleCount !== undefined && r.simpleCount === 0 && (
+                          <p style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 3 }}>
+                            ヤフオク上に該当商品なし（キーワードか価格帯を変更してください）
+                          </p>
+                        )}
+                        {r.rssUrl && (
+                          <a href={r.rssUrl} target="_blank" rel="noopener noreferrer"
+                            style={{ fontSize: 10, color: 'var(--accent)', display: 'block', wordBreak: 'break-all' }}>
+                            🔗 RSSを確認する
+                          </a>
+                        )}
+                      </>
                     ) : r.fetched === 0 ? (
-                      <p style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>
-                        取得0件（条件に合う商品なし）
+                      <p style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
+                        RSS取得OK（{r.rawCount}件）しかし解析後0件（URLフォーマット不一致）
                       </p>
                     ) : r.newItems === 0 ? (
-                      <p style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>
-                        {r.fetched}件取得 · 全件既通知済み
+                      <p style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
+                        {r.fetched}件取得 · 全件通知済み（前回チェック以降に新着なし）
                       </p>
                     ) : (
-                      <p style={{ fontSize: 11, color: 'var(--success)', marginTop: 2 }}>
+                      <p style={{ fontSize: 11, color: 'var(--success)' }}>
                         {r.fetched}件取得 · {r.newItems}件新着 → {r.notified}件通知
                       </p>
                     )}

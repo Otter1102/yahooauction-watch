@@ -37,24 +37,53 @@ export function buildRssUrl(p: RssParams): string {
 }
 
 /**
- * RSSフィードから商品リストを取得
+ * RSSフィードから商品リストを取得（URLも返す）
  */
 export async function fetchAuctionRss(p: RssParams): Promise<AuctionItem[]> {
+  const { items } = await fetchAuctionRssWithMeta(p)
+  return items
+}
+
+export async function fetchAuctionRssWithMeta(p: RssParams): Promise<{ items: AuctionItem[]; url: string; httpStatus: number; rawCount: number }> {
   const url = buildRssUrl(p)
-  let xml: string
+  let xml = ''
+  let httpStatus = 0
 
   try {
     const res = await fetch(url, {
       headers: { 'User-Agent': USER_AGENT },
       signal: AbortSignal.timeout(12000),
     })
-    if (!res.ok) return []
+    httpStatus = res.status
+    if (!res.ok) return { items: [], url, httpStatus, rawCount: 0 }
     xml = await res.text()
   } catch {
-    return []
+    return { items: [], url, httpStatus, rawCount: 0 }
   }
 
-  return parseRss(xml)
+  // <item>タグの生の数（パース前）
+  const rawCount = (xml.match(/<item>/g) ?? []).length
+  const items = parseRss(xml)
+  return { items, url, httpStatus, rawCount }
+}
+
+/**
+ * フィルターなし（キーワード+価格のみ）でフェッチ — 診断用
+ */
+export async function fetchAuctionRssSimple(keyword: string, maxPrice: number, minPrice: number): Promise<number> {
+  const params = new URLSearchParams({ p: keyword, pc: String(Math.max(maxPrice, minPrice)) })
+  if (Math.min(maxPrice, minPrice) > 0) params.set('pf', String(Math.min(maxPrice, minPrice)))
+  params.set('s1', 'end')
+  params.set('o1', 'a')
+  const url = `https://auctions.yahoo.co.jp/rss/search/search?${params}`
+  try {
+    const res = await fetch(url, { headers: { 'User-Agent': USER_AGENT }, signal: AbortSignal.timeout(10000) })
+    if (!res.ok) return -1
+    const xml = await res.text()
+    return (xml.match(/<item>/g) ?? []).length
+  } catch {
+    return -1
+  }
 }
 
 /**
