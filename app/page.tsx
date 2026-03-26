@@ -160,7 +160,7 @@ export default function Dashboard() {
             background: 'rgba(255,255,255,0.85)',
             backdropFilter: 'blur(20px)',
             WebkitBackdropFilter: 'blur(20px)',
-            borderBottom: '0.5px solid rgba(60,60,67,0.2)',
+            borderBottom: '1px solid var(--border)',
             padding: '0 16px',
             maxWidth: 480, margin: '0 auto',
           }}>

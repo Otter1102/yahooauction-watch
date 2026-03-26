@@ -74,10 +74,10 @@ export default function SettingsPage() {
 
       {/* ─── Navigation bar ─── */}
       <div style={{
-        background: 'rgba(242,242,247,0.88)',
-        backdropFilter: 'blur(24px) saturate(180%)',
-        WebkitBackdropFilter: 'blur(24px) saturate(180%)',
-        borderBottom: '0.5px solid rgba(60,60,67,0.2)',
+        background: 'rgba(255,255,255,0.95)',
+        backdropFilter: 'blur(20px)',
+        WebkitBackdropFilter: 'blur(20px)',
+        borderBottom: '1px solid var(--border)',
         padding: 'calc(env(safe-area-inset-top, 0px) + 16px) 20px 12px',
         position: 'sticky', top: 0, zIndex: 50,
       }}>

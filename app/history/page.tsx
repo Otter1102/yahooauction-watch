@@ -1,11 +1,43 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { NotificationRecord } from '@/lib/types'
 import AuctionThumbnail from '@/components/AuctionThumbnail'
 
 function getUserId() {
   if (typeof window === 'undefined') return ''
   return localStorage.getItem('yahoowatch_user_id') ?? ''
+}
+
+// ─── Yahoo公式大カテゴリ分類 ───
+const CATEGORIES = [
+  { id: 'all',        label: 'すべて' },
+  { id: 'fashion',    label: 'ファッション' },
+  { id: 'bag',        label: 'バッグ・財布' },
+  { id: 'watch',      label: '時計・アクセサリー' },
+  { id: 'electronics',label: '家電・カメラ' },
+  { id: 'game',       label: 'ゲーム' },
+  { id: 'sports',     label: 'スポーツ' },
+  { id: 'book',       label: '本・メディア' },
+  { id: 'other',      label: 'その他' },
+] as const
+type CategoryId = (typeof CATEGORIES)[number]['id']
+
+const CATEGORY_PATTERNS: Record<Exclude<CategoryId, 'all' | 'other'>, RegExp> = {
+  fashion:     /シャツ|パンツ|ジャケット|コート|スウェット|トレーナー|ニット|セーター|ジーンズ|デニム|スカート|ワンピース|スニーカー|ブーツ|サンダル|ローファー|靴|シューズ|帽子|キャップ|ベルト|手袋|マフラー|スカーフ|アパレル|服|衣類|ウェア|Tシャツ|ダウン|パーカー|フーディ/i,
+  bag:         /バッグ|バック|鞄|かばん|財布|ウォレット|ポーチ|トートバッグ|ショルダーバッグ|ハンドバッグ|リュック|クラッチ|ボストン|エルメス|ルイヴィトン|グッチ|プラダ|シャネル|コーチ|マイケルコース|カバン/i,
+  watch:       /時計|ウォッチ|腕時計|指輪|リング|ネックレス|ピアス|イヤリング|ブレスレット|アクセサリー|ブローチ|ロレックス|オメガ|セイコー|カシオ|シチズン/i,
+  electronics: /iPhone|スマホ|スマートフォン|携帯|Android|iPad|タブレット|MacBook|ノートPC|ノートパソコン|デスクトップ|PC|パソコン|カメラ|レンズ|テレビ|モニター|ディスプレイ|イヤホン|ヘッドフォン|スピーカー|家電|電機|電子/i,
+  game:        /ゲーム|Nintendo|Switch|PS[0-9]|PlayStation|Xbox|ファミコン|ゲームボーイ|ゲームキューブ|Wii|フィギュア|プラモデル|おもちゃ|玩具|レゴ/i,
+  sports:      /スポーツ|ゴルフ|テニス|サッカー|野球|バスケ|バレー|水泳|自転車|ロードバイク|ランニング|トレーニング|フィットネス|釣り|アウトドア|キャンプ/i,
+  book:        /本|書籍|コミック|漫画|マンガ|CD|DVD|Blu-ray|ブルーレイ|レコード|雑誌|週刊|文庫|小説|参考書|教科書|写真集/i,
+}
+
+function classifyCategory(title: string, conditionName: string): Exclude<CategoryId, 'all'> {
+  const text = `${title} ${conditionName}`
+  for (const [id, pattern] of Object.entries(CATEGORY_PATTERNS) as [Exclude<CategoryId, 'all' | 'other'>, RegExp][]) {
+    if (pattern.test(text)) return id
+  }
+  return 'other'
 }
 
 function groupByDate(records: NotificationRecord[]): { label: string; items: NotificationRecord[] }[] {
@@ -27,8 +59,10 @@ function groupByDate(records: NotificationRecord[]): { label: string; items: Not
 }
 
 export default function HistoryPage() {
-  const [history, setHistory] = useState<NotificationRecord[]>([])
-  const [loading, setLoading] = useState(true)
+  const [history, setHistory]   = useState<NotificationRecord[]>([])
+  const [loading, setLoading]   = useState(true)
+  const [activeTab, setActiveTab] = useState<CategoryId>('all')
+  const tabsRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const id = getUserId()
@@ -38,7 +72,18 @@ export default function HistoryPage() {
       .then(d => { setHistory(d); setLoading(false) })
   }, [])
 
-  const groups = groupByDate(history)
+  // カテゴリフィルタ
+  const filtered = activeTab === 'all'
+    ? history
+    : history.filter(r => classifyCategory(r.title, r.conditionName) === activeTab)
+
+  const groups = groupByDate(filtered)
+
+  // タブ切替時に先頭にスクロール
+  const handleTab = (id: CategoryId) => {
+    setActiveTab(id)
+    tabsRef.current?.scrollTo({ left: CATEGORIES.findIndex(c => c.id === id) * 80, behavior: 'smooth' })
+  }
 
   return (
     <div style={{
@@ -47,27 +92,83 @@ export default function HistoryPage() {
       paddingBottom: 'calc(var(--nav-height) + env(safe-area-inset-bottom, 0px))',
     }}>
 
-      {/* ─── Navigation bar (Apple Large Title style) ─── */}
+      {/* ─── Header ─── */}
       <div style={{
-        background: 'rgba(242,242,247,0.88)',
-        backdropFilter: 'blur(24px) saturate(180%)',
-        WebkitBackdropFilter: 'blur(24px) saturate(180%)',
-        borderBottom: '0.5px solid rgba(60,60,67,0.2)',
-        padding: 'calc(env(safe-area-inset-top, 0px) + 16px) 20px 12px',
+        background: 'rgba(255,255,255,0.95)',
+        backdropFilter: 'blur(20px)',
+        WebkitBackdropFilter: 'blur(20px)',
+        borderBottom: '1px solid var(--border)',
+        padding: 'calc(env(safe-area-inset-top, 0px) + 16px) 20px 0',
         position: 'sticky', top: 0, zIndex: 50,
       }}>
         <div style={{ maxWidth: 480, margin: '0 auto' }}>
-          <h1 style={{
-            fontWeight: 700, fontSize: 28, color: 'var(--text-primary)',
-            letterSpacing: '-0.6px', lineHeight: 1.1,
-          }}>
-            通知履歴
-          </h1>
-          {!loading && (
-            <p style={{ fontSize: 13, color: 'var(--text-tertiary)', marginTop: 3, fontWeight: 400 }}>
-              {history.length > 0 ? `${history.length}件` : '通知なし'}
-            </p>
-          )}
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', paddingBottom: 12 }}>
+            <h1 style={{
+              fontWeight: 700, fontSize: 22, color: 'var(--text-primary)',
+              letterSpacing: '-0.3px', lineHeight: 1.2,
+            }}>
+              通知履歴
+            </h1>
+            {!loading && (
+              <span style={{ fontSize: 12, color: 'var(--text-tertiary)', fontWeight: 400 }}>
+                {history.length > 0 ? `全${history.length}件` : '通知なし'}
+              </span>
+            )}
+          </div>
+
+          {/* ─── Category Tabs ─── */}
+          <div
+            ref={tabsRef}
+            style={{
+              display: 'flex', gap: 0,
+              overflowX: 'auto', scrollbarWidth: 'none',
+              WebkitOverflowScrolling: 'touch',
+              marginLeft: -20, marginRight: -20,
+              paddingLeft: 20,
+            }}
+          >
+            <style>{`::-webkit-scrollbar{display:none}`}</style>
+            {CATEGORIES.map(cat => {
+              const count = cat.id === 'all'
+                ? history.length
+                : history.filter(r => classifyCategory(r.title, r.conditionName) === cat.id).length
+              const isActive = activeTab === cat.id
+              return (
+                <button
+                  key={cat.id}
+                  onClick={() => handleTab(cat.id)}
+                  style={{
+                    flexShrink: 0,
+                    padding: '8px 14px',
+                    background: 'none',
+                    border: 'none',
+                    borderBottom: isActive ? '2px solid var(--accent)' : '2px solid transparent',
+                    cursor: 'pointer',
+                    fontSize: 12,
+                    fontWeight: isActive ? 700 : 400,
+                    color: isActive ? 'var(--accent)' : 'var(--text-secondary)',
+                    letterSpacing: '0.3px',
+                    whiteSpace: 'nowrap',
+                    transition: 'all 0.15s',
+                    fontFamily: 'inherit',
+                    paddingBottom: 10,
+                  }}
+                >
+                  {cat.label}
+                  {count > 0 && (
+                    <span style={{
+                      marginLeft: 4,
+                      fontSize: 10,
+                      color: isActive ? 'var(--accent)' : 'var(--text-tertiary)',
+                      fontVariantNumeric: 'tabular-nums',
+                    }}>
+                      {count}
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
         </div>
       </div>
 
@@ -78,7 +179,7 @@ export default function HistoryPage() {
           <div style={{ padding: '80px 20px', textAlign: 'center' }}>
             <div style={{
               width: 22, height: 22,
-              border: '2px solid var(--separator)',
+              border: '2px solid var(--border)',
               borderTopColor: 'var(--accent)',
               borderRadius: '50%',
               margin: '0 auto',
@@ -88,39 +189,39 @@ export default function HistoryPage() {
         )}
 
         {/* ─── Empty state ─── */}
-        {!loading && history.length === 0 && (
+        {!loading && filtered.length === 0 && (
           <div style={{ textAlign: 'center', padding: '80px 32px 40px', animation: 'fadeIn 0.3s ease' }}>
-            <div style={{
-              fontSize: 48, marginBottom: 16, opacity: 0.25,
-              filter: 'grayscale(1)',
-            }}>🔔</div>
-            <p style={{
-              fontWeight: 600, fontSize: 17,
-              color: 'var(--text-primary)', marginBottom: 8,
-            }}>まだ通知はありません</p>
-            <p style={{ fontSize: 14, color: 'var(--text-tertiary)', lineHeight: 1.65 }}>
-              検索条件を追加してヤフオクを監視すると<br />新着商品を自動で通知します
+            <div style={{ fontSize: 44, marginBottom: 16, opacity: 0.2 }}>🔔</div>
+            <p style={{ fontWeight: 600, fontSize: 16, color: 'var(--text-primary)', marginBottom: 8 }}>
+              {activeTab === 'all' ? 'まだ通知はありません' : 'このカテゴリの通知はありません'}
+            </p>
+            <p style={{ fontSize: 13, color: 'var(--text-tertiary)', lineHeight: 1.65 }}>
+              {activeTab === 'all'
+                ? '検索条件を追加してヤフオクを監視すると\n新着商品を自動で通知します'
+                : '他のカテゴリを確認するか、\n検索条件を追加してください'
+              }
             </p>
           </div>
         )}
 
         {/* ─── Grouped list ─── */}
         {groups.map(({ label, items }) => (
-          <div key={label} style={{ padding: '20px 16px 0' }}>
+          <div key={label} style={{ padding: '16px 16px 0' }}>
 
             {/* Section header */}
             <p style={{
-              fontSize: 13, fontWeight: 600,
-              color: 'var(--text-secondary)',
+              fontSize: 11, fontWeight: 700,
+              color: 'var(--text-tertiary)',
               paddingLeft: 4, marginBottom: 6,
+              letterSpacing: '0.8px', textTransform: 'uppercase',
             }}>{label}</p>
 
             {/* Grouped card */}
             <div style={{
-              borderRadius: 13,
+              borderRadius: 12,
               overflow: 'hidden',
               background: 'var(--card)',
-              boxShadow: '0 1px 0 rgba(60,60,67,0.1)',
+              boxShadow: 'var(--shadow-card)',
             }}>
               {items.map((r, idx) => (
                 <a
@@ -132,18 +233,17 @@ export default function HistoryPage() {
                 >
                   <div style={{
                     padding: '11px 14px 11px 14px',
-                    borderTop: idx > 0 ? '0.5px solid var(--separator)' : 'none',
+                    borderTop: idx > 0 ? '1px solid var(--border)' : 'none',
                     display: 'flex', alignItems: 'flex-start', gap: 11,
                     cursor: 'pointer',
                     WebkitTapHighlightColor: 'rgba(0,0,0,0.04)',
                   }}>
 
-                    {/* Thumbnail — DBに保存済みなら即表示、なければ /api/thumb で遅延取得 */}
                     <AuctionThumbnail
                       savedUrl={r.imageUrl ?? ''}
                       auctionUrl={r.url}
                       size={60}
-                      radius={9}
+                      radius={8}
                     />
 
                     {/* Content */}
@@ -151,15 +251,15 @@ export default function HistoryPage() {
                       {/* Row 1: condition name + time */}
                       <div style={{
                         display: 'flex', alignItems: 'center',
-                        justifyContent: 'space-between', marginBottom: 4,
+                        justifyContent: 'space-between', marginBottom: 3,
                       }}>
                         <span style={{
-                          fontSize: 11, fontWeight: 500,
+                          fontSize: 10, fontWeight: 700,
                           color: 'var(--accent)',
-                          letterSpacing: 0.3, textTransform: 'uppercase',
+                          letterSpacing: '0.8px', textTransform: 'uppercase',
                         }}>{r.conditionName}</span>
                         <time style={{
-                          fontSize: 11, color: 'var(--text-tertiary)',
+                          fontSize: 10, color: 'var(--text-tertiary)',
                           fontWeight: 400, fontVariantNumeric: 'tabular-nums',
                           flexShrink: 0, marginLeft: 8,
                         }}>
@@ -173,7 +273,7 @@ export default function HistoryPage() {
                       <p style={{
                         fontSize: 13, fontWeight: 400,
                         color: 'var(--text-primary)',
-                        lineHeight: 1.45, marginBottom: 6,
+                        lineHeight: 1.45, marginBottom: 5,
                         display: '-webkit-box',
                         WebkitLineClamp: 2,
                         WebkitBoxOrient: 'vertical',
@@ -186,7 +286,7 @@ export default function HistoryPage() {
                         justifyContent: 'space-between',
                       }}>
                         <span style={{
-                          fontSize: 14, fontWeight: 600,
+                          fontSize: 13, fontWeight: 700,
                           color: (r.price && r.price !== '価格不明')
                             ? 'var(--accent)'
                             : 'var(--text-tertiary)',
@@ -195,7 +295,7 @@ export default function HistoryPage() {
                           {(r.price && r.price !== '価格不明') ? r.price : '—'}
                         </span>
                         <span style={{
-                          fontSize: 17, color: 'var(--text-tertiary)',
+                          fontSize: 14, color: 'var(--text-tertiary)',
                           fontWeight: 300, lineHeight: 1,
                         }}>›</span>
                       </div>
@@ -210,9 +310,10 @@ export default function HistoryPage() {
         {/* ─── Footer note ─── */}
         {history.length > 0 && !loading && (
           <p style={{
-            textAlign: 'center', fontSize: 12,
+            textAlign: 'center', fontSize: 11,
             color: 'var(--text-tertiary)', fontWeight: 400,
             padding: '20px 16px 4px',
+            letterSpacing: '0.3px',
           }}>
             終了したオークションは自動的に削除されます
           </p>
