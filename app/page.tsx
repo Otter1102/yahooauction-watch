@@ -35,6 +35,7 @@ export default function Dashboard() {
   const [notifyReady, setNotifyReady] = useState(false)
   const [runState, setRunState] = useState<'idle' | 'running' | 'done'>('idle')
   const [runResult, setRunResult] = useState<{ notified: number; checked: number; results?: { name: string; fetched: number; newItems: number; notified: number; priceWarning?: boolean }[] } | null>(null)
+  const [resetting, setResetting] = useState(false)
   const [activeTab, setActiveTab] = useState('すべて')
 
   async function init() {
@@ -64,6 +65,19 @@ export default function Dashboard() {
     const data = await res.json()
     setConditions(data)
     setLoading(false)
+  }
+
+  async function resetAndRun() {
+    if (!userId || resetting) return
+    setResetting(true)
+    setRunResult(null)
+    await fetch('/api/reset-notified', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId }),
+    })
+    setResetting(false)
+    await runNow()
   }
 
   async function runNow() {
@@ -269,22 +283,40 @@ export default function Dashboard() {
         )}
 
         {conditions.length > 0 && (
-          <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <button
-              onClick={runNow}
-              disabled={runState === 'running' || !notifyReady}
-              style={{
-                width: '100%', padding: '14px 16px',
-                background: runState === 'running' ? 'var(--bg)' : 'var(--card)',
-                border: '1.5px solid var(--border)', borderRadius: 16,
-                fontSize: 14, fontWeight: 700, cursor: runState === 'running' ? 'default' : 'pointer',
-                color: 'var(--text-primary)', fontFamily: 'inherit',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                opacity: !notifyReady ? 0.5 : 1,
-              }}
-            >
-              {runState === 'running' ? '🔄 チェック中...' : '▶ 今すぐチェック実行'}
-            </button>
+          <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                onClick={runNow}
+                disabled={runState === 'running' || resetting || !notifyReady}
+                style={{
+                  flex: 1, padding: '14px 16px',
+                  background: (runState === 'running' || resetting) ? 'var(--bg)' : 'var(--card)',
+                  border: '1.5px solid var(--border)', borderRadius: 16,
+                  fontSize: 14, fontWeight: 700, cursor: (runState === 'running' || resetting) ? 'default' : 'pointer',
+                  color: 'var(--text-primary)', fontFamily: 'inherit',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                  opacity: !notifyReady ? 0.5 : 1,
+                }}
+              >
+                {runState === 'running' ? '🔄 チェック中...' : '▶ 今すぐチェック'}
+              </button>
+              <button
+                onClick={resetAndRun}
+                disabled={runState === 'running' || resetting || !notifyReady}
+                title="通知済み履歴を全消去して最初からチェック（テスト用）"
+                style={{
+                  padding: '14px 16px',
+                  background: 'var(--card)', border: '1.5px solid var(--border)', borderRadius: 16,
+                  fontSize: 13, fontWeight: 700, cursor: (runState === 'running' || resetting) ? 'default' : 'pointer',
+                  color: 'var(--text-secondary)', fontFamily: 'inherit',
+                  display: 'flex', alignItems: 'center', gap: 4,
+                  opacity: !notifyReady ? 0.5 : 1,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {resetting ? '🔄' : '↺ リセット'}
+              </button>
+            </div>
 
             {runState === 'done' && runResult && (
               <div style={{ padding: '14px 16px', borderRadius: 14, background: 'var(--card)', border: '1px solid var(--border)' }}>

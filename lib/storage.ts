@@ -160,6 +160,10 @@ export async function getNotifiedIds(userId: string): Promise<Set<string>> {
   return new Set((data ?? []).map(r => r.auction_id as string))
 }
 
+export async function clearNotifiedHistory(userId: string): Promise<void> {
+  await supabaseAdmin.from('notified_items').delete().eq('user_id', userId)
+}
+
 export async function cleanupOldNotified(): Promise<void> {
   const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
   await supabaseAdmin

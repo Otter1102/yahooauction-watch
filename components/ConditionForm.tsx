@@ -273,27 +273,40 @@ export default function ConditionForm({ userId, condition, onSave, onClose }: Pr
                 />
               </div>
 
-              {/* ソート */}
+              {/* ソート（ヤフオク準拠の名称） */}
               <div>
                 <label style={labelStyle}>並び順</label>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <SegmentControl
-                    options={[
-                      { value: 'endTime', label: '終了時間順' },
-                      { value: 'bids', label: '入札数順' },
-                      { value: 'price', label: '価格順' },
-                    ]}
-                    value={form.sortBy}
-                    onChange={v => set('sortBy', v)}
-                  />
-                  <SegmentControl
-                    options={[
-                      { value: 'asc', label: '昇順（小→大）' },
-                      { value: 'desc', label: '降順（大→小）' },
-                    ]}
-                    value={form.sortOrder}
-                    onChange={v => set('sortOrder', v)}
-                  />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {([
+                    { sortBy: 'endTime', sortOrder: 'asc',  label: '残り時間が短い順（終了間近）', icon: '⏰' },
+                    { sortBy: 'endTime', sortOrder: 'desc', label: '残り時間が長い順',               icon: '🕐' },
+                    { sortBy: 'price',   sortOrder: 'asc',  label: '現在価格が低い順',               icon: '💰' },
+                    { sortBy: 'price',   sortOrder: 'desc', label: '現在価格が高い順',               icon: '💎' },
+                    { sortBy: 'bids',    sortOrder: 'desc', label: '入札件数が多い順',               icon: '🔨' },
+                  ] as const).map(opt => {
+                    const active = form.sortBy === opt.sortBy && form.sortOrder === opt.sortOrder
+                    return (
+                      <button
+                        key={`${opt.sortBy}-${opt.sortOrder}`}
+                        type="button"
+                        onClick={() => { set('sortBy', opt.sortBy); set('sortOrder', opt.sortOrder) }}
+                        style={{
+                          width: '100%', padding: '10px 14px',
+                          borderRadius: 10, border: `1.5px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
+                          background: active ? 'rgba(255,107,53,0.06)' : 'var(--bg)',
+                          color: active ? 'var(--accent)' : 'var(--text-primary)',
+                          fontWeight: active ? 700 : 500, fontSize: 13,
+                          cursor: 'pointer', textAlign: 'left',
+                          display: 'flex', alignItems: 'center', gap: 8,
+                          transition: 'all 0.15s',
+                        }}
+                      >
+                        <span>{opt.icon}</span>
+                        <span>{opt.label}</span>
+                        {active && <span style={{ marginLeft: 'auto', fontSize: 14 }}>✓</span>}
+                      </button>
+                    )
+                  })}
                 </div>
               </div>
 
