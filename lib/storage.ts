@@ -193,6 +193,7 @@ export async function addHistory(record: Omit<NotificationRecord, 'id'>): Promis
     title: record.title,
     price: record.price,
     url: record.url,
+    image_url: record.imageUrl ?? '',
   })
 }
 
@@ -212,6 +213,7 @@ export async function getHistory(userId: string, limit = 50): Promise<Notificati
     title: r.title as string,
     price: r.price as string,
     url: r.url as string,
+    imageUrl: (r.image_url as string) ?? '',
     notifiedAt: r.notified_at as string,
   }))
 }

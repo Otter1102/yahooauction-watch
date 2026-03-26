@@ -88,6 +88,7 @@ export async function POST(req: NextRequest) {
             title: item.title,
             price: item.price,
             url: item.url,
+            imageUrl: item.imageUrl ?? '',
             notifiedAt: new Date().toISOString(),
           })
           condNotified++

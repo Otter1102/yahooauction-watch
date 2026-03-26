@@ -130,66 +130,89 @@ export default function HistoryPage() {
                   style={{ textDecoration: 'none', display: 'block' }}
                 >
                   <div style={{
-                    padding: '12px 16px',
+                    padding: '11px 14px 11px 14px',
                     borderTop: idx > 0 ? '0.5px solid var(--separator)' : 'none',
-                    marginLeft: idx > 0 ? 16 : 0,
-                    position: 'relative',
+                    display: 'flex', alignItems: 'flex-start', gap: 11,
                     cursor: 'pointer',
                     WebkitTapHighlightColor: 'rgba(0,0,0,0.04)',
                   }}>
 
-                    {/* Row 1: condition name + time */}
+                    {/* Thumbnail */}
                     <div style={{
-                      display: 'flex', alignItems: 'center',
-                      justifyContent: 'space-between', marginBottom: 5,
+                      width: 60, height: 60, borderRadius: 9, flexShrink: 0,
+                      background: 'var(--fill)', overflow: 'hidden',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
                     }}>
-                      <span style={{
-                        fontSize: 11, fontWeight: 500,
-                        color: 'var(--accent)',
-                        letterSpacing: 0.3,
-                        textTransform: 'uppercase',
-                      }}>{r.conditionName}</span>
-                      <time style={{
-                        fontSize: 11, color: 'var(--text-tertiary)',
-                        fontWeight: 400, fontVariantNumeric: 'tabular-nums',
-                      }}>
-                        {new Date(r.notifiedAt).toLocaleTimeString('ja-JP', {
-                          hour: '2-digit', minute: '2-digit',
-                        })}
-                      </time>
+                      {r.imageUrl ? (
+                        <img
+                          src={r.imageUrl}
+                          alt=""
+                          width={60} height={60}
+                          style={{ width: 60, height: 60, objectFit: 'cover', display: 'block' }}
+                          onError={e => {
+                            const t = e.currentTarget
+                            t.style.display = 'none'
+                            if (t.parentElement) t.parentElement.innerHTML = '<span style="font-size:24px;opacity:0.3">🏷️</span>'
+                          }}
+                        />
+                      ) : (
+                        <span style={{ fontSize: 24, opacity: 0.25 }}>🏷️</span>
+                      )}
                     </div>
 
-                    {/* Row 2: title */}
-                    <p style={{
-                      fontSize: 14, fontWeight: 400,
-                      color: 'var(--text-primary)',
-                      lineHeight: 1.45, marginBottom: 8,
-                      display: '-webkit-box',
-                      WebkitLineClamp: 2,
-                      WebkitBoxOrient: 'vertical',
-                      overflow: 'hidden',
-                    }}>{r.title}</p>
-
-                    {/* Row 3: price + chevron */}
-                    <div style={{
-                      display: 'flex', alignItems: 'center',
-                      justifyContent: 'space-between',
-                    }}>
-                      <span style={{
-                        fontSize: 15, fontWeight: 600,
-                        color: (r.price && r.price !== '価格不明')
-                          ? 'var(--accent)'
-                          : 'var(--text-tertiary)',
-                        fontVariantNumeric: 'tabular-nums',
+                    {/* Content */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      {/* Row 1: condition name + time */}
+                      <div style={{
+                        display: 'flex', alignItems: 'center',
+                        justifyContent: 'space-between', marginBottom: 4,
                       }}>
-                        {(r.price && r.price !== '価格不明') ? r.price : '—'}
-                      </span>
-                      <span style={{
-                        fontSize: 18,
-                        color: 'var(--text-tertiary)',
-                        fontWeight: 300,
-                        lineHeight: 1,
-                      }}>›</span>
+                        <span style={{
+                          fontSize: 11, fontWeight: 500,
+                          color: 'var(--accent)',
+                          letterSpacing: 0.3, textTransform: 'uppercase',
+                        }}>{r.conditionName}</span>
+                        <time style={{
+                          fontSize: 11, color: 'var(--text-tertiary)',
+                          fontWeight: 400, fontVariantNumeric: 'tabular-nums',
+                          flexShrink: 0, marginLeft: 8,
+                        }}>
+                          {new Date(r.notifiedAt).toLocaleTimeString('ja-JP', {
+                            hour: '2-digit', minute: '2-digit',
+                          })}
+                        </time>
+                      </div>
+
+                      {/* Row 2: title */}
+                      <p style={{
+                        fontSize: 13, fontWeight: 400,
+                        color: 'var(--text-primary)',
+                        lineHeight: 1.45, marginBottom: 6,
+                        display: '-webkit-box',
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: 'vertical',
+                        overflow: 'hidden',
+                      }}>{r.title}</p>
+
+                      {/* Row 3: price + chevron */}
+                      <div style={{
+                        display: 'flex', alignItems: 'center',
+                        justifyContent: 'space-between',
+                      }}>
+                        <span style={{
+                          fontSize: 14, fontWeight: 600,
+                          color: (r.price && r.price !== '価格不明')
+                            ? 'var(--accent)'
+                            : 'var(--text-tertiary)',
+                          fontVariantNumeric: 'tabular-nums',
+                        }}>
+                          {(r.price && r.price !== '価格不明') ? r.price : '—'}
+                        </span>
+                        <span style={{
+                          fontSize: 17, color: 'var(--text-tertiary)',
+                          fontWeight: 300, lineHeight: 1,
+                        }}>›</span>
+                      </div>
                     </div>
                   </div>
                 </a>

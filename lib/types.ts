@@ -45,6 +45,7 @@ export interface NotificationRecord {
   title: string
   price: string
   url: string
+  imageUrl: string
   notifiedAt: string
 }
 

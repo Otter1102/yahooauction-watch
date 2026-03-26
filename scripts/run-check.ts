@@ -114,6 +114,7 @@ async function main() {
               title: item.title,
               price: item.price,
               url: item.url,
+              imageUrl: item.imageUrl ?? '',
               notifiedAt: new Date().toISOString(),
             })
             conditionNotified++
