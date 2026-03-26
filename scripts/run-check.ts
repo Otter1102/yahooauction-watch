@@ -6,7 +6,7 @@
  * 実行: npx tsx scripts/run-check.ts
  * 環境変数: NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_KEY
  */
-import { getAllEnabledConditions, getNotifiedIds, markNotified, addHistory, updateCondition } from '../lib/storage'
+import { getAllEnabledConditions, getNotifiedIds, markNotified, addHistory, updateCondition, cleanupOldNotified, cleanupOldHistory } from '../lib/storage'
 import { fetchAuctionRss } from '../lib/scraper'
 import { notifyUser } from '../lib/notifier'
 import { getSupabaseAdmin } from '../lib/supabase'
@@ -140,6 +140,12 @@ async function main() {
       await new Promise(r => setTimeout(r, 1000))
     }
   }
+
+  // 終了済みオークションのクリーンアップ
+  // notification_history: 72時間後に削除（3日以内にチェック可能 + 大半は終了済み）
+  // notified_items: 7日後に削除（ヤフオク最長出品期間をカバーし重複防止）
+  await cleanupOldHistory(72)
+  await cleanupOldNotified()
 
   console.log(`\n=== 完了: 合計${totalNotified}件通知 ===\n`)
 }

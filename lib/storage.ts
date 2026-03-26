@@ -165,9 +165,19 @@ export async function clearNotifiedHistory(userId: string): Promise<void> {
 }
 
 export async function cleanupOldNotified(): Promise<void> {
+  // 7日以上古い重複防止レコードを削除（ヤフオク最長出品期間をカバー）
   const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
   await supabaseAdmin
     .from('notified_items')
+    .delete()
+    .lt('notified_at', cutoff)
+}
+
+export async function cleanupOldHistory(hours = 72): Promise<void> {
+  // 終了済みオークションの通知履歴を削除（デフォルト72時間＝3日後）
+  const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString()
+  await supabaseAdmin
+    .from('notification_history')
     .delete()
     .lt('notified_at', cutoff)
 }
