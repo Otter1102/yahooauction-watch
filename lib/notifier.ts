@@ -18,7 +18,7 @@ export async function sendNtfy(item: AuctionItem, topic: string): Promise<boolea
       method: 'POST',
       headers: {
         'Content-Type': 'text/plain; charset=utf-8',
-        Title: encodeURIComponent(item.title.slice(0, 60)),
+        Title: item.title.slice(0, 60),
         Click: item.url,
         ...(item.imageUrl ? { Attach: item.imageUrl } : {}),
       },

@@ -48,9 +48,15 @@ export default function SettingsPage() {
   }
 
   async function test() {
-    if (!userId) return
+    if (!userId || !user) return
+    // まず設定を保存してからテスト
+    await fetch('/api/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, ...user }),
+    })
     setTestState('loading')
-    const action = user?.notificationChannel === 'discord' ? 'test-discord' : 'test-ntfy'
+    const action = user.notificationChannel === 'discord' ? 'test-discord' : 'test-ntfy'
     const res = await fetch('/api/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
