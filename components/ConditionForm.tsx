@@ -179,16 +179,43 @@ export default function ConditionForm({ userId, condition, onSave, onClose }: Pr
             <input placeholder="例: セリーヌ バッグ" value={form.keyword} onChange={e => set('keyword', e.target.value)} required />
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <div>
-              <label style={labelStyle}>価格上限（円）</label>
-              <input type="number" min="1" placeholder="10000" value={form.maxPrice} onChange={e => set('maxPrice', e.target.value)} required />
-            </div>
-            <div>
-              <label style={labelStyle}>価格下限（円）</label>
-              <input type="number" min="0" placeholder="0（なし）" value={form.minPrice} onChange={e => set('minPrice', e.target.value)} />
-            </div>
-          </div>
+          {/* 価格範囲: 左=下限 右=上限 */}
+          {(() => {
+            const minP = Number(form.minPrice || 0)
+            const maxP = Number(form.maxPrice || 0)
+            const priceError = minP > 0 && maxP > 0 && minP >= maxP
+            return (
+              <div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: 8, alignItems: 'end' }}>
+                  <div>
+                    <label style={labelStyle}>価格下限（円）</label>
+                    <input
+                      type="number" min="0" placeholder="0（なし）"
+                      value={form.minPrice}
+                      onChange={e => set('minPrice', e.target.value)}
+                      style={{ borderColor: priceError ? 'var(--danger)' : undefined, boxShadow: priceError ? '0 0 0 3px rgba(225,112,85,0.15)' : undefined }}
+                    />
+                  </div>
+                  <div style={{ paddingBottom: 13, color: 'var(--text-tertiary)', fontWeight: 700, fontSize: 16, textAlign: 'center', userSelect: 'none' }}>〜</div>
+                  <div>
+                    <label style={labelStyle}>価格上限（円）</label>
+                    <input
+                      type="number" min="1" placeholder="10000"
+                      value={form.maxPrice}
+                      onChange={e => set('maxPrice', e.target.value)}
+                      required
+                      style={{ borderColor: priceError ? 'var(--danger)' : undefined, boxShadow: priceError ? '0 0 0 3px rgba(225,112,85,0.15)' : undefined }}
+                    />
+                  </div>
+                </div>
+                {priceError && (
+                  <p style={{ fontSize: 12, color: 'var(--danger)', marginTop: 6, fontWeight: 600 }}>
+                    ⚠️ 上限（¥{maxP.toLocaleString()}）は下限（¥{minP.toLocaleString()}）より大きくしてください
+                  </p>
+                )}
+              </div>
+            )
+          })()}
 
           {/* 詳細設定トグル */}
           <button
