@@ -1,25 +1,15 @@
 import { NextResponse } from 'next/server'
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
 import { TRIAL_COOKIE } from '@/lib/trial'
 
+/** ログアウト: Supabase セッション Cookie + トライアル Cookie を削除してリダイレクト */
 export async function POST() {
-  const cookieStore = cookies()
-
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll: () => cookieStore.getAll(),
-        setAll: (list) => list.forEach(({ name, value, options }) => cookieStore.set(name, value, options)),
-      },
-    },
+  const res = NextResponse.redirect(
+    new URL('/login', process.env.NEXT_PUBLIC_APP_URL ?? 'https://yahooauction-watch.vercel.app'),
   )
-
-  await supabase.auth.signOut()
-
-  const res = NextResponse.redirect('/')
+  // Supabase auth cookies (sb-*-auth-token)
+  res.cookies.delete('sb-access-token')
+  res.cookies.delete('sb-refresh-token')
+  // Trial cookie
   res.cookies.delete(TRIAL_COOKIE)
   return res
 }
