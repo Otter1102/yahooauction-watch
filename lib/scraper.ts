@@ -349,3 +349,56 @@ function parseRssItem(block: string): AuctionItem | null {
 
 // legacy export alias
 export { parseRssXml as parseRss }
+
+// ==================== オークション終了チェック ====================
+
+/**
+ * ヤフオクオークションページを取得し、終了済みか判定する
+ * - 404 / HTTP エラー → 終了（削除して良い）
+ * - __NEXT_DATA__ の status/closed フィールド → 終了
+ * - HTML テキストの終了パターン → 終了
+ * - 取得エラー → false（保守的に残す）
+ */
+export async function checkAuctionEnded(auctionId: string): Promise<boolean> {
+  try {
+    const url = `https://page.auctions.yahoo.co.jp/jp/auction/${auctionId}`
+    const res = await fetch(url, {
+      headers: FETCH_HEADERS,
+      redirect: 'follow',
+      signal: AbortSignal.timeout(8000),
+    })
+
+    // 404 や 410 = 確実に終了
+    if (res.status === 404 || res.status === 410) return true
+    // その他エラー = 判断不能 → 残す
+    if (!res.ok) return false
+
+    const html = await res.text()
+
+    // 1. __NEXT_DATA__ JSON を解析してステータスフィールドを確認
+    const nextDataMatch = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/)
+    if (nextDataMatch) {
+      try {
+        const str = JSON.stringify(JSON.parse(nextDataMatch[1]))
+        if (
+          /"status"\s*:\s*"end"/.test(str) ||
+          /"status"\s*:\s*"closed"/.test(str) ||
+          /"auctionStatus"\s*:\s*"end"/.test(str) ||
+          /"isAuctionEnd"\s*:\s*true/.test(str) ||
+          /"isClosed"\s*:\s*true/.test(str) ||
+          /"closed"\s*:\s*true/.test(str)
+        ) return true
+      } catch {}
+    }
+
+    // 2. HTML テキストの終了パターン
+    if (/このオークションは終了|終了したオークション|落札者が決まりました|入札終了/.test(html)) {
+      return true
+    }
+
+    return false
+  } catch {
+    // ネットワークエラー等 → 保守的に残す
+    return false
+  }
+}

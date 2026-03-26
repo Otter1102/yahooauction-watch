@@ -5,38 +5,48 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --grad-primary: linear-gradient(135deg, #FF6B35 0%, #FF3366 100%);
-  --grad-cool:    linear-gradient(135deg, #667EEA 0%, #764BA2 100%);
-  --grad-teal:    linear-gradient(135deg, #11998E 0%, #38EF7D 100%);
-  --grad-warm:    linear-gradient(135deg, #F7971E 0%, #FFD200 100%);
-  --grad-ocean:   linear-gradient(135deg, #2193B0 0%, #6DD5FA 100%);
+  /* Brand gradients (header only) */
+  --grad-primary: linear-gradient(135deg, #FF6B35 0%, #FF3866 100%);
+  --grad-cool:    linear-gradient(135deg, #5E5CE6 0%, #8F6EE3 100%);
+  --grad-teal:    linear-gradient(135deg, #30D158 0%, #00C7BE 100%);
 
+  /* Brand */
   --accent:         #FF6B35;
-  --accent-2:       #FF3366;
+  --accent-2:       #FF3866;
   --accent-light:   rgba(255, 107, 53, 0.10);
-  --bg:             #F5F6FA;
+
+  /* Apple System Colors – Light */
+  --bg:             #F2F2F7;
   --card:           #FFFFFF;
-  --text-primary:   #1A1A2E;
-  --text-secondary: #636E72;
-  --text-tertiary:  #B2BEC3;
-  --border:         #E8ECF0;
-  --success:        #00B894;
-  --danger:         #E17055;
-  --nav-height:     68px;
+  --text-primary:   #000000;
+  --text-secondary: #636366;   /* systemGray */
+  --text-tertiary:  #8E8E93;   /* systemGray2 */
+  --separator:      rgba(60, 60, 67, 0.12);
+  --border:         rgba(60, 60, 67, 0.18);
+  --fill:           rgba(120, 120, 128, 0.08);
+  --fill-secondary: rgba(120, 120, 128, 0.05);
+
+  /* Status */
+  --success:        #34C759;
+  --danger:         #FF3B30;
+  --warning:        #FF9500;
+
+  --nav-height:     49px;
 }
 
 html, body {
   height: 100%;
   background: var(--bg);
   color: var(--text-primary);
-  font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', 'Yu Gothic UI', 'Noto Sans JP', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', sans-serif;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-size: 16px;
   font-weight: 400;
   line-height: 1.5;
-  letter-spacing: 0.01em;
 }
 
-/* Gradient text utility */
+/* ─── Gradient text utility ─── */
 .grad-text {
   background: var(--grad-primary);
   -webkit-background-clip: text;
@@ -44,90 +54,105 @@ html, body {
   background-clip: text;
 }
 
-/* Cards */
+/* ─── Card (Apple inset grouped) ─── */
 .card {
   background: var(--card);
-  border-radius: 20px;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+  border-radius: 13px;
 }
 
-/* Buttons */
+/* ─── Primary button ─── */
 .btn-primary {
-  display: block; width: 100%; padding: 15px;
-  background: var(--grad-primary);
-  color: white; font-size: 14px; font-weight: 600;
+  display: block; width: 100%; padding: 14px;
+  background: var(--accent);
+  color: white; font-size: 15px; font-weight: 600; letter-spacing: -0.1px;
   border: none; border-radius: 14px; cursor: pointer;
-  box-shadow: 0 4px 16px rgba(255, 107, 53, 0.28);
-  transition: transform 0.15s, box-shadow 0.15s;
-  text-align: center; font-family: inherit; letter-spacing: 0.02em;
+  transition: opacity 0.12s;
+  text-align: center; font-family: inherit;
 }
-.btn-primary:active { transform: scale(0.97); box-shadow: 0 2px 8px rgba(255,107,53,0.2); }
-.btn-primary:disabled { opacity: 0.55; }
+.btn-primary:active  { opacity: 0.72; }
+.btn-primary:disabled { opacity: 0.38; cursor: not-allowed; }
 
+/* ─── Secondary button ─── */
 .btn-secondary {
   display: block; width: 100%; padding: 13px;
-  background: var(--bg); color: var(--text-secondary);
+  background: var(--fill); color: var(--text-secondary);
   font-size: 14px; font-weight: 500; font-family: inherit;
-  border: 1px solid var(--border); border-radius: 12px; cursor: pointer;
+  border: none; border-radius: 12px; cursor: pointer;
 }
 
-/* Inputs */
+/* ─── Inputs — Apple filled style ─── */
 input[type="text"], input[type="number"], input:not([type]) {
-  width: 100%; padding: 13px 14px;
-  background: var(--bg); color: var(--text-primary);
+  width: 100%; padding: 12px 14px;
+  background: var(--fill);
+  color: var(--text-primary);
   font-size: 15px; font-family: inherit;
-  border: 1.5px solid var(--border); border-radius: 12px;
-  outline: none; transition: border-color 0.2s, box-shadow 0.2s;
+  border: 1.5px solid transparent;
+  border-radius: 10px;
+  outline: none;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
   -webkit-appearance: none;
 }
-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(255,107,53,0.12); }
+input:focus {
+  background: var(--card);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(255,107,53,0.12);
+}
 input::placeholder { color: var(--text-tertiary); }
 
-/* iOS Toggle */
-.toggle { position: relative; display: inline-block; width: 52px; height: 30px; cursor: pointer; flex-shrink: 0; }
+/* ─── iOS Toggle ─── */
+.toggle { position: relative; display: inline-block; width: 51px; height: 31px; cursor: pointer; flex-shrink: 0; }
 .toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
 .toggle-track {
-  position: absolute; inset: 0; border-radius: 15px;
-  background: var(--border); transition: background 0.25s;
+  position: absolute; inset: 0; border-radius: 16px;
+  background: var(--separator); transition: background 0.22s;
 }
-.toggle input:checked ~ .toggle-track { background: var(--grad-primary); }
+.toggle input:checked ~ .toggle-track { background: var(--accent); }
 .toggle-thumb {
-  position: absolute; top: 3px; left: 3px;
-  width: 24px; height: 24px; border-radius: 12px;
-  background: white; box-shadow: 0 2px 6px rgba(0,0,0,0.2);
-  transition: transform 0.25s cubic-bezier(0.34,1.56,0.64,1);
+  position: absolute; top: 2px; left: 2px;
+  width: 27px; height: 27px; border-radius: 14px;
+  background: white;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.25), 0 0.5px 1px rgba(0,0,0,0.1);
+  transition: transform 0.22s cubic-bezier(0.34,1.56,0.64,1);
   pointer-events: none;
 }
-.toggle input:checked ~ .toggle-track ~ .toggle-thumb { transform: translateX(22px); }
+.toggle input:checked ~ .toggle-track ~ .toggle-thumb { transform: translateX(20px); }
 
-/* Badges */
-.badge { display: inline-block; padding: 3px 9px; border-radius: 8px; font-size: 11px; font-weight: 700; }
-.badge-orange { background: rgba(255,107,53,0.12); color: #FF6B35; }
-.badge-purple { background: rgba(102,126,234,0.12); color: #667EEA; }
-.badge-teal   { background: rgba(17,153,142,0.12);  color: #11998E; }
+/* ─── Badges ─── */
+.badge {
+  display: inline-block; padding: 2px 8px; border-radius: 6px;
+  font-size: 11px; font-weight: 500; letter-spacing: 0.2px;
+}
+.badge-orange { background: rgba(255,107,53,0.10); color: #C44E1A; }
+.badge-purple { background: rgba(94,92,230,0.10);  color: #5E5CE6; }
+.badge-teal   { background: rgba(48,209,88,0.10);  color: #25A244; }
 
-/* Section title */
-.section-title { font-size: 11px; font-weight: 700; color: var(--text-tertiary); letter-spacing: 0.8px; text-transform: uppercase; margin-bottom: 8px; padding: 0 4px; }
+/* ─── Section label (Apple grouped list) ─── */
+.section-title {
+  font-size: 13px; font-weight: 400;
+  color: var(--text-secondary);
+  margin-bottom: 6px; padding: 0 4px;
+}
 
-/* Bottom nav */
+/* ─── Bottom nav ─── */
 .bottom-nav {
   position: fixed; bottom: 0; z-index: 100;
   left: 50%; transform: translateX(-50%);
   width: 100%; max-width: 480px;
-  background: rgba(255,255,255,0.95);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-  border-top: 1px solid rgba(232,236,240,0.8);
+  background: rgba(255,255,255,0.85);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border-top: 0.5px solid rgba(60,60,67,0.22);
   display: flex; justify-content: space-around; align-items: center;
   height: calc(var(--nav-height) + env(safe-area-inset-bottom, 0px));
   padding-bottom: env(safe-area-inset-bottom, 0px);
-  box-shadow: 0 -4px 20px rgba(0,0,0,0.06);
 }
-.nav-item { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 8px 28px; border: none; background: none; cursor: pointer; }
-.nav-icon { font-size: 22px; transition: transform 0.2s; }
-.nav-label { font-size: 10px; font-weight: 600; color: var(--text-tertiary); }
-.nav-item.active .nav-label {
-  background: var(--grad-primary);
-  -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
-}
-.nav-item.active .nav-icon { transform: scale(1.15); }
+.nav-item { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 28px; border: none; background: none; cursor: pointer; }
+.nav-icon  { font-size: 22px; line-height: 1.1; opacity: 0.6; }
+.nav-label { font-size: 10px; font-weight: 500; color: var(--text-tertiary); }
+.nav-item.active .nav-icon  { opacity: 1; }
+.nav-item.active .nav-label { color: var(--accent); font-weight: 600; }
+
+/* ─── Keyframes ─── */
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+@keyframes fadeIn  { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }

@@ -7,6 +7,24 @@ function getUserId() {
   return localStorage.getItem('yahoowatch_user_id') ?? ''
 }
 
+function groupByDate(records: NotificationRecord[]): { label: string; items: NotificationRecord[] }[] {
+  const today     = new Date().toDateString()
+  const yesterday = new Date(Date.now() - 86400000).toDateString()
+  const map = new Map<string, NotificationRecord[]>()
+
+  for (const r of records) {
+    const d = new Date(r.notifiedAt)
+    let label: string
+    if (d.toDateString() === today)     label = '今日'
+    else if (d.toDateString() === yesterday) label = '昨日'
+    else label = d.toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' }) + '日'
+    if (!map.has(label)) map.set(label, [])
+    map.get(label)!.push(r)
+  }
+
+  return Array.from(map.entries()).map(([label, items]) => ({ label, items }))
+}
+
 export default function HistoryPage() {
   const [history, setHistory] = useState<NotificationRecord[]>([])
   const [loading, setLoading] = useState(true)
@@ -19,88 +37,176 @@ export default function HistoryPage() {
       .then(d => { setHistory(d); setLoading(false) })
   }, [])
 
-  return (
-    <div style={{ minHeight: '100dvh', background: 'var(--bg)', paddingBottom: 'calc(var(--nav-height) + env(safe-area-inset-bottom,0px))' }}>
+  const groups = groupByDate(history)
 
-      {/* ヘッダー */}
-      <div style={{ background: 'var(--grad-teal)', padding: 'calc(env(safe-area-inset-top, 0px) + 16px) 20px 16px', position: 'sticky', top: 0, zIndex: 50 }}>
+  return (
+    <div style={{
+      minHeight: '100dvh',
+      background: 'var(--bg)',
+      paddingBottom: 'calc(var(--nav-height) + env(safe-area-inset-bottom, 0px))',
+    }}>
+
+      {/* ─── Navigation bar (Apple Large Title style) ─── */}
+      <div style={{
+        background: 'rgba(242,242,247,0.88)',
+        backdropFilter: 'blur(24px) saturate(180%)',
+        WebkitBackdropFilter: 'blur(24px) saturate(180%)',
+        borderBottom: '0.5px solid rgba(60,60,67,0.2)',
+        padding: 'calc(env(safe-area-inset-top, 0px) + 16px) 20px 12px',
+        position: 'sticky', top: 0, zIndex: 50,
+      }}>
         <div style={{ maxWidth: 480, margin: '0 auto' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 1 }}>
-            <span style={{ fontSize: 18 }}>🔔</span>
-            <h1 style={{ fontWeight: 700, fontSize: 20, color: 'white', letterSpacing: '-0.3px' }}>通知履歴</h1>
-          </div>
-          <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)', marginLeft: 25, fontWeight: 400 }}>
-            {loading ? '読み込み中...' : `${history.length}件の通知`}
-          </p>
+          <h1 style={{
+            fontWeight: 700, fontSize: 28, color: 'var(--text-primary)',
+            letterSpacing: '-0.6px', lineHeight: 1.1,
+          }}>
+            通知履歴
+          </h1>
+          {!loading && (
+            <p style={{ fontSize: 13, color: 'var(--text-tertiary)', marginTop: 3, fontWeight: 400 }}>
+              {history.length > 0 ? `${history.length}件` : '通知なし'}
+            </p>
+          )}
         </div>
       </div>
 
-      <div style={{ padding: '12px 16px', maxWidth: 480, margin: '0 auto' }}>
+      <div style={{ maxWidth: 480, margin: '0 auto', paddingBottom: 16 }}>
+
+        {/* ─── Loading spinner ─── */}
         {loading && (
-          <div style={{ textAlign: 'center', paddingTop: 60 }}>
-            <p style={{ color: 'var(--text-tertiary)' }}>読み込み中...</p>
+          <div style={{ padding: '80px 20px', textAlign: 'center' }}>
+            <div style={{
+              width: 22, height: 22,
+              border: '2px solid var(--separator)',
+              borderTopColor: 'var(--accent)',
+              borderRadius: '50%',
+              margin: '0 auto',
+              animation: 'spin 0.7s linear infinite',
+            }} />
           </div>
         )}
 
+        {/* ─── Empty state ─── */}
         {!loading && history.length === 0 && (
-          <div style={{ textAlign: 'center', paddingTop: 60 }}>
+          <div style={{ textAlign: 'center', padding: '80px 32px 40px', animation: 'fadeIn 0.3s ease' }}>
             <div style={{
-              width: 100, height: 100, borderRadius: 30, margin: '0 auto 20px',
-              background: 'var(--grad-teal)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 48, boxShadow: '0 12px 40px rgba(17,153,142,0.35)',
-            }}>📭</div>
-            <p style={{ fontWeight: 600, fontSize: 17, color: 'var(--text-primary)', marginBottom: 8 }}>まだ通知はありません</p>
-            <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.7 }}>
-              検索条件を追加して<br />ヤフオクを監視しましょう
+              fontSize: 48, marginBottom: 16, opacity: 0.25,
+              filter: 'grayscale(1)',
+            }}>🔔</div>
+            <p style={{
+              fontWeight: 600, fontSize: 17,
+              color: 'var(--text-primary)', marginBottom: 8,
+            }}>まだ通知はありません</p>
+            <p style={{ fontSize: 14, color: 'var(--text-tertiary)', lineHeight: 1.65 }}>
+              検索条件を追加してヤフオクを監視すると<br />新着商品を自動で通知します
             </p>
           </div>
         )}
 
-        {history.length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {history.map((r, i) => (
-              <a key={r.id} href={r.url} target="_blank" rel="noopener noreferrer"
-                style={{ textDecoration: 'none', display: 'block' }}>
-                <div style={{
-                  background: 'var(--card)', borderRadius: 20,
-                  boxShadow: '0 4px 16px rgba(0,0,0,0.06)',
-                  overflow: 'hidden', display: 'flex',
-                }}>
-                  {/* 左カラーバー（グラデーション循環） */}
+        {/* ─── Grouped list ─── */}
+        {groups.map(({ label, items }) => (
+          <div key={label} style={{ padding: '20px 16px 0' }}>
+
+            {/* Section header */}
+            <p style={{
+              fontSize: 13, fontWeight: 600,
+              color: 'var(--text-secondary)',
+              paddingLeft: 4, marginBottom: 6,
+            }}>{label}</p>
+
+            {/* Grouped card */}
+            <div style={{
+              borderRadius: 13,
+              overflow: 'hidden',
+              background: 'var(--card)',
+              boxShadow: '0 1px 0 rgba(60,60,67,0.1)',
+            }}>
+              {items.map((r, idx) => (
+                <a
+                  key={r.id}
+                  href={r.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ textDecoration: 'none', display: 'block' }}
+                >
                   <div style={{
-                    width: 5, flexShrink: 0,
-                    background: [
-                      'linear-gradient(180deg,#FF6B35,#FF3366)',
-                      'linear-gradient(180deg,#667EEA,#764BA2)',
-                      'linear-gradient(180deg,#11998E,#38EF7D)',
-                      'linear-gradient(180deg,#F7971E,#FFD200)',
-                      'linear-gradient(180deg,#2193B0,#6DD5FA)',
-                    ][i % 5],
-                  }} />
-                  <div style={{ flex: 1, padding: '12px 12px 12px 10px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
-                      <span className="badge badge-orange">{r.conditionName}</span>
-                      <span style={{ fontSize: 10, color: 'var(--text-tertiary)', fontWeight: 400 }}>
-                        {new Date(r.notifiedAt).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                      </span>
-                    </div>
-                    <p style={{
-                      fontWeight: 500, fontSize: 13, color: 'var(--text-primary)',
-                      lineHeight: 1.45, marginBottom: 7,
-                      display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
-                    }}>{r.title}</p>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    padding: '12px 16px',
+                    borderTop: idx > 0 ? '0.5px solid var(--separator)' : 'none',
+                    marginLeft: idx > 0 ? 16 : 0,
+                    position: 'relative',
+                    cursor: 'pointer',
+                    WebkitTapHighlightColor: 'rgba(0,0,0,0.04)',
+                  }}>
+
+                    {/* Row 1: condition name + time */}
+                    <div style={{
+                      display: 'flex', alignItems: 'center',
+                      justifyContent: 'space-between', marginBottom: 5,
+                    }}>
                       <span style={{
-                        fontWeight: 700, fontSize: 16, color: 'var(--accent)',
-                      }}>{r.price}</span>
-                      <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 400 }}>ヤフオクで見る →</span>
+                        fontSize: 11, fontWeight: 500,
+                        color: 'var(--accent)',
+                        letterSpacing: 0.3,
+                        textTransform: 'uppercase',
+                      }}>{r.conditionName}</span>
+                      <time style={{
+                        fontSize: 11, color: 'var(--text-tertiary)',
+                        fontWeight: 400, fontVariantNumeric: 'tabular-nums',
+                      }}>
+                        {new Date(r.notifiedAt).toLocaleTimeString('ja-JP', {
+                          hour: '2-digit', minute: '2-digit',
+                        })}
+                      </time>
+                    </div>
+
+                    {/* Row 2: title */}
+                    <p style={{
+                      fontSize: 14, fontWeight: 400,
+                      color: 'var(--text-primary)',
+                      lineHeight: 1.45, marginBottom: 8,
+                      display: '-webkit-box',
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: 'vertical',
+                      overflow: 'hidden',
+                    }}>{r.title}</p>
+
+                    {/* Row 3: price + chevron */}
+                    <div style={{
+                      display: 'flex', alignItems: 'center',
+                      justifyContent: 'space-between',
+                    }}>
+                      <span style={{
+                        fontSize: 15, fontWeight: 600,
+                        color: (r.price && r.price !== '価格不明')
+                          ? 'var(--accent)'
+                          : 'var(--text-tertiary)',
+                        fontVariantNumeric: 'tabular-nums',
+                      }}>
+                        {(r.price && r.price !== '価格不明') ? r.price : '—'}
+                      </span>
+                      <span style={{
+                        fontSize: 18,
+                        color: 'var(--text-tertiary)',
+                        fontWeight: 300,
+                        lineHeight: 1,
+                      }}>›</span>
                     </div>
                   </div>
-                </div>
-              </a>
-            ))}
+                </a>
+              ))}
+            </div>
           </div>
+        ))}
+
+        {/* ─── Footer note ─── */}
+        {history.length > 0 && !loading && (
+          <p style={{
+            textAlign: 'center', fontSize: 12,
+            color: 'var(--text-tertiary)', fontWeight: 400,
+            padding: '20px 16px 4px',
+          }}>
+            終了したオークションは自動的に削除されます
+          </p>
         )}
       </div>
     </div>

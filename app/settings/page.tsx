@@ -10,12 +10,12 @@ function getUserId() {
 }
 
 export default function SettingsPage() {
-  const [userId, setUserId] = useState('')
-  const [user, setUser] = useState<User | null>(null)
-  const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
+  const [userId, setUserId]     = useState('')
+  const [user, setUser]         = useState<User | null>(null)
+  const [saving, setSaving]     = useState(false)
+  const [saved, setSaved]       = useState(false)
   const [testState, setTestState] = useState<'idle' | 'loading' | 'ok' | 'fail'>('idle')
-  const [copied, setCopied] = useState(false)
+  const [copied, setCopied]     = useState(false)
 
   const suggestedTopic = userId ? `yw-${userId.slice(0, 10)}` : ''
 
@@ -29,27 +29,23 @@ export default function SettingsPage() {
     if (!user || !userId) return
     setSaving(true)
     await fetch('/api/settings', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId, ...user }),
     })
-    setSaving(false)
-    setSaved(true)
+    setSaving(false); setSaved(true)
     setTimeout(() => setSaved(false), 2500)
   }
 
   async function test() {
     if (!userId || !user) return
     await fetch('/api/settings', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId, ...user }),
     })
     setTestState('loading')
     const action = user.notificationChannel === 'discord' ? 'test-discord' : 'test-ntfy'
     const res = await fetch('/api/settings', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action, userId }),
     })
     const { ok } = await res.json()
@@ -58,161 +54,174 @@ export default function SettingsPage() {
 
   function copy(text: string) {
     navigator.clipboard.writeText(text)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+    setCopied(true); setTimeout(() => setCopied(false), 2000)
   }
 
   function set(k: keyof User, v: string) { setUser(u => u ? { ...u, [k]: v } : u) }
 
   if (!user) return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '50vh' }}>
-      <p style={{ color: 'var(--text-tertiary)' }}>読み込み中...</p>
+      <div style={{ width: 20, height: 20, border: '2px solid var(--separator)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
     </div>
   )
 
   return (
-    <div style={{ minHeight: '100dvh', background: 'var(--bg)', paddingBottom: 'calc(var(--nav-height) + env(safe-area-inset-bottom,0px))' }}>
+    <div style={{
+      minHeight: '100dvh',
+      background: 'var(--bg)',
+      paddingBottom: 'calc(var(--nav-height) + env(safe-area-inset-bottom, 0px))',
+    }}>
 
-      {/* ヘッダー */}
-      <div style={{ background: 'var(--grad-cool)', padding: 'calc(env(safe-area-inset-top, 0px) + 16px) 20px 16px', position: 'sticky', top: 0, zIndex: 50 }}>
+      {/* ─── Navigation bar ─── */}
+      <div style={{
+        background: 'rgba(242,242,247,0.88)',
+        backdropFilter: 'blur(24px) saturate(180%)',
+        WebkitBackdropFilter: 'blur(24px) saturate(180%)',
+        borderBottom: '0.5px solid rgba(60,60,67,0.2)',
+        padding: 'calc(env(safe-area-inset-top, 0px) + 16px) 20px 12px',
+        position: 'sticky', top: 0, zIndex: 50,
+      }}>
         <div style={{ maxWidth: 480, margin: '0 auto' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 1 }}>
-            <span style={{ fontSize: 18 }}>⚙️</span>
-            <h1 style={{ fontWeight: 700, fontSize: 20, color: 'white', letterSpacing: '-0.3px' }}>設定</h1>
-          </div>
-          <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)', marginLeft: 25, fontWeight: 400 }}>通知先を設定してください</p>
+          <h1 style={{ fontWeight: 700, fontSize: 28, color: 'var(--text-primary)', letterSpacing: '-0.6px' }}>設定</h1>
+          <p style={{ fontSize: 13, color: 'var(--text-tertiary)', marginTop: 3, fontWeight: 400 }}>通知先を設定してください</p>
         </div>
       </div>
 
-      <div style={{ padding: '16px', maxWidth: 480, margin: '0 auto' }}>
+      <div style={{ padding: '20px 16px 0', maxWidth: 480, margin: '0 auto' }}>
 
-        {/* 通知方法選択 */}
-        <p className="section-title">通知方法</p>
-        <div className="card" style={{ marginBottom: 20, overflow: 'hidden' }}>
+        {/* ─── 通知方法選択 ─── */}
+        <p className="section-title" style={{ paddingLeft: 4, marginBottom: 6 }}>通知方法</p>
+        <div className="card" style={{ marginBottom: 24, overflow: 'hidden' }}>
           {(['ntfy', 'discord', 'both'] as const).map((ch, i) => (
             <button key={ch} onClick={() => set('notificationChannel', ch)}
               style={{
-                width: '100%', padding: '15px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                width: '100%', padding: '14px 16px',
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                 background: 'none', border: 'none', cursor: 'pointer',
-                borderBottom: i < 2 ? '1px solid var(--border)' : 'none',
+                borderBottom: i < 2 ? '0.5px solid var(--separator)' : 'none',
               }}>
-              <span style={{ fontWeight: 500, fontSize: 14, color: 'var(--text-primary)' }}>
+              <span style={{ fontWeight: 400, fontSize: 15, color: 'var(--text-primary)' }}>
                 {ch === 'ntfy' ? '📲 ntfy（推奨・完全無料）' : ch === 'discord' ? '💬 Discord' : '🔀 両方'}
               </span>
-              <div style={{
-                width: 24, height: 24, borderRadius: 12,
-                background: user.notificationChannel === ch ? 'var(--grad-primary)' : 'transparent',
-                border: `2px solid ${user.notificationChannel === ch ? 'transparent' : 'var(--border)'}`,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                boxShadow: user.notificationChannel === ch ? '0 4px 12px rgba(255,107,53,0.35)' : 'none',
-              }}>
-                {user.notificationChannel === ch && <span style={{ width: 8, height: 8, borderRadius: 4, background: 'white' }} />}
-              </div>
+              {user.notificationChannel === ch ? (
+                <span style={{ color: 'var(--accent)', fontSize: 16, fontWeight: 600 }}>✓</span>
+              ) : (
+                <span style={{ color: 'var(--text-tertiary)', fontSize: 16 }}>›</span>
+              )}
             </button>
           ))}
         </div>
 
-        {/* ntfy設定 */}
+        {/* ─── ntfy設定 ─── */}
         {(user.notificationChannel === 'ntfy' || user.notificationChannel === 'both') && (
           <>
-            <p className="section-title">ntfy 設定</p>
-            <div className="card" style={{ marginBottom: 20, overflow: 'hidden' }}>
+            <p className="section-title" style={{ paddingLeft: 4, marginBottom: 6 }}>ntfy 設定</p>
+            <div className="card" style={{ marginBottom: 24, overflow: 'hidden' }}>
+
               {/* Step 1 */}
-              <div style={{ padding: '16px', borderBottom: '1px solid var(--border)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                  <div style={{ width: 22, height: 22, borderRadius: 7, background: 'var(--grad-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600, color: 'white', flexShrink: 0 }}>1</div>
+              <div style={{ padding: '14px 16px', borderBottom: '0.5px solid var(--separator)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                  <div style={{
+                    width: 20, height: 20, borderRadius: 6, flexShrink: 0,
+                    background: 'var(--accent)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 11, fontWeight: 600, color: 'white',
+                  }}>1</div>
                   <p style={{ fontWeight: 600, fontSize: 14 }}>アプリをインストール</p>
                 </div>
-                <div style={{ display: 'flex', gap: 8 }}>
+                <div style={{ display: 'flex', gap: 8, marginLeft: 30 }}>
                   <a href="https://apps.apple.com/app/ntfy/id1625396347" target="_blank" rel="noopener noreferrer"
-                    style={{ flex: 1, textAlign: 'center', padding: '10px', background: 'var(--bg)', borderRadius: 10, fontSize: 13, fontWeight: 500, color: 'var(--text-primary)', textDecoration: 'none', border: '1px solid var(--border)' }}>
+                    style={{ flex: 1, textAlign: 'center', padding: '9px', background: 'var(--fill)', borderRadius: 9, fontSize: 13, fontWeight: 500, color: 'var(--text-primary)', textDecoration: 'none' }}>
                     🍎 iOS
                   </a>
                   <a href="https://play.google.com/store/apps/details?id=io.heckel.ntfy" target="_blank" rel="noopener noreferrer"
-                    style={{ flex: 1, textAlign: 'center', padding: '10px', background: 'var(--bg)', borderRadius: 10, fontSize: 13, fontWeight: 500, color: 'var(--text-primary)', textDecoration: 'none', border: '1px solid var(--border)' }}>
+                    style={{ flex: 1, textAlign: 'center', padding: '9px', background: 'var(--fill)', borderRadius: 9, fontSize: 13, fontWeight: 500, color: 'var(--text-primary)', textDecoration: 'none' }}>
                     🤖 Android
                   </a>
                 </div>
               </div>
 
               {/* Step 2 */}
-              <div style={{ padding: '16px', borderBottom: '1px solid var(--border)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                  <div style={{ width: 22, height: 22, borderRadius: 7, background: 'var(--grad-cool)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600, color: 'white', flexShrink: 0 }}>2</div>
+              <div style={{ padding: '14px 16px', borderBottom: '0.5px solid var(--separator)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+                  <div style={{ width: 20, height: 20, borderRadius: 6, flexShrink: 0, background: 'var(--fill-secondary)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)' }}>2</div>
                   <p style={{ fontWeight: 600, fontSize: 14 }}>トピック名を設定</p>
                 </div>
-                <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 10, marginLeft: 30 }}>下記をそのまま使うか、好きな名前に変更できます</p>
-                <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-                  <code style={{ flex: 1, background: 'var(--accent-light)', color: 'var(--accent)', padding: '10px 12px', borderRadius: 10, fontSize: 13, fontWeight: 500 }}>
+                <p style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 10, marginLeft: 30 }}>下記をそのまま使うか、好きな名前に変更できます</p>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 10, marginLeft: 30 }}>
+                  <code style={{ flex: 1, background: 'var(--accent-light)', color: 'var(--accent)', padding: '9px 12px', borderRadius: 9, fontSize: 13, fontWeight: 500 }}>
                     {suggestedTopic}
                   </code>
                   <button onClick={() => copy(suggestedTopic)}
-                    style={{ padding: '10px 14px', background: copied ? 'var(--success)' : 'var(--bg)', border: '1px solid var(--border)', borderRadius: 10, fontSize: 12, fontWeight: 500, cursor: 'pointer', color: copied ? 'white' : 'var(--text-secondary)', whiteSpace: 'nowrap', transition: 'all 0.2s' }}>
-                    {copied ? '✓ コピー済' : 'コピー'}
+                    style={{ padding: '9px 14px', background: copied ? 'var(--success)' : 'var(--fill)', border: 'none', borderRadius: 9, fontSize: 12, fontWeight: 500, cursor: 'pointer', color: copied ? 'white' : 'var(--text-secondary)', whiteSpace: 'nowrap', transition: 'all 0.2s' }}>
+                    {copied ? '✓' : 'コピー'}
                   </button>
                 </div>
-                <input placeholder="トピック名を入力（英数字・ハイフン）" value={user.ntfyTopic} onChange={e => set('ntfyTopic', e.target.value)} />
+                <div style={{ marginLeft: 30 }}>
+                  <input placeholder="トピック名（英数字・ハイフン）" value={user.ntfyTopic} onChange={e => set('ntfyTopic', e.target.value)} />
+                </div>
               </div>
 
               {/* Step 3 */}
-              <div style={{ padding: '16px', background: '#F9F9FB' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                  <div style={{ width: 22, height: 22, borderRadius: 7, background: 'var(--grad-teal)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600, color: 'white', flexShrink: 0 }}>3</div>
+              <div style={{ padding: '14px 16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                  <div style={{ width: 20, height: 20, borderRadius: 6, flexShrink: 0, background: 'var(--fill-secondary)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)' }}>3</div>
                   <p style={{ fontWeight: 600, fontSize: 14 }}>ntfyアプリで購読する</p>
                 </div>
-                <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.9, marginLeft: 30 }}>
-                  <p>1. ntfyアプリを開く</p>
-                  <p>2. 右下の「＋」をタップ</p>
-                  <p>3. 上のトピック名を貼り付け</p>
-                  <p>4.「Subscribe」をタップ</p>
-                </div>
-                <div style={{ marginTop: 12, padding: '10px 14px', background: 'rgba(0,184,148,0.08)', borderRadius: 10, fontSize: 12, color: 'var(--success)', fontWeight: 500, marginLeft: 30 }}>
-                  ✅ 設定完了！以降は自動で通知が届きます
-                </div>
+                <ol style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 2, paddingLeft: 14, marginLeft: 30 }}>
+                  <li>ntfyアプリを開く</li>
+                  <li>右下の「＋」をタップ</li>
+                  <li>トピック名を貼り付け</li>
+                  <li>「Subscribe」をタップ</li>
+                </ol>
               </div>
             </div>
           </>
         )}
 
-        {/* Discord設定 */}
+        {/* ─── Discord設定 ─── */}
         {(user.notificationChannel === 'discord' || user.notificationChannel === 'both') && (
           <>
-            <p className="section-title">Discord 設定</p>
-            <div className="card" style={{ marginBottom: 20 }}>
-              <div style={{ padding: '16px' }}>
-                <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 10 }}>
+            <p className="section-title" style={{ paddingLeft: 4, marginBottom: 6 }}>Discord 設定</p>
+            <div className="card" style={{ marginBottom: 24 }}>
+              <div style={{ padding: '14px 16px' }}>
+                <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 10, fontWeight: 400 }}>
                   Discord → チャンネル設定 → 連携サービス → ウェブフック
                 </p>
-                <input placeholder="https://discord.com/api/webhooks/..." value={user.discordWebhook} onChange={e => set('discordWebhook', e.target.value)} />
+                <input
+                  placeholder="https://discord.com/api/webhooks/..."
+                  value={user.discordWebhook}
+                  onChange={e => set('discordWebhook', e.target.value)}
+                />
               </div>
             </div>
           </>
         )}
 
-        {/* テスト */}
-        <div style={{ marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {/* ─── Test + Save ─── */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16 }}>
           <button onClick={test} disabled={testState === 'loading'}
             style={{
               padding: '13px', background: 'var(--card)',
-              border: '1px solid var(--border)', borderRadius: 12,
-              fontSize: 13, fontWeight: 500, cursor: 'pointer',
+              border: '0.5px solid var(--border)', borderRadius: 13,
+              fontSize: 14, fontWeight: 500, cursor: 'pointer',
               color: 'var(--text-primary)', fontFamily: 'inherit',
             }}>
             {testState === 'loading' ? '送信中...' : '📨 テスト通知を送信'}
           </button>
+
           {testState === 'ok' && (
-            <div style={{ padding: '12px 16px', background: 'rgba(0,184,148,0.1)', borderRadius: 12, fontSize: 13, color: 'var(--success)', fontWeight: 700, textAlign: 'center' }}>
-              ✅ 通知が届きました！
+            <div style={{ padding: '11px 14px', background: 'rgba(52,199,89,0.1)', borderRadius: 11, fontSize: 13, color: 'var(--success)', fontWeight: 500 }}>
+              ✅ 通知が届きました
             </div>
           )}
           {testState === 'fail' && (
-            <div style={{ padding: '12px 16px', background: 'rgba(225,112,85,0.1)', borderRadius: 12, fontSize: 13, color: 'var(--danger)', textAlign: 'center' }}>
+            <div style={{ padding: '11px 14px', background: 'rgba(255,59,48,0.08)', borderRadius: 11, fontSize: 13, color: 'var(--danger)', fontWeight: 400 }}>
               ❌ 届きませんでした。トピック名を確認してください
             </div>
           )}
         </div>
 
-        {/* 保存 */}
         <button onClick={save} disabled={saving} className="btn-primary">
           {saved ? '✓ 保存しました' : saving ? '保存中...' : '設定を保存する'}
         </button>

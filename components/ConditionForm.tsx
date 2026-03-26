@@ -349,5 +349,6 @@ export default function ConditionForm({ userId, condition, onSave, onClose }: Pr
 }
 
 const labelStyle: React.CSSProperties = {
-  fontSize: 11, fontWeight: 500, color: 'var(--text-secondary)', display: 'block', marginBottom: 5, letterSpacing: 0.3,
+  fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)',
+  display: 'block', marginBottom: 5, letterSpacing: 0.2,
 }

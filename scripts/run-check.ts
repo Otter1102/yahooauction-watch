@@ -7,7 +7,7 @@
  * 環境変数: NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_KEY
  */
 import { getAllEnabledConditions, getNotifiedIds, markNotified, addHistory, updateCondition, cleanupOldNotified, cleanupOldHistory } from '../lib/storage'
-import { fetchAuctionRss } from '../lib/scraper'
+import { fetchAuctionRss, checkAuctionEnded } from '../lib/scraper'
 import { notifyUser } from '../lib/notifier'
 import { getSupabaseAdmin } from '../lib/supabase'
 const supabaseAdmin = { from: (...args: Parameters<ReturnType<typeof getSupabaseAdmin>['from']>) => getSupabaseAdmin().from(...args) }
@@ -141,13 +141,45 @@ async function main() {
     }
   }
 
-  // 終了済みオークションのクリーンアップ
-  // notification_history: 72時間後に削除（3日以内にチェック可能 + 大半は終了済み）
-  // notified_items: 7日後に削除（ヤフオク最長出品期間をカバーし重複防止）
+  // ─── 終了済みオークションを履歴から削除 ───
+  await cleanupEndedAuctions()
+
+  // ─── 時間ベースのフォールバッククリーンアップ ───
+  // notification_history: 72時間後（ステータス確認できなかった場合の安全網）
+  // notified_items: 7日後（ヤフオク最長出品期間をカバー）
   await cleanupOldHistory(72)
   await cleanupOldNotified()
 
   console.log(`\n=== 完了: 合計${totalNotified}件通知 ===\n`)
+}
+
+/** 終了したオークションの通知履歴を削除する（1run あたり最大10件チェック） */
+async function cleanupEndedAuctions(): Promise<void> {
+  // 通知から30分以上経過したものを対象（直後の誤削除を防ぐ）
+  const cutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString()
+
+  const { data: items } = await supabaseAdmin
+    .from('notification_history')
+    .select('id, auction_id')
+    .lt('notified_at', cutoff)
+    .limit(10)  // 1run あたり上限 → レート制限対策
+
+  if (!items?.length) return
+
+  const toDelete: string[] = []
+  for (const item of items) {
+    const ended = await checkAuctionEnded(item.auction_id as string)
+    if (ended) toDelete.push(item.id as string)
+    await new Promise(r => setTimeout(r, 400))  // Yahoo への負荷分散
+  }
+
+  if (toDelete.length > 0) {
+    await supabaseAdmin
+      .from('notification_history')
+      .delete()
+      .in('id', toDelete)
+    console.log(`終了オークション ${toDelete.length}件を履歴から削除`)
+  }
 }
 
 main().catch(err => {
