@@ -51,23 +51,26 @@ export default function Dashboard() {
   const activeCount = conditions.filter(c => c.enabled).length
 
   return (
-    <div style={{ minHeight: '100dvh', background: 'var(--bg)' }}>
-      {/* ヘッダー */}
+    <div style={{ minHeight: '100dvh', background: 'var(--bg)', paddingBottom: 'calc(var(--nav-height) + env(safe-area-inset-bottom,0px))' }}>
+
+      {/* グラデーションヘッダー */}
       <div style={{
-        background: 'var(--card)',
-        borderBottom: '1px solid var(--border)',
-        padding: '16px 20px 14px',
+        background: 'var(--grad-primary)',
+        padding: '20px 20px 18px',
         position: 'sticky', top: 0, zIndex: 50,
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', maxWidth: 480, margin: '0 auto' }}>
           <div>
-            <h1 style={{ fontWeight: 800, fontSize: 22, letterSpacing: '-0.5px', color: 'var(--text-primary)' }}>
-              ヤフオク<span style={{ color: 'var(--accent)' }}>watch</span>
-            </h1>
-            <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 1 }}>
-              {loading ? '読み込み中...' : `${conditions.length}件の条件`}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+              <span style={{ fontSize: 24 }}>⚡</span>
+              <h1 style={{ fontWeight: 900, fontSize: 24, color: 'white', letterSpacing: '-0.5px' }}>
+                ヤフオク<span style={{ fontStyle: 'italic' }}>watch</span>
+              </h1>
+            </div>
+            <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.80)', marginLeft: 32 }}>
+              {loading ? '読み込み中...' : `${conditions.length}件の監視条件`}
               {activeCount > 0 && !loading && (
-                <span style={{ marginLeft: 8, color: 'var(--success)', fontWeight: 600 }}>
+                <span style={{ marginLeft: 8, color: '#FFE066', fontWeight: 700 }}>
                   ● {activeCount}件稼働中
                 </span>
               )}
@@ -75,41 +78,73 @@ export default function Dashboard() {
           </div>
           <button
             onClick={() => loadConditions()}
-            style={{ background: 'var(--bg)', border: 'none', borderRadius: 20, width: 36, height: 36, fontSize: 16, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: 22, width: 40, height: 40, fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}
           >
             {loading ? '⟳' : '↻'}
           </button>
         </div>
       </div>
 
-      <div style={{ padding: '16px 16px 0' }}>
+      <div style={{ padding: '16px', maxWidth: 480, margin: '0 auto' }}>
+
         {/* 通知未設定バナー */}
         {!notifyReady && !loading && (
           <a href="/settings" style={{
-            display: 'block', marginBottom: 14, padding: '14px 16px',
-            background: '#FFF8E6', border: '1px solid #FFDD80',
-            borderRadius: 14, textDecoration: 'none',
+            display: 'block', marginBottom: 14,
+            borderRadius: 16, textDecoration: 'none', overflow: 'hidden',
           }}>
-            <p style={{ fontWeight: 700, fontSize: 14, color: '#9A6900' }}>⚠️ 通知がまだ設定されていません</p>
-            <p style={{ fontSize: 12, color: '#B8860B', marginTop: 2 }}>タップして通知先を設定 →</p>
+            <div style={{
+              background: 'var(--grad-warm)',
+              padding: '14px 16px',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            }}>
+              <div>
+                <p style={{ fontWeight: 700, fontSize: 14, color: 'white' }}>⚠️ 通知がまだ設定されていません</p>
+                <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.85)', marginTop: 2 }}>タップして通知先を設定 →</p>
+              </div>
+            </div>
           </a>
+        )}
+
+        {/* 稼働中ステータスカード */}
+        {conditions.length > 0 && !loading && (
+          <div style={{
+            borderRadius: 20, overflow: 'hidden',
+            background: 'var(--grad-cool)',
+            padding: '18px 20px', marginBottom: 16,
+            boxShadow: '0 8px 32px rgba(102,126,234,0.3)',
+            display: 'flex', justifyContent: 'space-around', alignItems: 'center',
+          }}>
+            {[
+              { val: activeCount, label: '稼働中' },
+              { val: conditions.length, label: '総条件数' },
+              { val: '10分', label: 'チェック間隔' },
+            ].map((item, i) => (
+              <div key={i} style={{ textAlign: 'center', flex: 1 }}>
+                {i > 0 && <div style={{ position: 'absolute' }} />}
+                <p style={{ fontSize: 26, fontWeight: 900, color: 'white', lineHeight: 1 }}>{item.val}</p>
+                <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)', marginTop: 4, fontWeight: 600 }}>{item.label}</p>
+              </div>
+            ))}
+          </div>
         )}
 
         {/* 空状態 */}
         {!loading && conditions.length === 0 && (
           <div style={{ textAlign: 'center', paddingTop: 60, paddingBottom: 40 }}>
-            <div style={{ fontSize: 64, marginBottom: 16 }}>🔍</div>
-            <p style={{ fontWeight: 700, fontSize: 18, color: 'var(--text-primary)', marginBottom: 8 }}>
+            <div style={{
+              width: 100, height: 100, borderRadius: 30, margin: '0 auto 20px',
+              background: 'var(--grad-primary)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 48, boxShadow: '0 12px 40px rgba(255,107,53,0.35)',
+            }}>🔍</div>
+            <p style={{ fontWeight: 800, fontSize: 20, color: 'var(--text-primary)', marginBottom: 10 }}>
               ウォッチリストが空です
             </p>
-            <p style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 28, lineHeight: 1.6 }}>
+            <p style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 32, lineHeight: 1.7 }}>
               監視したいキーワードと価格を設定すると<br />新着商品を自動で通知します
             </p>
-            <button
-              onClick={() => setShowForm(true)}
-              className="btn-primary"
-              style={{ display: 'inline-block' }}
-            >
+            <button onClick={() => setShowForm(true)} className="btn-primary" style={{ display: 'inline-block', width: 'auto', padding: '14px 32px' }}>
               最初の条件を追加する
             </button>
           </div>
@@ -117,7 +152,7 @@ export default function Dashboard() {
 
         {/* 条件リスト */}
         {conditions.length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {conditions.map(c => (
               <ConditionCard key={c.id} condition={c} onChange={() => loadConditions()} />
             ))}
@@ -126,11 +161,13 @@ export default function Dashboard() {
 
         {conditions.length > 0 && (
           <div style={{
-            marginTop: 16, marginBottom: 8, padding: '12px 14px',
-            background: 'var(--card)', borderRadius: 12,
-            fontSize: 12, color: 'var(--text-tertiary)', lineHeight: 1.7,
+            marginTop: 16, padding: '12px 16px',
+            background: 'var(--card)', borderRadius: 14,
+            fontSize: 12, color: 'var(--text-tertiary)',
+            display: 'flex', alignItems: 'center', gap: 6,
           }}>
-            <span>⚡ 30分ごとに自動チェック · 新着のみ通知</span>
+            <span style={{ fontSize: 14 }}>⚡</span>
+            <span>10分ごとに自動チェック · 新着のみ通知</span>
           </div>
         )}
       </div>
@@ -140,14 +177,13 @@ export default function Dashboard() {
         onClick={() => setShowForm(true)}
         style={{
           position: 'fixed',
-          bottom: 'calc(env(safe-area-inset-bottom, 0px) + 86px)',
+          bottom: 'calc(env(safe-area-inset-bottom, 0px) + 80px)',
           right: 'max(16px, calc(50% - 240px + 16px))',
-          width: 56, height: 56,
-          background: 'var(--accent)',
-          color: 'white',
-          border: 'none', borderRadius: 28,
-          fontSize: 28, fontWeight: 300,
-          boxShadow: '0 4px 14px rgba(255,102,0,0.4)',
+          width: 60, height: 60,
+          background: 'var(--grad-primary)',
+          color: 'white', border: 'none', borderRadius: 30,
+          fontSize: 30, fontWeight: 300,
+          boxShadow: '0 8px 28px rgba(255,107,53,0.5)',
           cursor: 'pointer',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           zIndex: 90,
