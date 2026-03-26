@@ -34,7 +34,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [notifyReady, setNotifyReady] = useState(false)
   const [runState, setRunState] = useState<'idle' | 'running' | 'done'>('idle')
-  const [runResult, setRunResult] = useState<{ notified: number; checked: number; results?: { name: string; found: number; notified: number }[] } | null>(null)
+  const [runResult, setRunResult] = useState<{ notified: number; checked: number; results?: { name: string; fetched: number; newItems: number; notified: number; priceWarning?: boolean }[] } | null>(null)
   const [activeTab, setActiveTab] = useState('すべて')
 
   async function init() {
@@ -287,18 +287,31 @@ export default function Dashboard() {
             </button>
 
             {runState === 'done' && runResult && (
-              <div style={{
-                padding: '14px 16px', borderRadius: 14,
-                background: runResult.notified > 0 ? 'rgba(0,184,148,0.1)' : 'rgba(178,190,195,0.12)',
-                border: `1px solid ${runResult.notified > 0 ? 'rgba(0,184,148,0.3)' : 'var(--border)'}`,
-              }}>
-                <p style={{ fontWeight: 700, fontSize: 14, color: runResult.notified > 0 ? 'var(--success)' : 'var(--text-secondary)', marginBottom: 6 }}>
-                  {runResult.notified > 0 ? `✅ ${runResult.notified}件通知送信！` : '📭 新着なし（全件通知済み）'}
+              <div style={{ padding: '14px 16px', borderRadius: 14, background: 'var(--card)', border: '1px solid var(--border)' }}>
+                <p style={{ fontWeight: 700, fontSize: 14, color: runResult.notified > 0 ? 'var(--success)' : 'var(--text-secondary)', marginBottom: 8 }}>
+                  {runResult.notified > 0 ? `✅ ${runResult.notified}件を通知送信！` : '📭 新着なし'}
                 </p>
                 {runResult.results?.map((r, i) => (
-                  <p key={i} style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
-                    {r.name}: {r.found}件取得 → {r.notified}件通知
-                  </p>
+                  <div key={i} style={{ paddingTop: i > 0 ? 6 : 0, marginTop: i > 0 ? 6 : 0, borderTop: i > 0 ? '1px solid var(--border)' : 'none' }}>
+                    <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>{r.name}</p>
+                    {r.priceWarning ? (
+                      <p style={{ fontSize: 11, color: 'var(--danger)', marginTop: 2 }}>
+                        ⚠️ 価格下限 ≥ 上限のため0件 → 条件を編集して修正してください
+                      </p>
+                    ) : r.fetched === 0 ? (
+                      <p style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>
+                        取得0件（条件に合う商品なし）
+                      </p>
+                    ) : r.newItems === 0 ? (
+                      <p style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>
+                        {r.fetched}件取得 · 全件既通知済み
+                      </p>
+                    ) : (
+                      <p style={{ fontSize: 11, color: 'var(--success)', marginTop: 2 }}>
+                        {r.fetched}件取得 · {r.newItems}件新着 → {r.notified}件通知
+                      </p>
+                    )}
+                  </div>
                 ))}
               </div>
             )}

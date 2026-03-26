@@ -42,9 +42,10 @@ export async function POST(req: NextRequest) {
 
     const notifiedIds = await getNotifiedIds(userId)
     let totalNotified = 0
-    const results: { name: string; found: number; notified: number }[] = []
+    const results: { name: string; fetched: number; newItems: number; notified: number; priceWarning?: boolean }[] = []
 
     for (const cond of enabled) {
+      const priceWarning = cond.minPrice > 0 && cond.minPrice >= cond.maxPrice
       const key: RssKey = {
         keyword: cond.keyword, maxPrice: cond.maxPrice, minPrice: cond.minPrice,
         minBids: cond.minBids ?? 0, sellerType: cond.sellerType ?? 'all',
@@ -52,10 +53,10 @@ export async function POST(req: NextRequest) {
         sortOrder: cond.sortOrder ?? 'asc', buyItNow: cond.buyItNow ?? false,
       }
       const items = await fetchAuctionRss(key)
-      const newItems = items.filter((item: AuctionItem) => !notifiedIds.has(item.auctionId))
+      const freshItems = items.filter((item: AuctionItem) => !notifiedIds.has(item.auctionId))
       let condNotified = 0
 
-      for (const item of newItems.slice(0, 5)) { // 手動実行は最大5件
+      for (const item of freshItems.slice(0, 5)) { // 手動実行は最大5件
         const sent = await notifyUser(item, user)
         if (sent) {
           await markNotified(userId, item.auctionId)
@@ -78,10 +79,10 @@ export async function POST(req: NextRequest) {
 
       await updateCondition(cond.id, {
         lastCheckedAt: new Date().toISOString(),
-        lastFoundCount: newItems.length,
+        lastFoundCount: items.length,
       })
 
-      results.push({ name: cond.name, found: items.length, notified: condNotified })
+      results.push({ name: cond.name, fetched: items.length, newItems: freshItems.length, notified: condNotified, priceWarning })
     }
 
     return NextResponse.json({ notified: totalNotified, checked: enabled.length, results })

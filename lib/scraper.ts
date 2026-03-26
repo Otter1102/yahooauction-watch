@@ -15,9 +15,13 @@ type RssParams = Pick<
  * Yahoo Auction RSSフィードURL生成
  */
 export function buildRssUrl(p: RssParams): string {
-  const params = new URLSearchParams({ p: p.keyword, pc: String(p.maxPrice) })
+  // min > max は自動スワップ（フォームの入力ミス保護）
+  const maxPrice = Math.max(p.maxPrice, p.minPrice)
+  const minPrice = Math.min(p.maxPrice, p.minPrice)
 
-  if (p.minPrice > 0) params.set('pf', String(p.minPrice))
+  const params = new URLSearchParams({ p: p.keyword, pc: String(maxPrice) })
+
+  if (minPrice > 0) params.set('pf', String(minPrice))
   if (p.minBids > 0) params.set('aucmin_bidorbuy', String(p.minBids))
   if (p.sellerType === 'store') params.set('abatch', '1')
   if (p.sellerType === 'individual') params.set('abatch', '2')

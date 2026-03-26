@@ -94,6 +94,13 @@ export default function ConditionForm({ userId, condition, onSave, onClose }: Pr
     e.preventDefault()
     setLoading(true)
     setError('')
+    const maxP = Number(form.maxPrice)
+    const minP = Number(form.minPrice || 0)
+    if (minP > 0 && minP >= maxP) {
+      setError(`価格下限（¥${minP.toLocaleString()}）は上限（¥${maxP.toLocaleString()}）より小さくしてください`)
+      setLoading(false)
+      return
+    }
     const payload = {
       name: form.name,
       keyword: form.keyword,
