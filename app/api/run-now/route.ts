@@ -52,6 +52,7 @@ export async function POST(req: NextRequest) {
       simpleCount?: number
       rssUrl?: string
       httpStatus?: number
+      xmlPreview?: string
     }
     const results: ResultRow[] = []
 
@@ -64,7 +65,7 @@ export async function POST(req: NextRequest) {
         sortOrder: cond.sortOrder ?? 'asc', buyItNow: cond.buyItNow ?? false,
       }
 
-      const { items, url: rssUrl, httpStatus, rawCount } = await fetchAuctionRssWithMeta(key)
+      const { items, url: rssUrl, httpStatus, rawCount, xmlPreview } = await fetchAuctionRssWithMeta(key)
       const freshItems = items.filter((item: AuctionItem) => !notifiedIds.has(item.auctionId))
       let condNotified = 0
 
@@ -100,7 +101,7 @@ export async function POST(req: NextRequest) {
         lastFoundCount: items.length,
       })
 
-      results.push({ name: cond.name, fetched: items.length, rawCount, newItems: freshItems.length, notified: condNotified, priceWarning, simpleCount, rssUrl, httpStatus })
+      results.push({ name: cond.name, fetched: items.length, rawCount, newItems: freshItems.length, notified: condNotified, priceWarning, simpleCount, rssUrl, httpStatus, xmlPreview })
     }
 
     return NextResponse.json({ notified: totalNotified, checked: enabled.length, results })

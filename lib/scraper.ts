@@ -4,7 +4,14 @@
  */
 import { AuctionItem, SearchCondition } from './types'
 
-const USER_AGENT = 'Mozilla/5.0 (compatible; YahooAuctionWatch/1.0)'
+const USER_AGENT = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1'
+const FETCH_HEADERS = {
+  'User-Agent': USER_AGENT,
+  'Accept': 'application/rss+xml, application/xml, text/xml, */*',
+  'Accept-Language': 'ja-JP,ja;q=0.9',
+  'Referer': 'https://auctions.yahoo.co.jp/',
+  'Cache-Control': 'no-cache',
+}
 
 type RssParams = Pick<
   SearchCondition,
@@ -44,27 +51,28 @@ export async function fetchAuctionRss(p: RssParams): Promise<AuctionItem[]> {
   return items
 }
 
-export async function fetchAuctionRssWithMeta(p: RssParams): Promise<{ items: AuctionItem[]; url: string; httpStatus: number; rawCount: number }> {
+export async function fetchAuctionRssWithMeta(p: RssParams): Promise<{ items: AuctionItem[]; url: string; httpStatus: number; rawCount: number; xmlPreview: string }> {
   const url = buildRssUrl(p)
   let xml = ''
   let httpStatus = 0
 
   try {
     const res = await fetch(url, {
-      headers: { 'User-Agent': USER_AGENT },
+      headers: FETCH_HEADERS,
       signal: AbortSignal.timeout(12000),
     })
     httpStatus = res.status
-    if (!res.ok) return { items: [], url, httpStatus, rawCount: 0 }
+    if (!res.ok) return { items: [], url, httpStatus, rawCount: 0, xmlPreview: '' }
     xml = await res.text()
-  } catch {
-    return { items: [], url, httpStatus, rawCount: 0 }
+  } catch (e) {
+    return { items: [], url, httpStatus, rawCount: 0, xmlPreview: String(e) }
   }
 
-  // <item>タグの生の数（パース前）
   const rawCount = (xml.match(/<item>/g) ?? []).length
+  // 最初の300文字をデバッグ用に保持
+  const xmlPreview = xml.slice(0, 300).replace(/\s+/g, ' ').trim()
   const items = parseRss(xml)
-  return { items, url, httpStatus, rawCount }
+  return { items, url, httpStatus, rawCount, xmlPreview }
 }
 
 /**
@@ -77,7 +85,7 @@ export async function fetchAuctionRssSimple(keyword: string, maxPrice: number, m
   params.set('o1', 'a')
   const url = `https://auctions.yahoo.co.jp/rss/search/search?${params}`
   try {
-    const res = await fetch(url, { headers: { 'User-Agent': USER_AGENT }, signal: AbortSignal.timeout(10000) })
+    const res = await fetch(url, { headers: FETCH_HEADERS, signal: AbortSignal.timeout(10000) })
     if (!res.ok) return -1
     const xml = await res.text()
     return (xml.match(/<item>/g) ?? []).length

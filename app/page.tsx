@@ -34,7 +34,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [notifyReady, setNotifyReady] = useState(false)
   const [runState, setRunState] = useState<'idle' | 'running' | 'done'>('idle')
-  type RunResultRow = { name: string; fetched: number; rawCount: number; newItems: number; notified: number; priceWarning?: boolean; simpleCount?: number; rssUrl?: string; httpStatus?: number }
+  type RunResultRow = { name: string; fetched: number; rawCount: number; newItems: number; notified: number; priceWarning?: boolean; simpleCount?: number; rssUrl?: string; httpStatus?: number; xmlPreview?: string }
   const [runResult, setRunResult] = useState<{ notified: number; checked: number; results?: RunResultRow[] } | null>(null)
   const [resetting, setResetting] = useState(false)
   const [activeTab, setActiveTab] = useState('すべて')
@@ -344,9 +344,14 @@ export default function Dashboard() {
                             ヤフオク上に該当商品なし（キーワードか価格帯を変更してください）
                           </p>
                         )}
+                        {r.xmlPreview && (
+                          <p style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 4, wordBreak: 'break-all', fontFamily: 'monospace', background: 'var(--bg)', padding: '6px', borderRadius: 6 }}>
+                            {r.xmlPreview}
+                          </p>
+                        )}
                         {r.rssUrl && (
                           <a href={r.rssUrl} target="_blank" rel="noopener noreferrer"
-                            style={{ fontSize: 10, color: 'var(--accent)', display: 'block', wordBreak: 'break-all' }}>
+                            style={{ fontSize: 10, color: 'var(--accent)', display: 'block', wordBreak: 'break-all', marginTop: 4 }}>
                             🔗 RSSを確認する
                           </a>
                         )}
