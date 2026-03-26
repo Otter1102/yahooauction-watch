@@ -97,6 +97,12 @@ export async function updateCondition(
   if (updates.keyword !== undefined) row.keyword = updates.keyword
   if (updates.maxPrice !== undefined) row.max_price = updates.maxPrice
   if (updates.minPrice !== undefined) row.min_price = updates.minPrice
+  if (updates.minBids !== undefined) row.min_bids = updates.minBids
+  if (updates.sellerType !== undefined) row.seller_type = updates.sellerType
+  if (updates.itemCondition !== undefined) row.item_condition = updates.itemCondition
+  if (updates.sortBy !== undefined) row.sort_by = updates.sortBy
+  if (updates.sortOrder !== undefined) row.sort_order = updates.sortOrder
+  if (updates.buyItNow !== undefined) row.buy_it_now = updates.buyItNow
   if (updates.enabled !== undefined) row.enabled = updates.enabled
   if (updates.lastCheckedAt !== undefined) row.last_checked_at = updates.lastCheckedAt
   if (updates.lastFoundCount !== undefined) row.last_found_count = updates.lastFoundCount

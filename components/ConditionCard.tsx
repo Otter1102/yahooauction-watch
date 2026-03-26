@@ -2,13 +2,16 @@
 import { useState } from 'react'
 import { SearchCondition } from '@/lib/types'
 
-interface Props { condition: SearchCondition; onChange: () => void }
+interface Props {
+  condition: SearchCondition
+  onChange: () => void
+  onEdit: (condition: SearchCondition) => void
+}
 
 const SELLER_LABEL: Record<SearchCondition['sellerType'], string> = { all: '', store: 'ストア', individual: '個人' }
 const ITEM_LABEL: Record<SearchCondition['itemCondition'], string> = { all: '', new: '新品', used: '中古' }
 const SORT_LABEL: Record<SearchCondition['sortBy'], string> = { endTime: '終了順', bids: '入札数順', price: '価格順' }
 
-// 条件ごとにカードのグラデーションカラーを変える
 const CARD_GRADS = [
   'linear-gradient(135deg, #FF6B35, #FF3366)',
   'linear-gradient(135deg, #667EEA, #764BA2)',
@@ -17,12 +20,11 @@ const CARD_GRADS = [
   'linear-gradient(135deg, #2193B0, #6DD5FA)',
 ]
 
-export default function ConditionCard({ condition, onChange }: Props) {
+export default function ConditionCard({ condition, onChange, onEdit }: Props) {
   const [toggling, setToggling] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [showMenu, setShowMenu] = useState(false)
 
-  // IDの先頭数字からグラデーション選択
   const gradIndex = parseInt(condition.id.replace(/-/g, '').slice(-1), 16) % CARD_GRADS.length
   const grad = CARD_GRADS[gradIndex]
 
@@ -63,7 +65,7 @@ export default function ConditionCard({ condition, onChange }: Props) {
       borderRadius: 20,
       boxShadow: '0 4px 20px rgba(0,0,0,0.07)',
       overflow: 'hidden',
-      opacity: deleting ? 0.4 : condition.enabled ? 1 : 0.5,
+      opacity: deleting ? 0.4 : condition.enabled ? 1 : 0.55,
       transition: 'opacity 0.2s',
       display: 'flex',
     }}>
@@ -116,7 +118,7 @@ export default function ConditionCard({ condition, onChange }: Props) {
             )}
           </div>
 
-          {/* トグル + メニュー */}
+          {/* トグル + メニューボタン */}
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
             <label className="toggle" style={{ opacity: toggling ? 0.5 : 1 }}>
               <input type="checkbox" checked={condition.enabled} onChange={toggleEnabled} />
@@ -131,7 +133,16 @@ export default function ConditionCard({ condition, onChange }: Props) {
         </div>
 
         {showMenu && (
-          <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+          <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <button
+              onClick={() => { setShowMenu(false); onEdit(condition) }}
+              style={{
+                width: '100%', padding: '10px', borderRadius: 12,
+                background: 'var(--bg)',
+                color: 'var(--text-primary)', fontWeight: 700, fontSize: 14,
+                border: '1px solid var(--border)', cursor: 'pointer',
+              }}
+            >✏️ 条件を編集</button>
             <button
               onClick={() => { setShowMenu(false); remove() }}
               style={{

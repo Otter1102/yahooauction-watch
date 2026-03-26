@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { SearchCondition } from '@/lib/types'
 import ConditionCard from '@/components/ConditionCard'
 import ConditionForm from '@/components/ConditionForm'
@@ -11,14 +11,31 @@ function getUserId(): string {
   return id
 }
 
+// キーワードからカテゴリを自動判定
+function detectCategory(keyword: string): string {
+  const kw = keyword.toLowerCase()
+  if (/iphone|ipad|ipod|mac|android|スマホ|スマートフォン|pc|パソコン|カメラ|テレビ|airpods|イヤホン|スピーカー|家電|ノートパソコン|タブレット|プロジェクター|プリンター/.test(kw)) return '📱 家電'
+  if (/switch|ps5|ps4|ゲーム|nintendo|任天堂|ソフト|コントローラー|xbox|ゲームボーイ|ゲームキューブ|セガ/.test(kw)) return '🎮 ゲーム'
+  if (/ブランド|シャネル|ルイヴィトン|グッチ|バッグ|財布|服|スニーカー|ナイキ|アディダス|ヴィトン|コーチ|エルメス|ロレックス|時計|アパレル|コート|ジャケット|ワンピース|プラダ|バレンシアガ|ディオール/.test(kw)) return '👜 ファッション'
+  if (/車|バイク|タイヤ|ホイール|自動車|カーナビ|車両|パーツ|バンパー|エンジン|マフラー/.test(kw)) return '🚗 車・バイク'
+  if (/本|漫画|コミック|雑誌|小説|dvd|ブルーレイ|cd|レコード|映画|アニメ|書籍/.test(kw)) return '📚 本・メディア'
+  if (/ゴルフ|テニス|サッカー|野球|フィッシング|スポーツ|釣り|登山|アウトドア|キャンプ|スキー|スノーボード/.test(kw)) return '⚽ スポーツ'
+  if (/おもちゃ|フィギュア|プラモ|レゴ|ホビー|ガンプラ|鉄道|ミニカー|ドール|模型/.test(kw)) return '🎨 ホビー'
+  if (/家具|ソファ|テーブル|椅子|照明|インテリア|収納|棚|ベッド/.test(kw)) return '🏠 インテリア'
+  if (/コスメ|化粧品|香水|スキンケア|美容|シャンプー|ヘア/.test(kw)) return '💄 美容'
+  return '📦 その他'
+}
+
 export default function Dashboard() {
   const [userId, setUserId] = useState('')
   const [conditions, setConditions] = useState<SearchCondition[]>([])
   const [showForm, setShowForm] = useState(false)
+  const [editingCondition, setEditingCondition] = useState<SearchCondition | null>(null)
   const [loading, setLoading] = useState(true)
   const [notifyReady, setNotifyReady] = useState(false)
   const [runState, setRunState] = useState<'idle' | 'running' | 'done'>('idle')
   const [runResult, setRunResult] = useState<{ notified: number; checked: number; results?: { name: string; found: number; notified: number }[] } | null>(null)
+  const [activeTab, setActiveTab] = useState('すべて')
 
   async function init() {
     const id = getUserId()
@@ -44,7 +61,8 @@ export default function Dashboard() {
     const id = uid ?? userId
     if (!id) return
     const res = await fetch(`/api/conditions?userId=${id}`)
-    setConditions(await res.json())
+    const data = await res.json()
+    setConditions(data)
     setLoading(false)
   }
 
@@ -67,6 +85,29 @@ export default function Dashboard() {
   useEffect(() => { init() }, [])
 
   const activeCount = conditions.filter(c => c.enabled).length
+
+  // カテゴリー集計
+  const categoryMap = useMemo(() => {
+    const map = new Map<string, SearchCondition[]>()
+    for (const c of conditions) {
+      const cat = detectCategory(c.keyword)
+      if (!map.has(cat)) map.set(cat, [])
+      map.get(cat)!.push(c)
+    }
+    return map
+  }, [conditions])
+
+  // タブリスト（「すべて」+ 2件以上または複数カテゴリがある場合のみタブ表示）
+  const tabs = useMemo(() => {
+    const cats = Array.from(categoryMap.keys())
+    if (cats.length <= 1) return [] // 1カテゴリ以下はタブ不要
+    return ['すべて', ...cats]
+  }, [categoryMap])
+
+  const displayedConditions = useMemo(() => {
+    if (activeTab === 'すべて' || tabs.length === 0) return conditions
+    return categoryMap.get(activeTab) ?? []
+  }, [conditions, categoryMap, activeTab, tabs])
 
   return (
     <div style={{ minHeight: '100dvh', background: 'var(--bg)', paddingBottom: 'calc(var(--nav-height) + env(safe-area-inset-bottom,0px))' }}>
@@ -101,6 +142,38 @@ export default function Dashboard() {
             {loading ? '⟳' : '↻'}
           </button>
         </div>
+
+        {/* カテゴリータブ */}
+        {tabs.length > 0 && (
+          <div style={{
+            maxWidth: 480, margin: '12px auto 0',
+            display: 'flex', gap: 6, overflowX: 'auto',
+            paddingBottom: 2,
+            scrollbarWidth: 'none',
+          }}>
+            {tabs.map(tab => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                style={{
+                  flexShrink: 0, padding: '6px 12px',
+                  borderRadius: 20, border: 'none', cursor: 'pointer',
+                  fontSize: 12, fontWeight: 700,
+                  background: activeTab === tab ? 'white' : 'rgba(255,255,255,0.2)',
+                  color: activeTab === tab ? 'var(--accent)' : 'rgba(255,255,255,0.9)',
+                  transition: 'all 0.15s',
+                }}
+              >
+                {tab}
+                {tab !== 'すべて' && (
+                  <span style={{ marginLeft: 4, fontSize: 10, opacity: 0.8 }}>
+                    {categoryMap.get(tab)?.length ?? 0}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <div style={{ padding: '16px', maxWidth: 480, margin: '0 auto' }}>
@@ -139,7 +212,6 @@ export default function Dashboard() {
               { val: '10分', label: 'チェック間隔' },
             ].map((item, i) => (
               <div key={i} style={{ textAlign: 'center', flex: 1 }}>
-                {i > 0 && <div style={{ position: 'absolute' }} />}
                 <p style={{ fontSize: 26, fontWeight: 900, color: 'white', lineHeight: 1 }}>{item.val}</p>
                 <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)', marginTop: 4, fontWeight: 600 }}>{item.label}</p>
               </div>
@@ -168,12 +240,31 @@ export default function Dashboard() {
           </div>
         )}
 
+        {/* カテゴリーラベル（タブが有効かつ特定カテゴリ選択中） */}
+        {tabs.length > 0 && activeTab !== 'すべて' && displayedConditions.length > 0 && (
+          <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 10, paddingLeft: 4 }}>
+            {activeTab} · {displayedConditions.length}件
+          </p>
+        )}
+
         {/* 条件リスト */}
-        {conditions.length > 0 && (
+        {displayedConditions.length > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {conditions.map(c => (
-              <ConditionCard key={c.id} condition={c} onChange={() => loadConditions()} />
+            {displayedConditions.map(c => (
+              <ConditionCard
+                key={c.id}
+                condition={c}
+                onChange={() => loadConditions()}
+                onEdit={cond => setEditingCondition(cond)}
+              />
             ))}
+          </div>
+        )}
+
+        {/* タブ絞り込み中で0件 */}
+        {tabs.length > 0 && activeTab !== 'すべて' && displayedConditions.length === 0 && (
+          <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-tertiary)', fontSize: 14 }}>
+            このカテゴリの条件はありません
           </div>
         )}
 
@@ -246,11 +337,22 @@ export default function Dashboard() {
         +
       </button>
 
+      {/* 新規追加フォーム */}
       {showForm && userId && (
         <ConditionForm
           userId={userId}
           onSave={() => { setShowForm(false); loadConditions() }}
           onClose={() => setShowForm(false)}
+        />
+      )}
+
+      {/* 編集フォーム */}
+      {editingCondition && userId && (
+        <ConditionForm
+          userId={userId}
+          condition={editingCondition}
+          onSave={() => { setEditingCondition(null); loadConditions() }}
+          onClose={() => setEditingCondition(null)}
         />
       )}
     </div>

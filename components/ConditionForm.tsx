@@ -2,7 +2,12 @@
 import { useState } from 'react'
 import { SearchCondition } from '@/lib/types'
 
-interface Props { userId: string; onSave: () => void; onClose: () => void }
+interface Props {
+  userId: string
+  condition?: SearchCondition   // 渡すと編集モード
+  onSave: () => void
+  onClose: () => void
+}
 
 type FormState = {
   name: string
@@ -21,6 +26,21 @@ const DEFAULTS: FormState = {
   name: '', keyword: '', maxPrice: '', minPrice: '', minBids: '',
   sellerType: 'all', itemCondition: 'all',
   sortBy: 'endTime', sortOrder: 'asc', buyItNow: false,
+}
+
+function conditionToForm(c: SearchCondition): FormState {
+  return {
+    name: c.name,
+    keyword: c.keyword,
+    maxPrice: String(c.maxPrice),
+    minPrice: c.minPrice > 0 ? String(c.minPrice) : '',
+    minBids: c.minBids > 0 ? String(c.minBids) : '',
+    sellerType: c.sellerType,
+    itemCondition: c.itemCondition,
+    sortBy: c.sortBy,
+    sortOrder: c.sortOrder,
+    buyItNow: c.buyItNow,
+  }
 }
 
 function SegmentControl<T extends string>({
@@ -53,11 +73,19 @@ function SegmentControl<T extends string>({
   )
 }
 
-export default function ConditionForm({ userId, onSave, onClose }: Props) {
-  const [form, setForm] = useState<FormState>(DEFAULTS)
+export default function ConditionForm({ userId, condition, onSave, onClose }: Props) {
+  const isEdit = !!condition
+  const [form, setForm] = useState<FormState>(isEdit ? conditionToForm(condition!) : DEFAULTS)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [showAdvanced, setShowAdvanced] = useState(false)
+  const [showAdvanced, setShowAdvanced] = useState(isEdit && (
+    condition!.sellerType !== 'all' ||
+    condition!.itemCondition !== 'all' ||
+    condition!.minBids > 0 ||
+    condition!.buyItNow ||
+    condition!.sortBy !== 'endTime' ||
+    condition!.sortOrder !== 'asc'
+  ))
 
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) =>
     setForm(f => ({ ...f, [k]: v }))
@@ -66,24 +94,30 @@ export default function ConditionForm({ userId, onSave, onClose }: Props) {
     e.preventDefault()
     setLoading(true)
     setError('')
+    const payload = {
+      name: form.name,
+      keyword: form.keyword,
+      maxPrice: Number(form.maxPrice),
+      minPrice: Number(form.minPrice || 0),
+      minBids: Number(form.minBids || 0),
+      sellerType: form.sellerType,
+      itemCondition: form.itemCondition,
+      sortBy: form.sortBy,
+      sortOrder: form.sortOrder,
+      buyItNow: form.buyItNow,
+    }
     try {
-      const res = await fetch('/api/conditions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId,
-          name: form.name,
-          keyword: form.keyword,
-          maxPrice: Number(form.maxPrice),
-          minPrice: Number(form.minPrice || 0),
-          minBids: Number(form.minBids || 0),
-          sellerType: form.sellerType,
-          itemCondition: form.itemCondition,
-          sortBy: form.sortBy,
-          sortOrder: form.sortOrder,
-          buyItNow: form.buyItNow,
-        }),
-      })
+      const res = isEdit
+        ? await fetch(`/api/conditions/${condition!.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          })
+        : await fetch('/api/conditions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId, ...payload }),
+          })
       if (!res.ok) throw new Error((await res.json()).error)
       onSave()
     } catch (err) {
@@ -114,7 +148,14 @@ export default function ConditionForm({ userId, onSave, onClose }: Props) {
         <div style={{ width: 36, height: 4, borderRadius: 2, background: 'var(--border)', margin: '0 auto 16px' }} />
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
-          <h2 style={{ fontWeight: 700, fontSize: 18 }}>検索条件を追加</h2>
+          <div>
+            <h2 style={{ fontWeight: 700, fontSize: 18 }}>
+              {isEdit ? '✏️ 条件を編集' : '検索条件を追加'}
+            </h2>
+            {isEdit && (
+              <p style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>変更後に保存してください</p>
+            )}
+          </div>
           <button onClick={onClose} style={{ background: 'var(--bg)', border: 'none', borderRadius: 20, width: 32, height: 32, fontSize: 16, cursor: 'pointer', color: 'var(--text-secondary)' }}>✕</button>
         </div>
 
@@ -245,7 +286,7 @@ export default function ConditionForm({ userId, onSave, onClose }: Props) {
           )}
 
           <button type="submit" disabled={loading} className="btn-primary" style={{ marginTop: 4 }}>
-            {loading ? '保存中...' : '+ 条件を追加する'}
+            {loading ? '保存中...' : isEdit ? '✓ 変更を保存する' : '+ 条件を追加する'}
           </button>
         </form>
       </div>
