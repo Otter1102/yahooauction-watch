@@ -1,14 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient } from '@supabase/ssr'
 import { verifyTrialCookie, TRIAL_COOKIE } from './lib/trial'
 
-// これらのパスは認証不要
 const PUBLIC_PREFIXES = ['/login', '/start/', '/expired', '/api/', '/_next', '/favicon', '/icons', '/manifest']
+const SESSION_COOKIE  = 'yw_session'
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl
 
-  // 静的アセット・公開パスはそのまま通す
   if (PUBLIC_PREFIXES.some(p => pathname.startsWith(p))) {
     return withSecurity(NextResponse.next())
   }
@@ -18,45 +16,44 @@ export async function middleware(req: NextRequest) {
   if (trialVal) {
     const data = await verifyTrialCookie(trialVal)
     if (data && new Date(data.exp) > new Date()) {
-      // 有効なトライアル
       return withSecurity(NextResponse.next())
     }
-    // 期限切れ → 削除して /expired へ
     const res = NextResponse.redirect(new URL('/expired', req.url))
     res.cookies.delete(TRIAL_COOKIE)
     return withSecurity(res)
   }
 
-  // ─── Supabase Auth チェック ───
-  const res = NextResponse.next({ request: req })
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll: () => req.cookies.getAll(),
-        setAll: (list: { name: string; value: string; options?: Record<string, unknown> }[]) =>
-          list.forEach(({ name, value, options }) => {
-            req.cookies.set(name, value)
-            res.cookies.set(name, value, options as Parameters<typeof res.cookies.set>[2])
-          }),
-      },
-    },
-  )
-
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) {
-    return NextResponse.redirect(new URL('/login', req.url))
+  // ─── 本番セッション Cookie チェック ───
+  const sessionToken = req.cookies.get(SESSION_COOKIE)?.value
+  if (sessionToken) {
+    // Supabase access_token をサーバーサイドで検証
+    const ok = await verifySupabaseToken(sessionToken)
+    if (ok) return withSecurity(NextResponse.next())
   }
 
-  return withSecurity(res)
+  return NextResponse.redirect(new URL('/login', req.url))
+}
+
+async function verifySupabaseToken(token: string): Promise<boolean> {
+  try {
+    const url = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1/user`
+    const res = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      },
+      signal: AbortSignal.timeout(3000),
+    })
+    return res.ok
+  } catch {
+    return false
+  }
 }
 
 function withSecurity(res: NextResponse): NextResponse {
   res.headers.set('X-Frame-Options', 'DENY')
   res.headers.set('X-Content-Type-Options', 'nosniff')
   res.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
-  res.headers.set('X-XSS-Protection', '1; mode=block')
   res.headers.set('X-Robots-Tag', 'noindex, nofollow')
   return res
 }
