@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { NotificationRecord } from '@/lib/types'
+import AuctionThumbnail from '@/components/AuctionThumbnail'
 
 function getUserId() {
   if (typeof window === 'undefined') return ''
@@ -137,28 +138,13 @@ export default function HistoryPage() {
                     WebkitTapHighlightColor: 'rgba(0,0,0,0.04)',
                   }}>
 
-                    {/* Thumbnail */}
-                    <div style={{
-                      width: 60, height: 60, borderRadius: 9, flexShrink: 0,
-                      background: 'var(--fill)', overflow: 'hidden',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    }}>
-                      {r.imageUrl ? (
-                        <img
-                          src={r.imageUrl}
-                          alt=""
-                          width={60} height={60}
-                          style={{ width: 60, height: 60, objectFit: 'cover', display: 'block' }}
-                          onError={e => {
-                            const t = e.currentTarget
-                            t.style.display = 'none'
-                            if (t.parentElement) t.parentElement.innerHTML = '<span style="font-size:24px;opacity:0.3">🏷️</span>'
-                          }}
-                        />
-                      ) : (
-                        <span style={{ fontSize: 24, opacity: 0.25 }}>🏷️</span>
-                      )}
-                    </div>
+                    {/* Thumbnail — DBに保存済みなら即表示、なければ /api/thumb で遅延取得 */}
+                    <AuctionThumbnail
+                      savedUrl={r.imageUrl ?? ''}
+                      auctionUrl={r.url}
+                      size={60}
+                      radius={9}
+                    />
 
                     {/* Content */}
                     <div style={{ flex: 1, minWidth: 0 }}>
