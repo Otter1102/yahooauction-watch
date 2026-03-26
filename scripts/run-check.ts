@@ -6,7 +6,7 @@
  * 実行: npx tsx scripts/run-check.ts
  * 環境変数: NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_KEY
  */
-import { getAllEnabledConditions, getNotifiedIds, markNotified, addHistory, updateCondition, cleanupOldNotified } from '../lib/storage'
+import { getAllEnabledConditions, getNotifiedIds, markNotified, addHistory, updateCondition } from '../lib/storage'
 import { fetchAuctionRss } from '../lib/scraper'
 import { notifyUser } from '../lib/notifier'
 import { getSupabaseAdmin } from '../lib/supabase'
@@ -140,9 +140,6 @@ async function main() {
       await new Promise(r => setTimeout(r, 1000))
     }
   }
-
-  // 7日以上古い通知済みレコードをクリーンアップ
-  await cleanupOldNotified()
 
   console.log(`\n=== 完了: 合計${totalNotified}件通知 ===\n`)
 }

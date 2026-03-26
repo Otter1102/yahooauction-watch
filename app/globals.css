@@ -29,8 +29,11 @@ html, body {
   height: 100%;
   background: var(--bg);
   color: var(--text-primary);
-  font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', 'Yu Gothic UI', 'Noto Sans JP', sans-serif;
   -webkit-font-smoothing: antialiased;
+  font-weight: 400;
+  line-height: 1.5;
+  letter-spacing: 0.01em;
 }
 
 /* Gradient text utility */
@@ -50,22 +53,22 @@ html, body {
 
 /* Buttons */
 .btn-primary {
-  display: block; width: 100%; padding: 16px;
+  display: block; width: 100%; padding: 15px;
   background: var(--grad-primary);
-  color: white; font-size: 15px; font-weight: 700;
-  border: none; border-radius: 16px; cursor: pointer;
-  box-shadow: 0 8px 24px rgba(255, 107, 53, 0.35);
+  color: white; font-size: 14px; font-weight: 600;
+  border: none; border-radius: 14px; cursor: pointer;
+  box-shadow: 0 4px 16px rgba(255, 107, 53, 0.28);
   transition: transform 0.15s, box-shadow 0.15s;
-  text-align: center; font-family: inherit;
+  text-align: center; font-family: inherit; letter-spacing: 0.02em;
 }
-.btn-primary:active { transform: scale(0.97); box-shadow: 0 4px 12px rgba(255,107,53,0.25); }
-.btn-primary:disabled { opacity: 0.6; }
+.btn-primary:active { transform: scale(0.97); box-shadow: 0 2px 8px rgba(255,107,53,0.2); }
+.btn-primary:disabled { opacity: 0.55; }
 
 .btn-secondary {
-  display: block; width: 100%; padding: 14px;
+  display: block; width: 100%; padding: 13px;
   background: var(--bg); color: var(--text-secondary);
-  font-size: 14px; font-weight: 600; font-family: inherit;
-  border: 1.5px solid var(--border); border-radius: 14px; cursor: pointer;
+  font-size: 14px; font-weight: 500; font-family: inherit;
+  border: 1px solid var(--border); border-radius: 12px; cursor: pointer;
 }
 
 /* Inputs */

@@ -127,32 +127,32 @@ export default function Dashboard() {
   return (
     <div style={{ minHeight: '100dvh', background: 'var(--bg)', paddingBottom: 'calc(var(--nav-height) + env(safe-area-inset-bottom,0px))' }}>
 
-      {/* グラデーションヘッダー */}
+      {/* ヘッダー */}
       <div style={{
         background: 'var(--grad-primary)',
-        padding: '20px 20px 18px',
+        padding: 'calc(env(safe-area-inset-top, 0px) + 16px) 20px 16px',
         position: 'sticky', top: 0, zIndex: 50,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', maxWidth: 480, margin: '0 auto' }}>
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
-              <span style={{ fontSize: 24 }}>⚡</span>
-              <h1 style={{ fontWeight: 900, fontSize: 24, color: 'white', letterSpacing: '-0.5px' }}>
-                ヤフオク<span style={{ fontStyle: 'italic' }}>watch</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 1 }}>
+              <span style={{ fontSize: 18 }}>⚡</span>
+              <h1 style={{ fontWeight: 700, fontSize: 20, color: 'white', letterSpacing: '-0.3px' }}>
+                ヤフオク<span style={{ fontWeight: 400, fontStyle: 'italic', opacity: 0.92 }}>watch</span>
               </h1>
             </div>
-            <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.80)', marginLeft: 32 }}>
+            <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)', marginLeft: 25, fontWeight: 400 }}>
               {loading ? '読み込み中...' : `${conditions.length}件の監視条件`}
               {activeCount > 0 && !loading && (
-                <span style={{ marginLeft: 8, color: '#FFE066', fontWeight: 700 }}>
-                  ● {activeCount}件稼働中
+                <span style={{ marginLeft: 7, color: 'rgba(255,255,255,0.95)', fontWeight: 500 }}>
+                  · {activeCount}件稼働中
                 </span>
               )}
             </p>
           </div>
           <button
             onClick={() => loadConditions()}
-            style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: 22, width: 40, height: 40, fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}
+            style={{ background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: 20, width: 36, height: 36, fontSize: 16, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}
           >
             {loading ? '⟳' : '↻'}
           </button>
@@ -215,20 +215,21 @@ export default function Dashboard() {
         {/* 稼働中ステータスカード */}
         {conditions.length > 0 && !loading && (
           <div style={{
-            borderRadius: 20, overflow: 'hidden',
-            background: 'var(--grad-cool)',
-            padding: '18px 20px', marginBottom: 16,
-            boxShadow: '0 8px 32px rgba(102,126,234,0.3)',
+            borderRadius: 16,
+            background: 'var(--card)',
+            padding: '14px 8px', marginBottom: 14,
+            boxShadow: '0 1px 6px rgba(0,0,0,0.06)',
+            border: '1px solid var(--border)',
             display: 'flex', justifyContent: 'space-around', alignItems: 'center',
           }}>
             {[
-              { val: activeCount, label: '稼働中' },
-              { val: conditions.length, label: '総条件数' },
-              { val: '10分', label: 'チェック間隔' },
+              { val: activeCount, label: '稼働中', color: activeCount > 0 ? 'var(--accent)' : 'var(--text-tertiary)' },
+              { val: conditions.length, label: '総条件数', color: 'var(--text-primary)' },
+              { val: '10分', label: 'チェック間隔', color: 'var(--text-secondary)' },
             ].map((item, i) => (
-              <div key={i} style={{ textAlign: 'center', flex: 1 }}>
-                <p style={{ fontSize: 26, fontWeight: 900, color: 'white', lineHeight: 1 }}>{item.val}</p>
-                <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)', marginTop: 4, fontWeight: 600 }}>{item.label}</p>
+              <div key={i} style={{ textAlign: 'center', flex: 1, borderLeft: i > 0 ? '1px solid var(--border)' : 'none', padding: '2px 0' }}>
+                <p style={{ fontSize: 22, fontWeight: 700, color: item.color, lineHeight: 1 }}>{item.val}</p>
+                <p style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 4, fontWeight: 400, letterSpacing: 0.3 }}>{item.label}</p>
               </div>
             ))}
           </div>
@@ -243,7 +244,7 @@ export default function Dashboard() {
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               fontSize: 48, boxShadow: '0 12px 40px rgba(255,107,53,0.35)',
             }}>🔍</div>
-            <p style={{ fontWeight: 800, fontSize: 20, color: 'var(--text-primary)', marginBottom: 10 }}>
+            <p style={{ fontWeight: 600, fontSize: 18, color: 'var(--text-primary)', marginBottom: 10 }}>
               ウォッチリストが空です
             </p>
             <p style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 32, lineHeight: 1.7 }}>
@@ -290,13 +291,13 @@ export default function Dashboard() {
                 onClick={runNow}
                 disabled={runState === 'running' || resetting || !notifyReady}
                 style={{
-                  flex: 1, padding: '14px 16px',
+                  flex: 1, padding: '13px 16px',
                   background: (runState === 'running' || resetting) ? 'var(--bg)' : 'var(--card)',
-                  border: '1.5px solid var(--border)', borderRadius: 16,
-                  fontSize: 14, fontWeight: 700, cursor: (runState === 'running' || resetting) ? 'default' : 'pointer',
+                  border: '1px solid var(--border)', borderRadius: 12,
+                  fontSize: 13, fontWeight: 600, cursor: (runState === 'running' || resetting) ? 'default' : 'pointer',
                   color: 'var(--text-primary)', fontFamily: 'inherit',
                   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                  opacity: !notifyReady ? 0.5 : 1,
+                  opacity: !notifyReady ? 0.45 : 1,
                 }}
               >
                 {runState === 'running' ? '🔄 チェック中...' : '▶ 今すぐチェック'}
@@ -306,12 +307,12 @@ export default function Dashboard() {
                 disabled={runState === 'running' || resetting || !notifyReady}
                 title="通知済み履歴を全消去して最初からチェック（テスト用）"
                 style={{
-                  padding: '14px 16px',
-                  background: 'var(--card)', border: '1.5px solid var(--border)', borderRadius: 16,
-                  fontSize: 13, fontWeight: 700, cursor: (runState === 'running' || resetting) ? 'default' : 'pointer',
+                  padding: '13px 16px',
+                  background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12,
+                  fontSize: 12, fontWeight: 500, cursor: (runState === 'running' || resetting) ? 'default' : 'pointer',
                   color: 'var(--text-secondary)', fontFamily: 'inherit',
                   display: 'flex', alignItems: 'center', gap: 4,
-                  opacity: !notifyReady ? 0.5 : 1,
+                  opacity: !notifyReady ? 0.45 : 1,
                   whiteSpace: 'nowrap',
                 }}
               >

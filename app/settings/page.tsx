@@ -73,14 +73,14 @@ export default function SettingsPage() {
   return (
     <div style={{ minHeight: '100dvh', background: 'var(--bg)', paddingBottom: 'calc(var(--nav-height) + env(safe-area-inset-bottom,0px))' }}>
 
-      {/* パープルグラデーションヘッダー */}
-      <div style={{ background: 'var(--grad-cool)', padding: '20px 20px 18px', position: 'sticky', top: 0, zIndex: 50 }}>
+      {/* ヘッダー */}
+      <div style={{ background: 'var(--grad-cool)', padding: 'calc(env(safe-area-inset-top, 0px) + 16px) 20px 16px', position: 'sticky', top: 0, zIndex: 50 }}>
         <div style={{ maxWidth: 480, margin: '0 auto' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
-            <span style={{ fontSize: 22 }}>⚙️</span>
-            <h1 style={{ fontWeight: 900, fontSize: 24, color: 'white', letterSpacing: '-0.5px' }}>設定</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 1 }}>
+            <span style={{ fontSize: 18 }}>⚙️</span>
+            <h1 style={{ fontWeight: 700, fontSize: 20, color: 'white', letterSpacing: '-0.3px' }}>設定</h1>
           </div>
-          <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.8)', marginLeft: 30 }}>通知先を設定してください</p>
+          <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)', marginLeft: 25, fontWeight: 400 }}>通知先を設定してください</p>
         </div>
       </div>
 
@@ -96,7 +96,7 @@ export default function SettingsPage() {
                 background: 'none', border: 'none', cursor: 'pointer',
                 borderBottom: i < 2 ? '1px solid var(--border)' : 'none',
               }}>
-              <span style={{ fontWeight: 600, fontSize: 15, color: 'var(--text-primary)' }}>
+              <span style={{ fontWeight: 500, fontSize: 14, color: 'var(--text-primary)' }}>
                 {ch === 'ntfy' ? '📲 ntfy（推奨・完全無料）' : ch === 'discord' ? '💬 Discord' : '🔀 両方'}
               </span>
               <div style={{
@@ -120,16 +120,16 @@ export default function SettingsPage() {
               {/* Step 1 */}
               <div style={{ padding: '16px', borderBottom: '1px solid var(--border)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                  <div style={{ width: 24, height: 24, borderRadius: 8, background: 'var(--grad-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, color: 'white', flexShrink: 0 }}>1</div>
-                  <p style={{ fontWeight: 700, fontSize: 14 }}>アプリをインストール</p>
+                  <div style={{ width: 22, height: 22, borderRadius: 7, background: 'var(--grad-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600, color: 'white', flexShrink: 0 }}>1</div>
+                  <p style={{ fontWeight: 600, fontSize: 14 }}>アプリをインストール</p>
                 </div>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <a href="https://apps.apple.com/app/ntfy/id1625396347" target="_blank" rel="noopener noreferrer"
-                    style={{ flex: 1, textAlign: 'center', padding: '10px', background: 'var(--bg)', borderRadius: 12, fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', textDecoration: 'none', border: '1px solid var(--border)' }}>
+                    style={{ flex: 1, textAlign: 'center', padding: '10px', background: 'var(--bg)', borderRadius: 10, fontSize: 13, fontWeight: 500, color: 'var(--text-primary)', textDecoration: 'none', border: '1px solid var(--border)' }}>
                     🍎 iOS
                   </a>
                   <a href="https://play.google.com/store/apps/details?id=io.heckel.ntfy" target="_blank" rel="noopener noreferrer"
-                    style={{ flex: 1, textAlign: 'center', padding: '10px', background: 'var(--bg)', borderRadius: 12, fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', textDecoration: 'none', border: '1px solid var(--border)' }}>
+                    style={{ flex: 1, textAlign: 'center', padding: '10px', background: 'var(--bg)', borderRadius: 10, fontSize: 13, fontWeight: 500, color: 'var(--text-primary)', textDecoration: 'none', border: '1px solid var(--border)' }}>
                     🤖 Android
                   </a>
                 </div>
@@ -138,17 +138,17 @@ export default function SettingsPage() {
               {/* Step 2 */}
               <div style={{ padding: '16px', borderBottom: '1px solid var(--border)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                  <div style={{ width: 24, height: 24, borderRadius: 8, background: 'var(--grad-cool)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, color: 'white', flexShrink: 0 }}>2</div>
-                  <p style={{ fontWeight: 700, fontSize: 14 }}>トピック名を設定</p>
+                  <div style={{ width: 22, height: 22, borderRadius: 7, background: 'var(--grad-cool)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600, color: 'white', flexShrink: 0 }}>2</div>
+                  <p style={{ fontWeight: 600, fontSize: 14 }}>トピック名を設定</p>
                 </div>
-                <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 10, marginLeft: 32 }}>下記をそのまま使うか、好きな名前に変更できます</p>
+                <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 10, marginLeft: 30 }}>下記をそのまま使うか、好きな名前に変更できます</p>
                 <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-                  <code style={{ flex: 1, background: 'var(--accent-light)', color: 'var(--accent)', padding: '10px 12px', borderRadius: 10, fontSize: 13, fontWeight: 700 }}>
+                  <code style={{ flex: 1, background: 'var(--accent-light)', color: 'var(--accent)', padding: '10px 12px', borderRadius: 10, fontSize: 13, fontWeight: 500 }}>
                     {suggestedTopic}
                   </code>
                   <button onClick={() => copy(suggestedTopic)}
-                    style={{ padding: '10px 14px', background: copied ? 'var(--grad-teal)' : 'var(--bg)', border: '1px solid var(--border)', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: copied ? 'white' : 'var(--text-secondary)', whiteSpace: 'nowrap', transition: 'all 0.2s' }}>
-                    {copied ? '✓ コピー' : 'コピー'}
+                    style={{ padding: '10px 14px', background: copied ? 'var(--success)' : 'var(--bg)', border: '1px solid var(--border)', borderRadius: 10, fontSize: 12, fontWeight: 500, cursor: 'pointer', color: copied ? 'white' : 'var(--text-secondary)', whiteSpace: 'nowrap', transition: 'all 0.2s' }}>
+                    {copied ? '✓ コピー済' : 'コピー'}
                   </button>
                 </div>
                 <input placeholder="トピック名を入力（英数字・ハイフン）" value={user.ntfyTopic} onChange={e => set('ntfyTopic', e.target.value)} />
@@ -157,16 +157,16 @@ export default function SettingsPage() {
               {/* Step 3 */}
               <div style={{ padding: '16px', background: '#F9F9FB' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                  <div style={{ width: 24, height: 24, borderRadius: 8, background: 'var(--grad-teal)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, color: 'white', flexShrink: 0 }}>3</div>
-                  <p style={{ fontWeight: 700, fontSize: 14 }}>ntfyアプリで購読する</p>
+                  <div style={{ width: 22, height: 22, borderRadius: 7, background: 'var(--grad-teal)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600, color: 'white', flexShrink: 0 }}>3</div>
+                  <p style={{ fontWeight: 600, fontSize: 14 }}>ntfyアプリで購読する</p>
                 </div>
-                <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.9, marginLeft: 32 }}>
+                <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.9, marginLeft: 30 }}>
                   <p>1. ntfyアプリを開く</p>
                   <p>2. 右下の「＋」をタップ</p>
                   <p>3. 上のトピック名を貼り付け</p>
                   <p>4.「Subscribe」をタップ</p>
                 </div>
-                <div style={{ marginTop: 12, padding: '10px 14px', background: 'rgba(0,184,148,0.1)', borderRadius: 10, fontSize: 12, color: 'var(--success)', fontWeight: 700, marginLeft: 32 }}>
+                <div style={{ marginTop: 12, padding: '10px 14px', background: 'rgba(0,184,148,0.08)', borderRadius: 10, fontSize: 12, color: 'var(--success)', fontWeight: 500, marginLeft: 30 }}>
                   ✅ 設定完了！以降は自動で通知が届きます
                 </div>
               </div>
@@ -193,9 +193,9 @@ export default function SettingsPage() {
         <div style={{ marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
           <button onClick={test} disabled={testState === 'loading'}
             style={{
-              padding: '14px', background: 'var(--card)',
-              border: '1.5px solid var(--border)', borderRadius: 16,
-              fontSize: 14, fontWeight: 700, cursor: 'pointer',
+              padding: '13px', background: 'var(--card)',
+              border: '1px solid var(--border)', borderRadius: 12,
+              fontSize: 13, fontWeight: 500, cursor: 'pointer',
               color: 'var(--text-primary)', fontFamily: 'inherit',
             }}>
             {testState === 'loading' ? '送信中...' : '📨 テスト通知を送信'}

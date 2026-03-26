@@ -75,28 +75,27 @@ export default function ConditionCard({ condition, onChange, onEdit }: Props) {
       <div style={{ flex: 1, padding: '14px 14px 14px 12px' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
 
-          {/* グラデーションアイコン */}
+          {/* アイコン */}
           <div style={{
-            width: 46, height: 46, borderRadius: 14, flexShrink: 0,
-            background: condition.enabled ? grad : 'var(--bg)',
+            width: 40, height: 40, borderRadius: 12, flexShrink: 0,
+            background: condition.enabled ? 'rgba(255,107,53,0.1)' : 'var(--bg)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 22,
-            boxShadow: condition.enabled ? `0 4px 14px rgba(0,0,0,0.15)` : 'none',
+            fontSize: 18,
           }}>
             🏷️
           </div>
 
           {/* 情報 */}
           <div style={{ flex: 1, minWidth: 0 }}>
-            <p style={{ fontWeight: 700, fontSize: 15, color: 'var(--text-primary)', marginBottom: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <p style={{ fontWeight: 600, fontSize: 14, color: 'var(--text-primary)', marginBottom: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {condition.name}
             </p>
-            <p style={{ fontSize: 13, fontWeight: 700, marginBottom: 4, background: grad, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
+            <p style={{ fontSize: 13, fontWeight: 500, marginBottom: 3, color: condition.enabled ? 'var(--accent)' : 'var(--text-tertiary)' }}>
               {condition.keyword}
             </p>
-            <p style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-              {condition.minPrice > 0 ? `¥${condition.minPrice.toLocaleString()} 〜 ` : ''}
-              上限 ¥{condition.maxPrice.toLocaleString()}
+            <p style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 400 }}>
+              {condition.minPrice > 0 ? `¥${condition.minPrice.toLocaleString()} 〜 ` : '〜 '}
+              ¥{condition.maxPrice.toLocaleString()}
             </p>
 
             {tags.length > 0 && (
@@ -137,19 +136,19 @@ export default function ConditionCard({ condition, onChange, onEdit }: Props) {
             <button
               onClick={() => { setShowMenu(false); onEdit(condition) }}
               style={{
-                width: '100%', padding: '10px', borderRadius: 12,
+                width: '100%', padding: '10px', borderRadius: 10,
                 background: 'var(--bg)',
-                color: 'var(--text-primary)', fontWeight: 700, fontSize: 14,
+                color: 'var(--text-primary)', fontWeight: 500, fontSize: 13,
                 border: '1px solid var(--border)', cursor: 'pointer',
               }}
             >✏️ 条件を編集</button>
             <button
               onClick={() => { setShowMenu(false); remove() }}
               style={{
-                width: '100%', padding: '10px', borderRadius: 12,
-                background: 'linear-gradient(135deg, rgba(225,112,85,0.12), rgba(225,112,85,0.06))',
-                color: 'var(--danger)', fontWeight: 700, fontSize: 14,
-                border: '1px solid rgba(225,112,85,0.2)', cursor: 'pointer',
+                width: '100%', padding: '10px', borderRadius: 10,
+                background: 'rgba(225,112,85,0.06)',
+                color: 'var(--danger)', fontWeight: 500, fontSize: 13,
+                border: '1px solid rgba(225,112,85,0.15)', cursor: 'pointer',
               }}
             >🗑️ この条件を削除</button>
           </div>

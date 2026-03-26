@@ -156,7 +156,7 @@ export default function ConditionForm({ userId, condition, onSave, onClose }: Pr
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
           <div>
-            <h2 style={{ fontWeight: 700, fontSize: 18 }}>
+            <h2 style={{ fontWeight: 600, fontSize: 17 }}>
               {isEdit ? '✏️ 条件を編集' : '検索条件を追加'}
             </h2>
             {isEdit && (
@@ -349,5 +349,5 @@ export default function ConditionForm({ userId, condition, onSave, onClose }: Pr
 }
 
 const labelStyle: React.CSSProperties = {
-  fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 6,
+  fontSize: 11, fontWeight: 500, color: 'var(--text-secondary)', display: 'block', marginBottom: 5, letterSpacing: 0.3,
 }
