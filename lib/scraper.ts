@@ -247,11 +247,11 @@ function extractItemsFromText(text: string): AuctionItem[] {
       let title = ''
       for (const tp of titlePatterns) {
         const tm = ctx.match(tp)
-        if (tm?.[1]?.trim().length >= 3) {
-          title = tm[1].replace(/\\n/g, '').replace(/\\"/g, '"').replace(/&amp;/g, '&').trim()
-          // auctionIDなどが混入していないか簡易チェック
-          if (!/^[a-z][0-9]+$/.test(title)) break
-          title = ''
+        const candidate = tm?.[1]?.trim() ?? ''
+        if (candidate.length >= 3) {
+          const clean = candidate.replace(/\\n/g, '').replace(/\\"/g, '"').replace(/&amp;/g, '&').trim()
+          // auctionIDだけのような短い文字列を除外
+          if (clean.length >= 3 && !/^[a-z][0-9]+$/.test(clean)) { title = clean; break }
         }
       }
       if (!title) continue
