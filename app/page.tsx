@@ -17,6 +17,8 @@ export default function Dashboard() {
   const [showForm, setShowForm] = useState(false)
   const [loading, setLoading] = useState(true)
   const [notifyReady, setNotifyReady] = useState(false)
+  const [runState, setRunState] = useState<'idle' | 'running' | 'done'>('idle')
+  const [runResult, setRunResult] = useState<{ notified: number; checked: number; results?: { name: string; found: number; notified: number }[] } | null>(null)
 
   async function init() {
     const id = getUserId()
@@ -44,6 +46,22 @@ export default function Dashboard() {
     const res = await fetch(`/api/conditions?userId=${id}`)
     setConditions(await res.json())
     setLoading(false)
+  }
+
+  async function runNow() {
+    if (!userId || runState === 'running') return
+    setRunState('running')
+    setRunResult(null)
+    const res = await fetch('/api/run-now', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId }),
+    })
+    const data = await res.json()
+    setRunResult(data)
+    setRunState('done')
+    await loadConditions(userId)
+    setTimeout(() => setRunState('idle'), 15000)
   }
 
   useEffect(() => { init() }, [])
@@ -160,14 +178,49 @@ export default function Dashboard() {
         )}
 
         {conditions.length > 0 && (
-          <div style={{
-            marginTop: 16, padding: '12px 16px',
-            background: 'var(--card)', borderRadius: 14,
-            fontSize: 12, color: 'var(--text-tertiary)',
-            display: 'flex', alignItems: 'center', gap: 6,
-          }}>
-            <span style={{ fontSize: 14 }}>⚡</span>
-            <span>10分ごとに自動チェック · 新着のみ通知</span>
+          <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <button
+              onClick={runNow}
+              disabled={runState === 'running' || !notifyReady}
+              style={{
+                width: '100%', padding: '14px 16px',
+                background: runState === 'running' ? 'var(--bg)' : 'var(--card)',
+                border: '1.5px solid var(--border)', borderRadius: 16,
+                fontSize: 14, fontWeight: 700, cursor: runState === 'running' ? 'default' : 'pointer',
+                color: 'var(--text-primary)', fontFamily: 'inherit',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                opacity: !notifyReady ? 0.5 : 1,
+              }}
+            >
+              {runState === 'running' ? '🔄 チェック中...' : '▶ 今すぐチェック実行'}
+            </button>
+
+            {runState === 'done' && runResult && (
+              <div style={{
+                padding: '14px 16px', borderRadius: 14,
+                background: runResult.notified > 0 ? 'rgba(0,184,148,0.1)' : 'rgba(178,190,195,0.12)',
+                border: `1px solid ${runResult.notified > 0 ? 'rgba(0,184,148,0.3)' : 'var(--border)'}`,
+              }}>
+                <p style={{ fontWeight: 700, fontSize: 14, color: runResult.notified > 0 ? 'var(--success)' : 'var(--text-secondary)', marginBottom: 6 }}>
+                  {runResult.notified > 0 ? `✅ ${runResult.notified}件通知送信！` : '📭 新着なし（全件通知済み）'}
+                </p>
+                {runResult.results?.map((r, i) => (
+                  <p key={i} style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
+                    {r.name}: {r.found}件取得 → {r.notified}件通知
+                  </p>
+                ))}
+              </div>
+            )}
+
+            <div style={{
+              padding: '12px 16px',
+              background: 'var(--card)', borderRadius: 14,
+              fontSize: 12, color: 'var(--text-tertiary)',
+              display: 'flex', alignItems: 'center', gap: 6,
+            }}>
+              <span style={{ fontSize: 14 }}>⚡</span>
+              <span>10分ごとに自動チェック · 新着のみ通知</span>
+            </div>
           </div>
         )}
       </div>
