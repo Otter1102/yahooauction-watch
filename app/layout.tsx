@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import './globals.css'
 import BottomNav from '@/components/BottomNav'
+import TrialBanner from '@/components/TrialBanner'
 
 export const metadata: Metadata = {
   title: 'ヤフオクwatch',
@@ -22,6 +23,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="ja">
       <body style={{ background: 'var(--bg)' }}>
         <div style={{ maxWidth: 480, margin: '0 auto', minHeight: '100dvh', position: 'relative' }}>
+          <TrialBanner />
           <main style={{ paddingBottom: 80 }}>
             {children}
           </main>

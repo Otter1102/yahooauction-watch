@@ -8,8 +8,9 @@ import { AuctionItem, User } from './types'
 
 export async function sendNtfy(item: AuctionItem, topic: string): Promise<boolean> {
   if (!topic) return false
+  const priceText = (item.price && item.price !== '価格不明') ? item.price : '現在価格なし（入札0）'
   const body =
-    `💰 ${item.price}` +
+    `💰 ${priceText}` +
     (item.bids != null ? `  🔨 ${item.bids}件` : '') +
     (item.remaining ? `  ⏰ ${item.remaining}` : '') +
     `\n${item.url}`
