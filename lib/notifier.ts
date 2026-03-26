@@ -14,14 +14,15 @@ export async function sendNtfy(item: AuctionItem, topic: string): Promise<boolea
     (item.remaining ? `  ⏰ ${item.remaining}` : '') +
     `\n${item.url}`
   try {
-    const res = await fetch(`https://ntfy.sh/${topic}`, {
+    // タイトルはクエリパラメータで渡す（HTTPヘッダーの非ASCII文字問題を回避）
+    const url = new URL(`https://ntfy.sh/${encodeURIComponent(topic)}`)
+    url.searchParams.set('title', item.title.slice(0, 60))
+    url.searchParams.set('click', item.url)
+    if (item.imageUrl) url.searchParams.set('attach', item.imageUrl)
+
+    const res = await fetch(url.toString(), {
       method: 'POST',
-      headers: {
-        'Content-Type': 'text/plain; charset=utf-8',
-        Title: item.title.slice(0, 60),
-        Click: item.url,
-        ...(item.imageUrl ? { Attach: item.imageUrl } : {}),
-      },
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
       body,
       signal: AbortSignal.timeout(10000),
     })
