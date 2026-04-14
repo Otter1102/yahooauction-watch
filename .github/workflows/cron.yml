@@ -2,7 +2,7 @@ name: ヤフオクwatch 自動チェック
 
 on:
   schedule:
-    - cron: '*/30 * * * *'   # 30分ごと
+    - cron: '*/15 * * * *'   # 15分ごと
   workflow_dispatch:           # 手動実行ボタン
 
 jobs:
