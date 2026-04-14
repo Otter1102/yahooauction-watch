@@ -4,7 +4,7 @@ on:
   workflow_dispatch:  # 手動実行専用
 
 jobs:
-  cleanup:
+  migrate-and-cleanup:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -21,7 +21,35 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run ghost user cleanup
+      - name: Apply migration_009 (device_type + UNIQUE index)
+        continue-on-error: true  # 失敗してもクリーンアップは続行
+        run: |
+          # Supabase URL からプロジェクト参照IDを抽出
+          PROJECT_REF=$(echo "$SUPABASE_URL" | sed 's|https://\([^.]*\)\.supabase\.co.*|\1|')
+          echo "Project ref: $PROJECT_REF"
+
+          # migration_009.sql のコメントを除去してSQL文字列化
+          MIGRATION_SQL=$(grep -v '^--' supabase/migration_009.sql | grep -v '^$' | tr '\n' ' ' | sed "s/'/\\\\\'/g")
+
+          # Supabase Management API でマイグレーション実行
+          HTTP_CODE=$(curl -s -o /tmp/migrate_response.txt -w "%{http_code}" \
+            -X POST "https://api.supabase.com/v1/projects/${PROJECT_REF}/database/query" \
+            -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "{\"query\": \"${MIGRATION_SQL}\"}" \
+            2>/dev/null || echo "000")
+
+          if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "201" ]; then
+            echo "✅ migration_009 自動適用完了（device_type カラム + UNIQUE インデックス）"
+          else
+            echo "⚠️ migration_009 は Supabase SQL Editor で手動実行が必要（HTTP: $HTTP_CODE）"
+            echo "   → Supabase Dashboard > SQL Editor > supabase/migration_009.sql を貼り付けて実行"
+          fi
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+      - name: Run Phase1 + Phase2 ghost user cleanup
         run: npx tsx scripts/cleanup-once.ts
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
