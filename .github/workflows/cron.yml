@@ -21,19 +21,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Debug Supabase connection
-        run: |
-          echo "Key length: ${#SUPABASE_SERVICE_KEY}"
-          echo "Key prefix: ${SUPABASE_SERVICE_KEY:0:10}..."
-          curl -s -o /tmp/supa_debug.json -w "HTTP: %{http_code}\n" \
-            "${NEXT_PUBLIC_SUPABASE_URL}/rest/v1/conditions?select=id&limit=1" \
-            -H "apikey: ${SUPABASE_SERVICE_KEY}" \
-            -H "Authorization: Bearer ${SUPABASE_SERVICE_KEY}"
-          cat /tmp/supa_debug.json
-        env:
-          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-
       - name: Run auction check
         run: npx tsx scripts/run-check.ts
         env:
