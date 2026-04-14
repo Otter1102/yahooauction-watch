@@ -6,7 +6,7 @@
  * 実行: npx tsx scripts/run-check.ts
  * 環境変数: NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_KEY
  */
-import { getAllEnabledConditions, getNotifiedIds, markNotified, addHistory, updateCondition, cleanupOldNotified, cleanupOldHistory, resetStalledNotified } from '../lib/storage'
+import { getAllEnabledConditions, getNotifiedIds, markNotified, addHistory, updateCondition, cleanupOldNotified, cleanupOldHistory, cleanupExpiredTrialSessions, cleanupGhostUsers, resetStalledNotified } from '../lib/storage'
 import { fetchAuctionRss, checkAuctionEnded } from '../lib/scraper'
 import { notifyUser } from '../lib/notifier'
 import { sendWebPushToUser } from '../lib/webpush'
@@ -220,13 +220,24 @@ async function main() {
   // ─── 終了済みオークションを履歴から削除 ───
   await cleanupEndedAuctions()
 
-  // ─── 時間ベースのフォールバッククリーンアップ ───
-  // notification_history: 24時間後（Supabaseストレージ節約。履歴はIndexedDB端末側で保持）
-  // notified_items: 25時間後（オークション終了後のIDを安全に削除）
-  await cleanupOldHistory(24)
-  await cleanupOldNotified()
+  // ─── 多層クリーンアップ ───────────────────────────────────────
+  // 【短期】notified_items: 25時間超を削除（オークション終了後のIDを安全に回収）
+  const deletedNotified = await cleanupOldNotified()
+  if (deletedNotified > 0) console.log(`[掃除] notified_items ${deletedNotified}件削除`)
 
-  // ─── 自己修復: 48時間通知なし + 20件溜まりユーザーをリセット ───
+  // 【短期】notification_history: 24時間超を削除（履歴はIndexedDB端末側で保持）
+  const deletedHistory = await cleanupOldHistory(24)
+  if (deletedHistory > 0) console.log(`[掃除] notification_history ${deletedHistory}件削除`)
+
+  // 【長期】trial_sessions: 30日超の期限切れを削除（月次相当・毎回実行しても軽量）
+  const deletedTrials = await cleanupExpiredTrialSessions()
+  if (deletedTrials > 0) console.log(`[掃除] trial_sessions ${deletedTrials}件削除`)
+
+  // 【長期】ゴーストユーザー: 条件なし・push_subなし・24h超を削除（再インストール孤立UUID回収）
+  const deletedGhosts = await cleanupGhostUsers()
+  if (deletedGhosts > 0) console.log(`[掃除] ゴーストユーザー ${deletedGhosts}件削除`)
+
+  // ─── 自己修復: 6時間通知なし + notified_items溜まりユーザーをリセット ───
   const stalledUsers = await resetStalledNotified()
   if (stalledUsers.length > 0) {
     console.log(`[自己修復] ${stalledUsers.length}ユーザーの通知ログをリセット`)

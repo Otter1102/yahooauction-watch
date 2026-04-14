@@ -60,10 +60,18 @@ async function tryAutoResubscribeSettings(
       applicationServerKey: urlBase64ToUint8Array(publicKey),
     })
     const j = sub.toJSON()
-    await fetch('/api/push/subscribe', {
+    const subRes = await fetch('/api/push/subscribe', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId, endpoint: j.endpoint, p256dh: j.keys?.p256dh, auth: j.keys?.auth, deviceFingerprint: getDeviceFingerprint() }),
     })
+    // 再インストール後に既存ユーザーと統合された場合、canonicalUserId を受け取る
+    const subJson = await subRes.json().catch(() => ({}))
+    if (subJson.canonicalUserId && subJson.canonicalUserId !== userId) {
+      localStorage.setItem('yahoowatch_user_id', subJson.canonicalUserId)
+      console.log('[push] 既存ユーザーに統合 → ページリロード')
+      window.location.reload()
+      return true
+    }
     await fetch('/api/settings', {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId, notificationChannel: 'webpush' }),
@@ -173,12 +181,18 @@ export default function SettingsPage() {
       }
       setPushState('subscribed')
       // DBと自動同期（別タブ・再インストール・SW更新後のズレを解消）
+      // canonicalUserId が返ってきた場合はlocalStorageを更新してリロード
       const j = sub.toJSON()
       fetch('/api/push/subscribe', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: getUserId(), endpoint: j.endpoint, p256dh: j.keys?.p256dh, auth: j.keys?.auth, deviceFingerprint: getDeviceFingerprint() }),
       }).then(r => r.json()).then(d => {
-        if (d.ok) console.log('[push] 購読をDBと同期しました')
+        if (d.canonicalUserId && d.canonicalUserId !== getUserId()) {
+          localStorage.setItem('yahoowatch_user_id', d.canonicalUserId)
+          window.location.reload()
+        } else if (d.ok) {
+          console.log('[push] 購読をDBと同期しました')
+        }
       }).catch(() => {})
     }).catch(() => setPushState('idle'))
   }, [])
@@ -207,6 +221,13 @@ export default function SettingsPage() {
         const e = await saveRes.json().catch(() => ({}))
         alert(`保存失敗: ${e.error ?? saveRes.status}`)
         setPushLoading(false); return
+      }
+      // 再インストール後に既存ユーザーと統合された場合
+      const saveJson = await saveRes.json().catch(() => ({}))
+      if (saveJson.canonicalUserId && saveJson.canonicalUserId !== userId) {
+        localStorage.setItem('yahoowatch_user_id', saveJson.canonicalUserId)
+        window.location.reload()
+        return
       }
       if (user && user.notificationChannel !== 'webpush') {
         const updated = { ...user, notificationChannel: 'webpush' as const }
