@@ -9,6 +9,8 @@ jobs:
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true  # Node.js 20 deprecation対応（2026-06-02移行前に対応）
 
     steps:
       - uses: actions/checkout@v4
