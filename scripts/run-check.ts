@@ -168,7 +168,7 @@ async function main() {
           // Web Push 通知（push購読があれば常に送信）
           let sentPush = false
           if (pushUserIds.has(cond.userId)) {
-            const pushResult = await sendWebPushToUser(cond.userId, item)
+            const pushResult = await sendWebPushToUser(cond.userId, item, undefined, undefined, { conditionName: cond.name })
             sentPush = pushResult > 0
             if (!sentPush) console.log(`    ⚠️ Push失敗 [${cond.name}] userId=${cond.userId.slice(0,8)}`)
           }
@@ -218,9 +218,9 @@ async function main() {
   await cleanupEndedAuctions()
 
   // ─── 時間ベースのフォールバッククリーンアップ ───
-  // notification_history: 72時間後（ステータス確認できなかった場合の安全網）
+  // notification_history: 24時間後（Supabaseストレージ節約。履歴はIndexedDB端末側で保持）
   // notified_items: 25時間後（オークション終了後のIDを安全に削除）
-  await cleanupOldHistory(72)
+  await cleanupOldHistory(24)
   await cleanupOldNotified()
 
   // ─── 自己修復: 48時間通知なし + 20件溜まりユーザーをリセット ───

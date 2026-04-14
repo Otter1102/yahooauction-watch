@@ -114,11 +114,54 @@ export default function HistoryPage() {
   const pullStartY = useRef(-1)
   const PULL_THRESHOLD = 40
 
-  // ─── データ取得 ─────────────────────────────────────────────
+  // ─── IndexedDB から履歴取得（端末側保存・Supabase不使用）────────
+  function fetchHistoryFromIDB(): Promise<NotificationRecord[]> {
+    return new Promise((resolve) => {
+      if (typeof indexedDB === 'undefined') { resolve([]); return }
+      try {
+        const req = indexedDB.open('yw-history', 1)
+        req.onsuccess = (e: any) => {
+          const db: IDBDatabase = e.target.result
+          if (!db.objectStoreNames.contains('notifications')) { db.close(); resolve([]); return }
+          const tx    = db.transaction('notifications', 'readonly')
+          const store = tx.objectStore('notifications')
+          const index = store.index('notifiedAt')
+          const r     = index.getAll()
+          r.onsuccess = () => {
+            db.close()
+            const items = (r.result as any[]).reverse().map((item: any) => ({
+              id:            item.id            ?? '',
+              userId:        '',
+              conditionId:   '',
+              conditionName: item.conditionName ?? '',
+              auctionId:     item.auctionId     ?? '',
+              title:         item.title         ?? '',
+              price:         item.price         ?? '',
+              url:           item.url           ?? '',
+              imageUrl:      item.imageUrl       ?? '',
+              notifiedAt:    item.notifiedAt     ?? '',
+              remaining:     item.remaining      ?? null,
+            }))
+            resolve(items)
+          }
+          r.onerror = () => { db.close(); resolve([]) }
+        }
+        req.onerror = () => resolve([])
+      } catch { resolve([]) }
+    })
+  }
+
+  // ─── データ取得（IndexedDB優先、空ならSupabaseにフォールバック）───
   async function fetchHistory() {
+    const idbItems = await fetchHistoryFromIDB()
+    if (idbItems.length > 0) {
+      setHistory(idbItems)
+      return
+    }
+    // IndexedDB空（初回移行）→ Supabaseから取得
     const id = getUserId()
     if (!id) return
-    const data = await fetch(`/api/history?userId=${id}`).then(r => r.json())
+    const data = await fetch(`/api/history?userId=${id}`).then(r => r.json()).catch(() => [])
     setHistory(data)
   }
 

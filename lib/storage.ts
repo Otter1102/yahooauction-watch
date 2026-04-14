@@ -254,8 +254,9 @@ export async function resetStalledNotified(): Promise<string[]> {
   return stalledUsers
 }
 
-export async function cleanupOldHistory(hours = 72): Promise<void> {
-  // 終了済みオークションの通知履歴を削除（デフォルト72時間＝3日後）
+export async function cleanupOldHistory(hours = 24): Promise<void> {
+  // 終了済みオークションの通知履歴を削除（デフォルト24時間）
+  // 履歴は端末IndexedDBで保持するためSupabase側は24hで削除しストレージを節約する
   const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString()
   await supabaseAdmin
     .from('notification_history')

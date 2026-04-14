@@ -42,6 +42,7 @@ export async function sendWebPushToUser(
   item: AuctionItem,
   supabaseAdmin = getSupabaseAdmin(),
   cachedSub?: PushSub | null,  // run-now でキャッシュ済みの push_sub を渡すと DB クエリをスキップ
+  opts?: { conditionName?: string },
 ): Promise<number> {
   // cachedSub が明示的に渡された場合は DB クエリをスキップ（cron実行時の高速化）
   let sub: PushSub | null
@@ -63,12 +64,15 @@ export async function sendWebPushToUser(
     (item.remaining ? `  ⏰ ${item.remaining}` : '')
 
   const result = await sendToSub(sub, {
-    title:     item.title.slice(0, 60),
+    title:         item.title.slice(0, 60),
     body,
-    url:       APP_URL + '/history',  // 通知タップ時は常にアプリ履歴ページへ（Yahoo直リンクは空白画面の原因になる）
-    imageUrl:  item.imageUrl ?? null,
-    auctionId: item.auctionId,
-    auctionUrl: item.url,             // Yahoo URLはauctionUrlで保持（履歴ページからの遷移用）
+    url:           APP_URL + '/history',  // 通知タップ時は常にアプリ履歴ページへ
+    imageUrl:      item.imageUrl ?? null,
+    auctionId:     item.auctionId,
+    auctionUrl:    item.url,              // Yahoo URLはauctionUrlで保持（履歴ページからの遷移用）
+    conditionName: opts?.conditionName ?? '',  // 端末側IndexedDB履歴保存用
+    price:         item.price ?? '',           // 端末側IndexedDB履歴保存用
+    remaining:     item.remaining ?? null,     // 端末側IndexedDB履歴保存用
   })
 
   console.log(`  📱 Push [${userId.slice(0,8)}] → ${result} (${sub.endpoint.slice(8,40)}...)`)

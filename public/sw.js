@@ -1,6 +1,6 @@
 // ヤフオクwatch Service Worker
 // CACHE_VERSION: メジャー改修時に手動インクリメント（日常デプロイは /api/version 自動管理）
-const CACHE_VERSION = 'v13'
+const CACHE_VERSION = 'v14'
 const META_CACHE    = `yw-meta-${CACHE_VERSION}`
 
 // ── インストール: 即座に新SWを有効化 ─────────────────────────────────────
@@ -53,6 +53,62 @@ self.addEventListener('activate', (event) => {
   })())
 })
 
+// ── IndexedDB 端末側履歴保存 ──────────────────────────────────────
+// 通知受信時に端末のIndexedDBへ保存。Supabase側は24h後に自動削除されるが端末では長期保持。
+const HIST_DB    = 'yw-history'
+const HIST_VER   = 1
+const HIST_STORE = 'notifications'
+const HIST_MAX   = 300  // 最大保持件数
+
+function openHistDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(HIST_DB, HIST_VER)
+    req.onupgradeneeded = (e) => {
+      const db = e.target.result
+      if (!db.objectStoreNames.contains(HIST_STORE)) {
+        const store = db.createObjectStore(HIST_STORE, { keyPath: 'id' })
+        store.createIndex('notifiedAt', 'notifiedAt')
+      }
+    }
+    req.onsuccess = (e) => resolve(e.target.result)
+    req.onerror   = (e) => reject(e.target.error)
+  })
+}
+
+async function saveHistItem(data) {
+  try {
+    const db  = await openHistDB()
+    const tx  = db.transaction(HIST_STORE, 'readwrite')
+    const st  = tx.objectStore(HIST_STORE)
+    st.put({
+      id:            (data.auctionId || '') + '_' + Date.now(),
+      auctionId:     data.auctionId     || '',
+      title:         data.title         || '',
+      price:         data.price         || '',
+      conditionName: data.conditionName || '',
+      url:           data.auctionUrl    || data.url || '',
+      imageUrl:      data.imageUrl      || '',
+      remaining:     data.remaining     || null,
+      notifiedAt:    new Date().toISOString(),
+    })
+    await new Promise((res, rej) => { tx.oncomplete = res; tx.onerror = rej })
+
+    // 上限超過分を古い順に削除
+    const tx2 = db.transaction(HIST_STORE, 'readwrite')
+    const st2 = tx2.objectStore(HIST_STORE)
+    const req = st2.index('notifiedAt').getAll()
+    const all = await new Promise(res => { req.onsuccess = () => res(req.result) })
+    if (all.length > HIST_MAX) {
+      const toDelete = all.slice(0, all.length - HIST_MAX)
+      for (const item of toDelete) st2.delete(item.id)
+      await new Promise((res, rej) => { tx2.oncomplete = res; tx2.onerror = rej })
+    }
+    db.close()
+  } catch {
+    // IndexedDB失敗は通知表示に影響しない
+  }
+}
+
 // ── Push通知受信 ──────────────────────────────────────────────────
 self.addEventListener('push', (event) => {
   // push 受信のたびに SW 更新チェック（古い SW が残った場合に自動で新バージョンへ切り替え）
@@ -82,7 +138,10 @@ self.addEventListener('push', (event) => {
   if (imageUrl) options.image = imageUrl
 
   event.waitUntil(
-    self.registration.showNotification(title, options)
+    Promise.all([
+      self.registration.showNotification(title, options),
+      saveHistItem(data),  // 端末IndexedDBへ履歴保存（Supabase不要化）
+    ])
   )
 })
 
