@@ -1,0 +1,123 @@
+/**
+ * 通知モジュール
+ * ntfy.sh + Discord Webhook に対応
+ */
+import { AuctionItem, User } from './types'
+
+// ==================== ntfy.sh ====================
+
+export async function sendNtfy(item: AuctionItem, topic: string): Promise<boolean> {
+  if (!topic) return false
+  const priceText = (item.price && item.price !== '価格不明') ? item.price : '現在価格なし（入札0）'
+  const body =
+    `💰 ${priceText}` +
+    (item.bids != null ? `  🔨 ${item.bids}件` : '') +
+    (item.remaining ? `  ⏰ ${item.remaining}` : '') +
+    `\n${item.url}`
+  try {
+    // タイトルはクエリパラメータで渡す（HTTPヘッダーの非ASCII文字問題を回避）
+    const url = new URL(`https://ntfy.sh/${encodeURIComponent(topic)}`)
+    url.searchParams.set('title', item.title.slice(0, 60))
+    url.searchParams.set('click', item.url)
+    if (item.imageUrl) url.searchParams.set('attach', item.imageUrl)
+
+    const res = await fetch(url.toString(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+      body,
+      signal: AbortSignal.timeout(10000),
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
+// ==================== Discord ====================
+
+export async function sendDiscord(item: AuctionItem, webhookUrl: string): Promise<boolean> {
+  if (!webhookUrl) return false
+  // Discord webhook URL のみ許可（SSRF対策）
+  try {
+    const host = new URL(webhookUrl).hostname
+    if (host !== 'discord.com' && host !== 'discordapp.com') return false
+  } catch { return false }
+  const embed = {
+    title: `🔔 ${item.title.slice(0, 256)}`,
+    url: item.url,
+    color: 0xff6600,
+    fields: [
+      { name: '💰 現在価格', value: `**${item.price}**`, inline: true },
+      ...(item.bids != null
+        ? [{ name: '🔨 入札件数', value: `${item.bids}件`, inline: true }]
+        : []),
+      ...(item.remaining
+        ? [{ name: '⏰ 残り時間', value: item.remaining, inline: true }]
+        : []),
+    ],
+    footer: { text: `ID: ${item.auctionId}` },
+    ...(item.imageUrl ? { thumbnail: { url: item.imageUrl } } : {}),
+  }
+  try {
+    const res = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'ヤフオクwatch', embeds: [embed] }),
+      signal: AbortSignal.timeout(10000),
+    })
+    return res.status === 204
+  } catch {
+    return false
+  }
+}
+
+// ==================== 統合送信 ====================
+
+export async function notifyUser(item: AuctionItem, user: User): Promise<boolean> {
+  const ch = user.notificationChannel
+  const results = await Promise.all([
+    (ch === 'ntfy' || ch === 'both') ? sendNtfy(item, user.ntfyTopic) : Promise.resolve(false),
+    (ch === 'discord' || ch === 'both') ? sendDiscord(item, user.discordWebhook) : Promise.resolve(false),
+  ])
+  return results.some(Boolean)
+}
+
+// ==================== テスト通知 ====================
+
+export async function sendTestNtfy(topic: string): Promise<boolean> {
+  return sendNtfy(
+    {
+      auctionId: 'test',
+      title: 'テスト通知 — ヤフオクwatchが正常に動作しています',
+      price: '¥1,000',
+      priceInt: 1000,
+      bids: 3,
+      isBuyItNow: false,
+      remaining: '残り2時間',
+      endtimeMs: null,
+      url: 'https://auctions.yahoo.co.jp/',
+      imageUrl: '',
+      pubDate: new Date().toISOString(),
+    },
+    topic
+  )
+}
+
+export async function sendTestDiscord(webhookUrl: string): Promise<boolean> {
+  return sendDiscord(
+    {
+      auctionId: 'test',
+      title: 'テスト通知 — ヤフオクwatchが正常に動作しています',
+      price: '¥1,000',
+      priceInt: 1000,
+      bids: 3,
+      isBuyItNow: false,
+      remaining: '残り2時間',
+      endtimeMs: null,
+      url: 'https://auctions.yahoo.co.jp/',
+      imageUrl: '',
+      pubDate: new Date().toISOString(),
+    },
+    webhookUrl
+  )
+}

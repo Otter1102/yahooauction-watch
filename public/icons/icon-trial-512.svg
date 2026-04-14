@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1a1a2e"/>
+      <stop offset="100%" stop-color="#16213e"/>
+    </linearGradient>
+  </defs>
+  <!-- 背景（ダーク） -->
+  <rect width="512" height="512" rx="112" fill="url(#g)"/>
+  <!-- メインテキスト -->
+  <text x="256" y="188" font-size="80" font-family="'BIZ UDPGothic','Hiragino Sans',sans-serif" fill="rgba(255,255,255,0.85)" text-anchor="middle" font-weight="700">ヤフオク</text>
+  <text x="256" y="322" font-size="128" font-family="'BIZ UDPGothic','Hiragino Sans',sans-serif" fill="white" text-anchor="middle" font-weight="800">watch</text>
+  <!-- TRIAL バッジ（赤） -->
+  <rect x="56" y="358" width="400" height="100" rx="16" fill="#c0392b"/>
+  <rect x="58" y="360" width="396" height="96" rx="14" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width="2"/>
+  <text x="256" y="427" font-size="52" font-family="'Arial Black','Impact',sans-serif" fill="white" text-anchor="middle" font-weight="900" letter-spacing="6">TRIAL</text>
+</svg>

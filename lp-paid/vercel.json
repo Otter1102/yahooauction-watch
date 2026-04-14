@@ -1,0 +1,6 @@
+{
+  "rewrites": [
+    { "source": "/checkout", "destination": "/checkout.html" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}

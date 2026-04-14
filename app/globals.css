@@ -1,0 +1,176 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  /* Brand gradients */
+  --grad-primary: linear-gradient(91deg, #27B5D4 4.29%, #1D9BD7 49.5%, #1A6AC9 94.7%);
+  --grad-cool:    linear-gradient(91deg, #27B5D4 4.29%, #1D9BD7 49.5%, #1A6AC9 94.7%);
+  --grad-teal:    linear-gradient(91deg, #27B5D4 4.29%, #0099E2 60%, #1A6AC9 94.7%);
+
+  /* Brand */
+  --accent:         #0099E2;
+  --accent-2:       #1A6AC9;
+  --accent-light:   rgba(0, 153, 226, 0.10);
+
+  /* Color System – ad-nex inspired */
+  --bg:             #F3F7F8;
+  --card:           #FFFFFF;
+  --text-primary:   #000000;
+  --text-secondary: #6C7274;
+  --text-tertiary:  #A8AEB0;
+  --separator:      rgba(17, 38, 49, 0.10);
+  --border:         #E1EAED;
+  --input-border:   #C6D2D6;
+  --fill:           #F3F7F8;
+  --fill-secondary: rgba(17, 38, 49, 0.04);
+
+  /* Status */
+  --success:        #34C759;
+  --danger:         #F6688A;
+  --warning:        #FF9500;
+
+  /* Card shadow */
+  --shadow-card:    0px 0px 12px 0px rgba(17,38,49,0.10), 0px 0px 4px 0px rgba(17,38,49,0.05);
+  --shadow-sm:      0px 0px 6px 0px rgba(17,38,49,0.10), 0px 0px 2px 0px rgba(17,38,49,0.05);
+
+  --nav-height:     49px;
+}
+
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text-primary);
+  font-family: 'BIZ UDPGothic', 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+/* ─── Page fade-in (eliminates white flash on navigation) ─── */
+@keyframes pwa-fadein {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+main {
+  animation: pwa-fadein 0.35s cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+
+/* ─── Gradient text utility ─── */
+.grad-text {
+  background: var(--grad-primary);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ─── Card ─── */
+.card {
+  background: var(--card);
+  border-radius: 12px;
+  box-shadow: var(--shadow-card);
+}
+
+/* ─── Primary button ─── */
+.btn-primary {
+  display: block; width: 100%; padding: 0;
+  height: 50px; line-height: 50px;
+  background: var(--grad-primary);
+  color: white; font-size: 15px; font-weight: 700; letter-spacing: 1px;
+  border: none; border-radius: 25px; cursor: pointer;
+  transition: opacity 0.18s cubic-bezier(0.37, 0, 0.63, 1);
+  text-align: center; font-family: inherit;
+}
+.btn-primary:active  { opacity: 0.75; }
+.btn-primary:disabled { opacity: 0.38; cursor: not-allowed; }
+
+/* ─── Secondary button ─── */
+.btn-secondary {
+  display: block; width: 100%; padding: 13px;
+  background: var(--fill); color: var(--text-secondary);
+  font-size: 14px; font-weight: 500; font-family: inherit;
+  border: 1px solid var(--input-border); border-radius: 10px; cursor: pointer;
+}
+
+/* ─── Inputs ─── */
+input[type="text"], input[type="number"], input:not([type]) {
+  width: 100%; padding: 0 14px;
+  height: 48px;
+  background: var(--fill);
+  color: var(--text-primary);
+  font-size: 15px; font-family: inherit;
+  letter-spacing: 0.5px;
+  border: 1px solid var(--input-border);
+  border-radius: 4px;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  -webkit-appearance: none;
+}
+input:focus {
+  background: var(--card);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(0,153,226,0.12);
+}
+input::placeholder { color: var(--text-tertiary); }
+
+/* ─── iOS Toggle ─── */
+.toggle { position: relative; display: inline-block; width: 51px; height: 31px; cursor: pointer; flex-shrink: 0; }
+.toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
+.toggle-track {
+  position: absolute; inset: 0; border-radius: 16px;
+  background: var(--separator); transition: background 0.22s;
+}
+.toggle input:checked ~ .toggle-track { background: var(--accent); }
+.toggle-thumb {
+  position: absolute; top: 2px; left: 2px;
+  width: 27px; height: 27px; border-radius: 14px;
+  background: white;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.25), 0 0.5px 1px rgba(0,0,0,0.1);
+  transition: transform 0.22s cubic-bezier(0.34,1.56,0.64,1);
+  pointer-events: none;
+}
+.toggle input:checked ~ .toggle-track ~ .toggle-thumb { transform: translateX(20px); }
+
+/* ─── Badges ─── */
+.badge {
+  display: inline-block; padding: 2px 8px; border-radius: 4px;
+  font-size: 11px; font-weight: 600; letter-spacing: 0.5px;
+}
+.badge-orange { background: rgba(0,153,226,0.10); color: #0099E2; }
+.badge-purple { background: rgba(26,106,201,0.10); color: #1A6AC9; }
+.badge-teal   { background: rgba(39,181,212,0.10); color: #1B8FA8; }
+
+/* ─── Section label (Apple grouped list) ─── */
+.section-title {
+  font-size: 13px; font-weight: 400;
+  color: var(--text-secondary);
+  margin-bottom: 6px; padding: 0 4px;
+}
+
+/* ─── Bottom nav ─── */
+.bottom-nav {
+  position: fixed; bottom: 0; z-index: 100;
+  left: 50%; transform: translateX(-50%);
+  width: 100%; max-width: 480px;
+  background: rgba(255,255,255,0.92);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-top: 1px solid var(--border);
+  display: flex; justify-content: space-around; align-items: center;
+  height: calc(var(--nav-height) + env(safe-area-inset-bottom, 0px));
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.nav-item { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 28px; border: none; background: none; cursor: pointer; }
+.nav-icon  { font-size: 22px; line-height: 1.1; opacity: 0.45; }
+.nav-label { font-size: 10px; font-weight: 500; color: var(--text-tertiary); }
+.nav-item.active .nav-icon  { opacity: 1; }
+.nav-item.active .nav-label { color: var(--accent); font-weight: 700; }
+
+/* ─── Keyframes ─── */
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+@keyframes fadeIn  { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }

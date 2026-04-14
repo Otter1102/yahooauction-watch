@@ -1,0 +1,12 @@
+.next/
+node_modules/
+.env.local
+.env.main
+.data/
+*.log
+.vercel
+.env*.local
+playwright-report/
+playwright-report-multi/
+test-results/
+tsconfig.tsbuildinfo
