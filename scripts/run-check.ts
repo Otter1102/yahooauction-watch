@@ -83,7 +83,10 @@ async function main() {
       allConditions = (await getAllEnabledConditions()).filter(c => c.enabled === true)
       break
     } catch (err) {
-      console.error(`[DB] 取得失敗 (試行${attempt}/3): ${err instanceof Error ? err.message : err}`)
+      const errMsg = (err instanceof Error ? err.message : String(err))
+        .replace(process.env.NEXT_PUBLIC_SUPABASE_URL ?? '', '[SUPABASE_URL]')
+        .replace(process.env.SUPABASE_SERVICE_KEY     ?? '', '[SERVICE_KEY]')
+      console.error(`[DB] 取得失敗 (試行${attempt}/3): ${errMsg}`)
       if (attempt === 3) throw err
       console.log(`[DB] 30秒後にリトライ...`)
       await new Promise(r => setTimeout(r, 30_000))
@@ -279,6 +282,15 @@ async function cleanupEndedAuctions(): Promise<void> {
 }
 
 main().catch(err => {
-  console.error('エラー:', err)
+  // 秘密情報をマスクしてからログ出力（GitHub Actionsログへの漏洩防止）
+  const raw = err instanceof Error ? err.message : String(err)
+  const supabaseUrl  = process.env.NEXT_PUBLIC_SUPABASE_URL  ?? ''
+  const serviceKey   = process.env.SUPABASE_SERVICE_KEY       ?? ''
+  const vapidPrivate = process.env.VAPID_PRIVATE_KEY          ?? ''
+  const sanitized = raw
+    .replace(supabaseUrl,  '[SUPABASE_URL]')
+    .replace(serviceKey,   '[SERVICE_KEY]')
+    .replace(vapidPrivate, '[VAPID_PRIVATE]')
+  console.error('[FATAL]', sanitized)
   process.exit(1)
 })

@@ -31,7 +31,8 @@ async function sendToSub(sub: PushSub, payload: object): Promise<'ok' | 'expired
     return 'ok'
   } catch (err: any) {
     if (err?.statusCode === 410 || err?.statusCode === 404) return 'expired'
-    console.error('Web Push error:', err?.statusCode, err?.message ?? err)
+    // エンドポイントURLなど秘密情報がスタックトレースに混入しないよう最小限のみ出力
+    console.error('Web Push error:', err?.statusCode, String(err?.message ?? '').slice(0, 80))
     return 'error'
   }
 }
