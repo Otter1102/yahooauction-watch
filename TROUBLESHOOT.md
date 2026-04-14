@@ -1,3 +1,19 @@
+## 2026-04-14 — GitHub Actions スタンドアロンリポジトリ化 + Supabase Secret `\n` 混入問題
+
+| 項目 | 内容 |
+|------|------|
+| **症状** | GitHub Actions で `Invalid API key` エラーが連発（Supabase code=undefined） |
+| **根本原因1** | `.env.local` の値末尾に literal `\n`（バックスラッシュ+n、2文字）が混入していた。`NEXT_PUBLIC_SUPABASE_URL` が40文字→42文字、`SUPABASE_SERVICE_KEY` が41文字→43文字 |
+| **根本原因2** | Vault内サブディレクトリに置いた `.github/workflows/` は GitHub Actions が実行しない（リポジトリルートの `.github/workflows/` のみ有効） |
+| **解決策1** | `Otter1102/yahooauction-watch` にスタンドアロンリポジトリを作成し、ヤフオクwatch一式を移行 |
+| **解決策2** | GitHub Secrets 設定時に Python で literal `\n` を除去: `val.strip().replace(r'\n', '').replace(r'\r', '').strip()` |
+| **診断方法** | cron.yml にデバッグステップを一時追加: `curl ... /rest/v1/conditions` → `HTTP: 000` なら URL malformed、`HTTP: 401` なら Key 問題 |
+| **注意** | `tr -d '\n'` は実改行(0x0A)のみ除去し literal `\n`(0x5C 0x6E)は除去しない → Python を使う |
+| **Node.js** | Node 20 → **24** に変更（Vercel の `nodeVersion: "24.x"` に合わせるため） |
+| **変更リポジトリ** | `Otter1102/yahooauction-watch`（新規）/ vault-backup は変更なし |
+
+---
+
 ## 2026-04-13 — GitHub Actions 30分バッチ化 + Vercel cronクリーンアップ
 
 | 項目 | 内容 |
