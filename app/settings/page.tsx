@@ -12,6 +12,12 @@ function getUserId() {
   return id
 }
 
+/** モバイル（スマホ・タブレット）か デスクトップかを判定 */
+function getDeviceType(): 'mobile' | 'desktop' {
+  if (typeof window === 'undefined') return 'desktop'
+  return /Mobile|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ? 'mobile' : 'desktop'
+}
+
 /** デバイス固有のフィンガープリントを生成（再インストール後も同一値） */
 function getDeviceFingerprint(): string {
   if (typeof window === 'undefined') return ''
@@ -62,7 +68,7 @@ async function tryAutoResubscribeSettings(
     const j = sub.toJSON()
     const subRes = await fetch('/api/push/subscribe', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId, endpoint: j.endpoint, p256dh: j.keys?.p256dh, auth: j.keys?.auth, deviceFingerprint: getDeviceFingerprint() }),
+      body: JSON.stringify({ userId, endpoint: j.endpoint, p256dh: j.keys?.p256dh, auth: j.keys?.auth, deviceFingerprint: getDeviceFingerprint(), deviceType: getDeviceType() }),
     })
     // 再インストール後に既存ユーザーと統合された場合、canonicalUserId を受け取る
     const subJson = await subRes.json().catch(() => ({}))
@@ -185,7 +191,7 @@ export default function SettingsPage() {
       const j = sub.toJSON()
       fetch('/api/push/subscribe', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: getUserId(), endpoint: j.endpoint, p256dh: j.keys?.p256dh, auth: j.keys?.auth, deviceFingerprint: getDeviceFingerprint() }),
+        body: JSON.stringify({ userId: getUserId(), endpoint: j.endpoint, p256dh: j.keys?.p256dh, auth: j.keys?.auth, deviceFingerprint: getDeviceFingerprint(), deviceType: getDeviceType() }),
       }).then(r => r.json()).then(d => {
         if (d.canonicalUserId && d.canonicalUserId !== getUserId()) {
           localStorage.setItem('yahoowatch_user_id', d.canonicalUserId)
@@ -215,7 +221,7 @@ export default function SettingsPage() {
       const j = sub.toJSON()
       const saveRes = await fetch('/api/push/subscribe', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, endpoint: j.endpoint, p256dh: j.keys?.p256dh, auth: j.keys?.auth, deviceFingerprint: getDeviceFingerprint() }),
+        body: JSON.stringify({ userId, endpoint: j.endpoint, p256dh: j.keys?.p256dh, auth: j.keys?.auth, deviceFingerprint: getDeviceFingerprint(), deviceType: getDeviceType() }),
       })
       if (!saveRes.ok) {
         const e = await saveRes.json().catch(() => ({}))

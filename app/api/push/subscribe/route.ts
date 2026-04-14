@@ -7,7 +7,7 @@ export const runtime = 'nodejs'
 const IS_TRIAL = process.env.NEXT_PUBLIC_TRIAL_MODE === 'true'
 
 export async function POST(req: NextRequest) {
-  const { userId, endpoint, p256dh, auth, deviceFingerprint } = await req.json().catch(() => ({}))
+  const { userId, endpoint, p256dh, auth, deviceFingerprint, deviceType } = await req.json().catch(() => ({}))
   if (!userId || !endpoint || !p256dh || !auth) {
     return NextResponse.json({ error: 'Missing fields' }, { status: 400 })
   }
@@ -42,9 +42,11 @@ export async function POST(req: NextRequest) {
     if (existingUser) {
       const canonicalId = existingUser.id
       // 既存ユーザーの push_sub を最新トークンで上書き（古いトークン自動置換）
+      const mergeData: Record<string, unknown> = { push_sub: { endpoint, p256dh, auth }, device_fingerprint: deviceFingerprint }
+      if (deviceType) mergeData.device_type = deviceType
       await supabase
         .from('users')
-        .update({ push_sub: { endpoint, p256dh, auth }, device_fingerprint: deviceFingerprint })
+        .update(mergeData)
         .eq('id', canonicalId)
 
       // 新しい UUID 側に conditions があれば canonical に移行（再インストール後に条件登録した場合）
@@ -56,7 +58,7 @@ export async function POST(req: NextRequest) {
       // 新しい UUID 側のゴーストレコードを削除（conditions移行済みなので安全）
       await supabase.from('users').delete().eq('id', userId)
 
-      console.log(`[subscribe] 既存ユーザーに統合: ${userId.slice(0,8)} → ${canonicalId.slice(0,8)}`)
+      console.log(`[subscribe] 既存ユーザーに統合: ${userId.slice(0,8)} → ${canonicalId.slice(0,8)} deviceType=${deviceType ?? 'unknown'}`)
       // canonicalUserId をクライアントに返す → localStorage を更新させる
       return NextResponse.json({ ok: true, canonicalUserId: canonicalId })
     }
@@ -65,6 +67,7 @@ export async function POST(req: NextRequest) {
   // ── 通常 upsert（新規 or 同一 UUID の再登録）──────────────────
   const upsertData: Record<string, unknown> = { id: userId, push_sub: { endpoint, p256dh, auth } }
   if (deviceFingerprint) upsertData.device_fingerprint = deviceFingerprint
+  if (deviceType) upsertData.device_type = deviceType
 
   const { error } = await supabase
     .from('users')
@@ -78,7 +81,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  console.log('[subscribe] upsert OK userId:', userId.slice(0, 8))
+  console.log(`[subscribe] upsert OK userId:${userId.slice(0, 8)} deviceType=${deviceType ?? 'unknown'} fp=${deviceFingerprint ? deviceFingerprint.slice(0, 10) : 'none'}`)
   return NextResponse.json({ ok: true, canonicalUserId: userId })
 }
 

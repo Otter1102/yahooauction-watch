@@ -39,6 +39,7 @@ async function main() {
   // ── 2. ゴーストユーザーを特定 ────────────────────────────────
   // 条件: conditions を持たない AND push_sub が null AND 作成24h超
   const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+  const cutoff7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
 
   const { data: activeUserRows } = await supabase.from('conditions').select('user_id')
   const activeSet = new Set((activeUserRows ?? []).map(r => r.user_id as string))
@@ -54,6 +55,32 @@ async function main() {
     .filter(id => !activeSet.has(id))
 
   console.log(`\n🔍 ゴーストユーザー候補: ${ghostIds.length} 件（条件なし・push_subなし・24h超）`)
+
+  // ── Phase 2: push_subあり + 条件なし + 7日超（放置サブスクライバー）──
+  // push通知は設定したが一度も検索条件を登録しなかった端末を削除
+  // 7日間は「試し登録の猶予期間」として残す
+  const { data: pushNoCond } = await supabase
+    .from('users')
+    .select('id, created_at, push_sub')
+    .not('push_sub', 'is', null)
+    .lt('created_at', cutoff7d)
+
+  const phase2Ids = (pushNoCond ?? [])
+    .map(r => r.id as string)
+    .filter(id => !activeSet.has(id))
+
+  console.log(`\n🔍 Phase2 候補（push_subあり + 条件なし + 7日超）: ${phase2Ids.length} 件`)
+
+  let phase2Deleted = 0
+  for (let i = 0; i < phase2Ids.length; i += 50) {
+    const batch = phase2Ids.slice(i, i + 50)
+    const { count } = await supabase
+      .from('users')
+      .delete({ count: 'exact' })
+      .in('id', batch)
+    phase2Deleted += count ?? 0
+  }
+  if (phase2Deleted > 0) console.log(`🗑️  Phase2 放置サブスクライバー削除: ${phase2Deleted} 件`)
 
   // ── 3. 重複 push endpoint を特定 ─────────────────────────────
   const { data: pushUsers } = await supabase
@@ -97,6 +124,8 @@ async function main() {
   if (dupCleared > 0) console.log(`🔄 重複push endpoint クリア: ${dupCleared} 件`)
 
   // ── 5. 事後報告 ───────────────────────────────────────────────
+  const totalGhostDeleted = ghostDeleted + phase2Deleted
+
   const { count: totalAfter } = await supabase
     .from('users')
     .select('*', { count: 'exact', head: true })
@@ -106,9 +135,21 @@ async function main() {
     .select('*', { count: 'exact', head: true })
     .not('push_sub', 'is', null)
 
+  // デバイスタイプ内訳（device_typeカラムが存在する場合）
+  const { data: deviceBreakdown } = await supabase
+    .from('users')
+    .select('device_type')
+    .not('push_sub', 'is', null)
+  const deviceCounts: Record<string, number> = {}
+  for (const r of deviceBreakdown ?? []) {
+    const t = (r.device_type as string) ?? 'unknown'
+    deviceCounts[t] = (deviceCounts[t] ?? 0) + 1
+  }
+
   console.log(`\n📊 クリーンアップ後 総ユーザー数: ${totalAfter} 件`)
   console.log(`   - push通知設定済み（実アクティブユーザー）: ${withPushAfter} 件`)
-  console.log(`📉 削減: ${(totalBefore ?? 0) - (totalAfter ?? 0)} 件\n`)
+  console.log(`   - デバイス内訳: ${JSON.stringify(deviceCounts)}`)
+  console.log(`📉 削減合計: ${(totalBefore ?? 0) - (totalAfter ?? 0)} 件（Phase1: ${ghostDeleted} + Phase2: ${phase2Deleted}）\n`)
 
   // ── 6. 残存ユーザーの一部表示（確認用・IDを伏せ字） ───────────
   const { data: remaining } = await supabase
@@ -125,7 +166,7 @@ async function main() {
     console.log(`  ${id.slice(0,8)}...${id.slice(-4)}  push=${hasPush ? '✅' : '❌'}  created=${createdAt}`)
   }
 
-  console.log(`\n✅ 完了: ゴーストユーザーの削除を完了し、現在は実数 ${totalAfter} 名でクリーンに運用されています`)
+  console.log(`\n✅ 完了: ゴーストユーザーの削除を完了し、現在は実数 ${totalAfter} 名（条件登録済みアクティブユーザー ${activeSet.size} 名）でクリーンに運用されています`)
 }
 
 main().catch(err => {
