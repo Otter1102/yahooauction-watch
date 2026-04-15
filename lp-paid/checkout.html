@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>購入手続き | ヤフオクwatch 永続ライセンス</title>
+  <meta name="robots" content="noindex">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #070d15;
+      --card: #0e1a28;
+      --border: rgba(255,255,255,0.09);
+      --text: #f0f4f8;
+      --text-sub: rgba(255,255,255,0.55);
+      --text-dim: rgba(255,255,255,0.32);
+      --red: #e11d48;
+      --accent: #0099e2;
+    }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', 'Hiragino Sans', sans-serif;
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 20px 60px;
+    }
+    .wrap { width: 100%; max-width: 480px; }
+
+    .logo {
+      display: flex; align-items: center; gap: 10px;
+      margin-bottom: 36px;
+    }
+    .logo-icon {
+      width: 38px; height: 38px; border-radius: 10px;
+      background: linear-gradient(135deg, #0099e2, #1a6ac9);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 20px;
+    }
+    .logo-name { font-size: 16px; font-weight: 800; }
+
+    .steps {
+      display: flex; margin-bottom: 36px;
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 14px; overflow: hidden;
+    }
+    .step {
+      flex: 1; padding: 14px 8px; text-align: center;
+      font-size: 12px; font-weight: 700; color: var(--text-dim);
+      border-right: 1px solid var(--border);
+    }
+    .step:last-child { border-right: none; }
+    .step.active { color: var(--accent); background: rgba(0,153,226,0.07); }
+    .step-num { display: block; font-size: 10px; font-weight: 900; letter-spacing: 1px; margin-bottom: 4px; opacity: 0.7; }
+
+    .product-card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 18px; padding: 24px; margin-bottom: 20px;
+    }
+    .product-label { font-size: 10px; font-weight: 900; letter-spacing: 2px; color: var(--red); text-transform: uppercase; margin-bottom: 12px; }
+    .product-name { font-size: 18px; font-weight: 800; margin-bottom: 16px; }
+    .product-includes { list-style: none; display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
+    .product-includes li { display: flex; align-items: center; gap: 10px; font-size: 13px; color: rgba(255,255,255,0.8); }
+    .check { color: #34c759; font-weight: 900; flex-shrink: 0; }
+    .price-row {
+      display: flex; align-items: flex-end; gap: 10px;
+      padding-top: 20px; border-top: 1px solid var(--border);
+    }
+    .price-main { font-size: 32px; font-weight: 900; }
+    .price-sub { font-size: 13px; color: var(--text-dim); margin-bottom: 4px; }
+    .price-badge {
+      margin-left: auto; background: rgba(52,199,89,0.14);
+      border: 1px solid rgba(52,199,89,0.3); border-radius: 8px;
+      padding: 4px 12px; font-size: 11px; font-weight: 800; color: #34c759;
+    }
+
+    /* テスト告知バナー */
+    .test-banner {
+      background: rgba(255,149,0,0.1); border: 1px solid rgba(255,149,0,0.3);
+      border-radius: 12px; padding: 14px 18px; margin-bottom: 20px;
+      display: flex; gap: 12px; align-items: flex-start;
+    }
+    .test-banner-icon { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
+    .test-banner-text { font-size: 13px; color: rgba(255,255,255,0.85); line-height: 1.65; }
+    .test-banner-text strong { color: #ff9500; }
+
+    /* 購入ボタン */
+    .btn-purchase {
+      display: flex; align-items: center; justify-content: center; gap: 12px;
+      width: 100%; padding: 20px;
+      background: linear-gradient(135deg, #e11d48, #be123c);
+      color: white; font-size: 18px; font-weight: 800;
+      border: none; border-radius: 14px; cursor: pointer;
+      text-decoration: none;
+      box-shadow: 0 8px 32px rgba(225,29,72,0.4);
+      animation: btnPulse 2s ease-in-out infinite;
+      font-family: inherit;
+      margin-bottom: 14px;
+    }
+    .btn-purchase:hover { filter: brightness(1.1); }
+    .btn-purchase:active { filter: brightness(0.9); }
+    @keyframes btnPulse {
+      0%,100% { transform: scale(1); }
+      50% { transform: scale(1.03); }
+    }
+
+    .note-text {
+      text-align: center; font-size: 12px; color: var(--text-dim);
+      line-height: 1.6; margin-bottom: 28px;
+    }
+
+    .back-link {
+      display: block; text-align: center;
+      font-size: 13px; color: var(--text-dim); text-decoration: none;
+      margin-top: 8px;
+    }
+    .back-link:hover { color: var(--text-sub); }
+  </style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="logo">
+    <div class="logo-icon">🔍</div>
+    <span class="logo-name">ヤフオクwatch</span>
+  </div>
+
+  <div class="steps">
+    <div class="step active">
+      <span class="step-num">STEP 1</span>
+      内容確認・決済
+    </div>
+    <div class="step">
+      <span class="step-num">STEP 2</span>
+      アプリ起動
+    </div>
+    <div class="step">
+      <span class="step-num">STEP 3</span>
+      条件設定
+    </div>
+  </div>
+
+  <!-- テスト告知 -->
+  <div class="test-banner">
+    <div class="test-banner-icon">🧪</div>
+    <div class="test-banner-text">
+      <strong>現在テスト運用中のため、無料でご利用いただけます。</strong><br>
+      「購入してはじめる」を押すとそのままアプリが起動します。
+    </div>
+  </div>
+
+  <!-- 商品内容 -->
+  <div class="product-card">
+    <div class="product-label">永続ライセンス</div>
+    <div class="product-name">ヤフオクwatch — 買い切り版</div>
+    <ul class="product-includes">
+      <li><span class="check">✓</span>監視条件を <strong style="color:white">最大30個</strong> まで登録可能</li>
+      <li><span class="check">✓</span>10分ごと自動チェック・永続稼働</li>
+      <li><span class="check">✓</span>プッシュ通知（iOS / Android 対応）</li>
+      <li><span class="check">✓</span>通知履歴・上限価格フィルター</li>
+      <li><span class="check">✓</span>アップデート永続無料</li>
+    </ul>
+    <div class="price-row">
+      <div>
+        <div class="price-main">¥9,800</div>
+        <div class="price-sub">税込 · 1回払いのみ</div>
+      </div>
+      <div class="price-badge">月額 ¥0</div>
+    </div>
+  </div>
+
+  <!-- 購入ボタン（テスト: アプリへ直リンク） -->
+  <a href="https://yahooauction-watch.vercel.app/" class="btn-purchase">
+    🛒 購入してはじめる
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+  </a>
+
+  <p class="note-text">
+    月額なし · 追加課金なし<br>
+    iOS Safari / Android Chrome 対応
+  </p>
+
+  <a href="./index.html" class="back-link">← 詳細ページに戻る</a>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,42 @@
+{
+  "name": "ヤフオクwatch TRIAL",
+  "short_name": "watch🆓",
+  "description": "ヤフオク自動検索・リアルタイム通知（30日無料トライアル）",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#2c0a0a",
+  "theme_color": "#c0392b",
+  "orientation": "portrait-primary",
+  "lang": "ja",
+  "icons": [
+    {
+      "src": "/icons/icon-trial-512.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "screenshots": [],
+  "categories": ["utilities", "shopping"],
+  "shortcuts": [
+    {
+      "name": "ダッシュボード",
+      "short_name": "ホーム",
+      "description": "監視条件一覧（最大5件）",
+      "url": "/",
+      "icons": [{ "src": "/icons/icon-trial-512.svg", "sizes": "any" }]
+    }
+  ]
+}

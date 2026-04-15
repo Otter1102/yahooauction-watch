@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#27B5D4"/>
+      <stop offset="50%" stop-color="#1D9BD7"/>
+      <stop offset="100%" stop-color="#1A6AC9"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#g)"/>
+  <text x="256" y="192" font-size="84" font-family="'BIZ UDPGothic','Hiragino Sans',sans-serif" fill="rgba(255,255,255,0.85)" text-anchor="middle" font-weight="700">ヤフオク</text>
+  <text x="256" y="340" font-size="138" font-family="'BIZ UDPGothic','Hiragino Sans',sans-serif" fill="white" text-anchor="middle" font-weight="800">watch</text>
+</svg>
