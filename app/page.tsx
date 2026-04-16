@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { SearchCondition } from '@/lib/types'
 import ConditionCard from '@/components/ConditionCard'
 import ConditionForm from '@/components/ConditionForm'
@@ -80,31 +80,6 @@ export default function Dashboard() {
   const [notifyReady, setNotifyReady] = useState(false)
   const [pushLost, setPushLost] = useState(false)
   const [duplicatingCondition, setDuplicatingCondition] = useState<SearchCondition | null>(null)
-
-  // ─── Pull-to-Refresh ─────────────────────────────────────────
-  const [pullY, setPullY] = useState(0)
-  const [isPullRefreshing, setIsPullRefreshing] = useState(false)
-  const pullStartY = useRef(-1)
-  const PULL_THRESHOLD = 40
-
-  const onPullStart = (e: React.TouchEvent) => {
-    if (window.scrollY === 0) pullStartY.current = e.touches[0].clientY
-  }
-  const onPullMove = (e: React.TouchEvent) => {
-    if (pullStartY.current < 0) return
-    const dy = e.touches[0].clientY - pullStartY.current
-    if (dy > 0) setPullY(Math.min(dy * 0.65, 80))
-  }
-  const onPullEnd = async () => {
-    const triggered = pullY >= PULL_THRESHOLD
-    setPullY(0)
-    pullStartY.current = -1
-    if (triggered) {
-      setIsPullRefreshing(true)
-      await loadConditions()
-      setIsPullRefreshing(false)
-    }
-  }
 
   function completeOnboarding() {
     localStorage.setItem('yahoowatch_onboarded', '1')
@@ -221,30 +196,7 @@ export default function Dashboard() {
         background: 'var(--bg)',
         paddingBottom: 'calc(var(--nav-height) + env(safe-area-inset-bottom, 0px))',
       }}
-      onTouchStart={onPullStart}
-      onTouchMove={onPullMove}
-      onTouchEnd={onPullEnd}
     >
-      {/* ─── Pull-to-Refresh インジケーター ─── */}
-      {(pullY > 0 || isPullRefreshing) && (
-        <div style={{
-          position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100,
-          display: 'flex', justifyContent: 'center', alignItems: 'flex-end',
-          height: isPullRefreshing ? 56 : pullY, pointerEvents: 'none',
-          paddingBottom: 8,
-          transition: isPullRefreshing ? 'height 0.2s ease' : 'none',
-        }}>
-          <div style={{
-            width: 28, height: 28,
-            borderRadius: '50%',
-            border: '2.5px solid var(--border)',
-            borderTopColor: 'var(--accent)',
-            animation: (pullY >= PULL_THRESHOLD || isPullRefreshing) ? 'spin 0.6s linear infinite' : 'none',
-            transition: 'border-top-color 0.15s',
-          }} />
-          <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
-        </div>
-      )}
 
       {/* ─── Header ─── */}
       <div style={{ position: 'sticky', top: 0, zIndex: 50 }}>

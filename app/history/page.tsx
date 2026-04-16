@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useRef, useState, useMemo } from 'react'
+import { useEffect, useRef, useState, useMemo, useCallback } from 'react'
 import { NotificationRecord } from '@/lib/types'
 import AuctionThumbnail from '@/components/AuctionThumbnail'
 
@@ -8,16 +8,8 @@ function getUserId() {
   return localStorage.getItem('yahoowatch_user_id') ?? ''
 }
 
-// ─── ヤフオクページへ遷移 ───────────────────────────────────
-// Yahoo URL に直接遷移（/redirect/ は経由しない）
-// ⚠️ /redirect/ 経由は禁止: 302のみのページなのでバック時に空白ページに戻る
-// ⚠️ /open は絶対に使わない: プッシュ通知専用の deeplink インタースティシャル
-// window.open → iOS PWAで SFSafariViewController として開く
-// 失敗時（ポップアップブロック等）は location.href にフォールバック
-function openAuction(url: string) {
-  const win = window.open(url, '_blank')
-  if (!win) window.location.href = url
-}
+// キャッシュキー: WKWebView再起動後の即時表示・白画面防止用
+const HISTORY_CACHE_KEY = 'yw_history_cache'
 
 // ─── Yahoo公式大カテゴリ分類 ───
 const CATEGORIES = [
@@ -98,26 +90,52 @@ export default function HistoryPage() {
   const [refreshing, setRefreshing] = useState(false)
   const [activeTab, setActiveTab]   = useState<CategoryId>('all')
   const [selectedCondition, setSelectedCondition] = useState<string>('all')
-  const tabsRef    = useRef<HTMLDivElement>(null)
+  const tabsRef     = useRef<HTMLDivElement>(null)
   const touchStartX = useRef(0)
   const touchStartY = useRef(0)
-
-  // ─── Pull-to-Refresh ──────────────────────────────────────────
-  const [pullY, setPullY] = useState(0)
-  const [isPullRefreshing, setIsPullRefreshing] = useState(false)
-  const pullStartY = useRef(-1)
-  const PULL_THRESHOLD = 40
+  // Yahoo遷移フラグ: SFSafariViewController から戻ってきた時に履歴を再取得する
+  const navigatedAway = useRef(false)
 
   // ─── データ取得 ─────────────────────────────────────────────
-  async function fetchHistory() {
+  const fetchHistory = useCallback(async () => {
     const id = getUserId()
     if (!id) return
     const data = await fetch(`/api/history?userId=${id}`).then(r => r.json())
     setHistory(data)
-  }
+    // WKWebView再起動後の白画面防止: 最新データをキャッシュ保存
+    try { localStorage.setItem(HISTORY_CACHE_KEY, JSON.stringify(data)) } catch {}
+  }, [])
 
   useEffect(() => {
+    // キャッシュから即時表示（WKWebView強制終了後の再起動時に白画面にならないよう）
+    try {
+      const cached = localStorage.getItem(HISTORY_CACHE_KEY)
+      if (cached) setHistory(JSON.parse(cached))
+    } catch {}
     fetchHistory().finally(() => setLoading(false))
+  }, [fetchHistory])
+
+  // SFSafariViewController（Yahoo）から戻ってきた時に履歴を再取得
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (!document.hidden && navigatedAway.current) {
+        navigatedAway.current = false
+        fetchHistory()
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => document.removeEventListener('visibilitychange', handleVisibility)
+  }, [fetchHistory])
+
+  // ─── ヤフオクページを開く ───────────────────────────────────
+  // ⚠️ window.location.href は絶対に使わない:
+  //    PWAのWKWebViewが外部URLへ遷移し、×で戻ると白画面になる
+  // window.open(_blank) → iOS PWAではSFSafariViewControllerとして開く
+  // SFSafariViewController の × → WKWebViewに戻る（PWAの/historyが表示される）
+  const openAuction = useCallback((url: string) => {
+    navigatedAway.current = true
+    window.open(url, '_blank', 'noopener,noreferrer')
+    // フォールバックなし: window.openが失敗しても/historyから離脱しない
   }, [])
 
   // ─── 手動リロード（終了オークションのクリーンアップ + 履歴更新）────
@@ -168,32 +186,13 @@ export default function HistoryPage() {
     tabsRef.current?.scrollTo({ left: idx * 80, behavior: 'smooth' })
   }
 
-  // ─── 横スワイプ + Pull-to-Refresh（共存） ───────────────────
+  // ─── 横スワイプでカテゴリ切替 ────────────────────────────────
   const onTouchStart = (e: React.TouchEvent) => {
     touchStartX.current = e.touches[0].clientX
     touchStartY.current = e.touches[0].clientY
-    if (window.scrollY === 0) pullStartY.current = e.touches[0].clientY
   }
 
-  const onTouchMove = (e: React.TouchEvent) => {
-    if (pullStartY.current < 0) return
-    const dy = e.touches[0].clientY - pullStartY.current
-    if (dy > 0) setPullY(Math.min(dy * 0.65, 80))
-  }
-
-  const onTouchEnd = async (e: React.TouchEvent) => {
-    // Pull-to-Refresh
-    const triggered = pullY >= PULL_THRESHOLD
-    setPullY(0)
-    pullStartY.current = -1
-    if (triggered) {
-      setIsPullRefreshing(true)
-      await refresh()
-      setIsPullRefreshing(false)
-      return
-    }
-
-    // 横スワイプでカテゴリ切替
+  const onTouchEnd = (e: React.TouchEvent) => {
     const dx = e.changedTouches[0].clientX - touchStartX.current
     const dy = e.changedTouches[0].clientY - touchStartY.current
     if (Math.abs(dx) < 60 || Math.abs(dx) <= Math.abs(dy) * 1.5) return
@@ -210,31 +209,12 @@ export default function HistoryPage() {
         paddingBottom: 'calc(var(--nav-height) + env(safe-area-inset-bottom, 0px))',
       }}
       onTouchStart={onTouchStart}
-      onTouchMove={onTouchMove}
       onTouchEnd={onTouchEnd}
     >
       <style>{`
         @keyframes spin { from { transform: rotate(0deg) } to { transform: rotate(360deg) } }
         ::-webkit-scrollbar { display: none }
       `}</style>
-
-      {/* ─── Pull-to-Refresh インジケーター ─── */}
-      {(pullY > 0 || isPullRefreshing) && (
-        <div style={{
-          position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100,
-          display: 'flex', justifyContent: 'center', alignItems: 'flex-end',
-          height: isPullRefreshing ? 56 : pullY, pointerEvents: 'none', paddingBottom: 8,
-          transition: isPullRefreshing ? 'height 0.2s ease' : 'none',
-        }}>
-          <div style={{
-            width: 28, height: 28, borderRadius: '50%',
-            border: '2.5px solid var(--border)',
-            borderTopColor: 'var(--accent)',
-            animation: (pullY >= PULL_THRESHOLD || isPullRefreshing) ? 'spin 0.6s linear infinite' : 'none',
-            transition: 'border-top-color 0.15s',
-          }} />
-        </div>
-      )}
 
       {/* ─── Header ─── */}
       <div style={{
