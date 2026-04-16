@@ -195,35 +195,49 @@ export async function getNotifiedIds(userId: string): Promise<Set<string>> {
   return new Set((data ?? []).map(r => r.auction_id as string))
 }
 
+// 複数ユーザーの通知済みIDを1クエリで一括取得
+// 100ユーザーでも getNotifiedIds を100回呼ぶ代わりに1回で済む
+export async function getAllNotifiedIds(userIds: string[]): Promise<Map<string, Set<string>>> {
+  if (userIds.length === 0) return new Map()
+  const { data } = await supabaseAdmin
+    .from('notified_items')
+    .select('user_id, auction_id')
+    .in('user_id', userIds)
+  const map = new Map<string, Set<string>>()
+  for (const userId of userIds) map.set(userId, new Set())
+  for (const row of data ?? []) {
+    map.get(row.user_id as string)?.add(row.auction_id as string)
+  }
+  return map
+}
+
 export async function clearNotifiedHistory(userId: string): Promise<void> {
   await supabaseAdmin.from('notified_items').delete().eq('user_id', userId)
 }
 
-export async function cleanupOldNotified(): Promise<number> {
+export async function cleanupOldNotified(): Promise<void> {
   // 25時間以上古い重複防止レコードを削除
   // 根拠: 通知対象は「残り24時間以内」のオークションのみ。
   //       25時間後には全て終了済みのため、安全に削除できる。
   //       これにより「通知済みIDが溜まって新着が届かない」障害を自動防止。
   const cutoff = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString()
-  const { count } = await supabaseAdmin
+  await supabaseAdmin
     .from('notified_items')
-    .delete({ count: 'exact' })
+    .delete()
     .lt('notified_at', cutoff)
-  return count ?? 0
 }
 
 export async function resetStalledNotified(): Promise<string[]> {
-  // 自己修復: 6時間以上通知が届いていないのに notified_items が溜まっているユーザーを検出し、
+  // 自己修復: 48時間以上通知が届いていないのに notified_items が溜まっているユーザーを検出し、
   //           通知済みリストを強制リセット（次のcronで再通知を開始させる）
-  // 閾値: 48h→6h, 20件→5件 に短縮（エラー回復後の自動復旧を速くするため）
   const supabase = getSupabaseAdmin()
-  const cutoff6h = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString()
+  const cutoff48h = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString()
 
-  // 6時間以上通知がないユーザーを notification_history から取得
+  // 48時間以上通知がないユーザーを notification_history から取得
   const { data: recentUsers } = await supabase
     .from('notification_history')
     .select('user_id')
-    .gte('notified_at', cutoff6h)
+    .gte('notified_at', cutoff48h)
 
   const recentSet = new Set((recentUsers ?? []).map(r => r.user_id as string))
 
@@ -242,9 +256,9 @@ export async function resetStalledNotified(): Promise<string[]> {
     counts[r.user_id] = (counts[r.user_id] ?? 0) + 1
   }
 
-  // 条件: 6時間通知なし かつ notified_items が5件以上 → ブロックされている可能性大
+  // 条件: 48時間通知なし かつ notified_items が20件以上 → ブロックされている可能性大
   const stalledUsers = Object.entries(counts)
-    .filter(([uid, cnt]) => cnt >= 5 && !recentSet.has(uid))
+    .filter(([uid, cnt]) => cnt >= 20 && !recentSet.has(uid))
     .map(([uid]) => uid)
 
   for (const uid of stalledUsers) {
@@ -255,72 +269,13 @@ export async function resetStalledNotified(): Promise<string[]> {
   return stalledUsers
 }
 
-export async function cleanupOldHistory(hours = 24): Promise<number> {
-  // 終了済みオークションの通知履歴を削除（デフォルト24時間）
-  // 履歴は端末IndexedDBで保持するためSupabase側は24hで削除しストレージを節約する
+export async function cleanupOldHistory(hours = 72): Promise<void> {
+  // 終了済みオークションの通知履歴を削除（デフォルト72時間＝3日後）
   const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString()
-  const { count } = await supabaseAdmin
+  await supabaseAdmin
     .from('notification_history')
-    .delete({ count: 'exact' })
+    .delete()
     .lt('notified_at', cutoff)
-  return count ?? 0
-}
-
-export async function cleanupExpiredTrialSessions(): Promise<number> {
-  // 期限切れトライアルセッションを削除（30日超えた分）
-  // trial_sessions テーブルが存在しない環境では静かにスキップ
-  try {
-    const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
-    const { count } = await supabaseAdmin
-      .from('trial_sessions')
-      .delete({ count: 'exact' })
-      .lt('expires_at', cutoff)
-    return count ?? 0
-  } catch {
-    return 0  // テーブルが存在しない環境では0を返す
-  }
-}
-
-export async function cleanupGhostUsers(): Promise<number> {
-  // ゴーストユーザーを削除:
-  //   - 条件（conditions）を1件も持たない
-  //   - push_sub が null（通知未設定）
-  //   - 作成から24時間以上経過（起動直後のセッションは除外）
-  // 再インストール時の孤立UUIDを自動回収しDBを健全に保つ
-  const supabase = getSupabaseAdmin()
-  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
-
-  // 条件を持つユーザーIDセットを取得
-  const { data: activeUsers } = await supabase
-    .from('conditions')
-    .select('user_id')
-  const activeSet = new Set((activeUsers ?? []).map(r => r.user_id as string))
-
-  // push_subなし かつ 24h超えユーザーを取得
-  const { data: candidates } = await supabase
-    .from('users')
-    .select('id')
-    .is('push_sub', null)
-    .lt('created_at', cutoff)
-  if (!candidates?.length) return 0
-
-  // 条件を持たないゴーストを抽出
-  const ghostIds = candidates
-    .map(r => r.id as string)
-    .filter(id => !activeSet.has(id))
-  if (!ghostIds.length) return 0
-
-  // 50件ずつバッチ削除（IN句の上限対策）
-  let total = 0
-  for (let i = 0; i < ghostIds.length; i += 50) {
-    const batch = ghostIds.slice(i, i + 50)
-    const { count } = await supabase
-      .from('users')
-      .delete({ count: 'exact' })
-      .in('id', batch)
-    total += count ?? 0
-  }
-  return total
 }
 
 // ==================== History ====================
