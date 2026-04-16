@@ -6,7 +6,7 @@
  * 実行: npx tsx scripts/run-check.ts
  * 環境変数: NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_KEY
  */
-import { getAllEnabledConditions, getNotifiedIds, markNotified, addHistory, updateCondition, cleanupOldNotified, cleanupOldHistory, cleanupExpiredTrialSessions, cleanupGhostUsers, resetStalledNotified } from '../lib/storage'
+import { getAllEnabledConditions, getNotifiedIds, markNotified, addHistory, updateCondition, cleanupOldNotified, cleanupOldHistory, resetStalledNotified } from '../lib/storage'
 import { fetchAuctionRss, checkAuctionEnded } from '../lib/scraper'
 import { notifyUser } from '../lib/notifier'
 import { sendWebPushToUser } from '../lib/webpush'
@@ -83,10 +83,7 @@ async function main() {
       allConditions = (await getAllEnabledConditions()).filter(c => c.enabled === true)
       break
     } catch (err) {
-      const errMsg = (err instanceof Error ? err.message : String(err))
-        .replace(process.env.NEXT_PUBLIC_SUPABASE_URL ?? '', '[SUPABASE_URL]')
-        .replace(process.env.SUPABASE_SERVICE_KEY     ?? '', '[SERVICE_KEY]')
-      console.error(`[DB] 取得失敗 (試行${attempt}/3): ${errMsg}`)
+      console.error(`[DB] 取得失敗 (試行${attempt}/3): ${err instanceof Error ? err.message : err}`)
       if (attempt === 3) throw err
       console.log(`[DB] 30秒後にリトライ...`)
       await new Promise(r => setTimeout(r, 30_000))
@@ -114,6 +111,15 @@ async function main() {
   })
   console.log(`通知設定済みユーザーの条件: ${activeConditions.length}件`)
 
+  // 通知済みIDをユーザーごとに一括取得してキャッシュ
+  // （ループ内で条件数分だけ都度取得するとDB負荷が条件数倍になるため）
+  const activeUserIds = [...new Set(activeConditions.map(c => c.userId))]
+  const notifiedIdsCache = new Map<string, Set<string>>()
+  for (const userId of activeUserIds) {
+    notifiedIdsCache.set(userId, await getNotifiedIds(userId))
+  }
+  console.log(`通知済みIDキャッシュ取得完了: ${activeUserIds.length}ユーザー分`)
+
   // キーワード+価格でグループ化（同じ検索は1回のみRSSフェッチ）
   const groups = groupConditions(activeConditions)
   console.log(`ユニーク検索: ${groups.length}件（重複排除後）`)
@@ -136,8 +142,8 @@ async function main() {
         const user = usersMap.get(cond.userId)
         if (!user) continue
 
-        // 通知済みIDを取得
-        const notifiedIds = await getNotifiedIds(cond.userId)
+        // 通知済みIDをキャッシュから取得（DB追加アクセスなし）
+        const notifiedIds = notifiedIdsCache.get(cond.userId) ?? new Set<string>()
         const minBids = cond.minBids ?? 0
         const maxBids = cond.maxBids ?? null
         const newItems = items
@@ -171,13 +177,15 @@ async function main() {
           // Web Push 通知（push購読があれば常に送信）
           let sentPush = false
           if (pushUserIds.has(cond.userId)) {
-            const pushResult = await sendWebPushToUser(cond.userId, item, undefined, undefined, { conditionName: cond.name })
+            const pushResult = await sendWebPushToUser(cond.userId, item)
             sentPush = pushResult > 0
             if (!sentPush) console.log(`    ⚠️ Push失敗 [${cond.name}] userId=${cond.userId.slice(0,8)}`)
           }
           const sent = sentLegacy || sentPush
           if (sent) {
             await markNotified(cond.userId, item.auctionId)
+            // キャッシュも更新（同一実行内での重複通知を防止）
+            notifiedIdsCache.get(cond.userId)?.add(item.auctionId)
             await addHistory({
               userId: cond.userId,
               conditionId: cond.id,
@@ -220,24 +228,13 @@ async function main() {
   // ─── 終了済みオークションを履歴から削除 ───
   await cleanupEndedAuctions()
 
-  // ─── 多層クリーンアップ ───────────────────────────────────────
-  // 【短期】notified_items: 25時間超を削除（オークション終了後のIDを安全に回収）
-  const deletedNotified = await cleanupOldNotified()
-  if (deletedNotified > 0) console.log(`[掃除] notified_items ${deletedNotified}件削除`)
+  // ─── 時間ベースのフォールバッククリーンアップ ───
+  // notification_history: 72時間後（ステータス確認できなかった場合の安全網）
+  // notified_items: 25時間後（オークション終了後のIDを安全に削除）
+  await cleanupOldHistory(72)
+  await cleanupOldNotified()
 
-  // 【短期】notification_history: 24時間超を削除（履歴はIndexedDB端末側で保持）
-  const deletedHistory = await cleanupOldHistory(24)
-  if (deletedHistory > 0) console.log(`[掃除] notification_history ${deletedHistory}件削除`)
-
-  // 【長期】trial_sessions: 30日超の期限切れを削除（月次相当・毎回実行しても軽量）
-  const deletedTrials = await cleanupExpiredTrialSessions()
-  if (deletedTrials > 0) console.log(`[掃除] trial_sessions ${deletedTrials}件削除`)
-
-  // 【長期】ゴーストユーザー: 条件なし・push_subなし・24h超を削除（再インストール孤立UUID回収）
-  const deletedGhosts = await cleanupGhostUsers()
-  if (deletedGhosts > 0) console.log(`[掃除] ゴーストユーザー ${deletedGhosts}件削除`)
-
-  // ─── 自己修復: 6時間通知なし + notified_items溜まりユーザーをリセット ───
+  // ─── 自己修復: 48時間通知なし + 20件溜まりユーザーをリセット ───
   const stalledUsers = await resetStalledNotified()
   if (stalledUsers.length > 0) {
     console.log(`[自己修復] ${stalledUsers.length}ユーザーの通知ログをリセット`)
@@ -293,15 +290,6 @@ async function cleanupEndedAuctions(): Promise<void> {
 }
 
 main().catch(err => {
-  // 秘密情報をマスクしてからログ出力（GitHub Actionsログへの漏洩防止）
-  const raw = err instanceof Error ? err.message : String(err)
-  const supabaseUrl  = process.env.NEXT_PUBLIC_SUPABASE_URL  ?? ''
-  const serviceKey   = process.env.SUPABASE_SERVICE_KEY       ?? ''
-  const vapidPrivate = process.env.VAPID_PRIVATE_KEY          ?? ''
-  const sanitized = raw
-    .replace(supabaseUrl,  '[SUPABASE_URL]')
-    .replace(serviceKey,   '[SERVICE_KEY]')
-    .replace(vapidPrivate, '[VAPID_PRIVATE]')
-  console.error('[FATAL]', sanitized)
+  console.error('エラー:', err)
   process.exit(1)
 })
