@@ -23,6 +23,26 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Supabase 起動確認（フリープランの一時停止対応）
+        run: |
+          echo "Supabase への接続確認中..."
+          for i in 1 2 3 4 5 6; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+              "${{ secrets.SUPABASE_URL }}/rest/v1/" \
+              -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
+              -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
+              --max-time 10)
+            echo "試行 $i: HTTP $STATUS"
+            if [ "$STATUS" = "200" ] || [ "$STATUS" = "400" ] || [ "$STATUS" = "401" ]; then
+              echo "✅ Supabase 起動確認完了"
+              sleep 2
+              exit 0
+            fi
+            echo "⏳ Supabase 起動待機中... 10秒後に再試行"
+            sleep 10
+          done
+          echo "⚠️ Supabase が応答しませんでした。処理を継続します"
+
       - name: Run auction check
         run: npx tsx scripts/run-check.ts
         env:
