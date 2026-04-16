@@ -3,6 +3,7 @@ import './globals.css'
 import BottomNav from '@/components/BottomNav'
 import InstallBanner from '@/components/InstallBanner'
 import InAppBrowserWarning from '@/components/InAppBrowserWarning'
+import DeviceGuard from '@/components/DeviceGuard'
 import TrialBanner from '@/components/TrialBanner'
 import SWNavigationHandler from '@/components/SWNavigationHandler'
 
@@ -65,11 +66,6 @@ if('serviceWorker' in navigator){
     if(e.data.type==='NAVIGATE'&&e.data.url){
       window.dispatchEvent(new CustomEvent('sw-navigate',{detail:{url:e.data.url}}));
     }
-    // 通知タップ → ヤフオク商品ページを直接開く（× で閉じると /history に自動復帰）
-    if(e.data.type==='OPEN_AUCTION'&&e.data.auctionId){
-      sessionStorage.setItem('yw_return_to','/history');
-      window.location.href='/redirect/'+e.data.auctionId;
-    }
     // 新デプロイ検出 → キャッシュを全削除してリロード
     if(e.data.type==='SW_UPDATED'){
       if('caches' in window){
@@ -84,32 +80,6 @@ if('serviceWorker' in navigator){
   // ページロードのたびに SW 更新チェック（古いSWが残っている場合に強制更新）
   navigator.serviceWorker.getRegistration().then(function(r){if(r) r.update();});
 }
-// ── Yahoo/外部ページ × 後のアプリ強制復帰 ──────────────────────────
-// openAuction() が sessionStorage に 'yw_return_to' をセット済みの場合:
-//   visibilitychange→visible (SFSafariViewController が閉じた) または
-//   pageshow persisted=true (bfcache復元) でアプリ内ナビゲーションを強制実行
-function ywReturnCheck(){
-  var rt=sessionStorage.getItem('yw_return_to');
-  if(!rt) return;
-  sessionStorage.removeItem('yw_return_to');
-  window.dispatchEvent(new CustomEvent('sw-navigate',{detail:{url:rt}}));
-}
-document.addEventListener('visibilitychange',function(){
-  if(document.visibilityState==='visible') ywReturnCheck();
-});
-window.addEventListener('pageshow',function(e){if(e.persisted) ywReturnCheck();});
-// 通知タップ時にアプリが未起動だった場合: openAuctionクエリパラメータを処理
-// SW が openWindow('/history?openAuction=xxx') でアプリを起動した直後に実行される
-(function(){
-  var params=new URLSearchParams(location.search);
-  var oa=params.get('openAuction');
-  if(!oa) return;
-  history.replaceState({},'',location.pathname);
-  setTimeout(function(){
-    sessionStorage.setItem('yw_return_to','/history');
-    window.location.href='/redirect/'+oa;
-  },300);
-})();
 `.trim() }} />
       </head>
       <body style={{ background: 'var(--bg)' }}>
@@ -118,6 +88,8 @@ window.addEventListener('pageshow',function(e){if(e.persisted) ywReturnCheck();}
           <SWNavigationHandler />
           {/* アプリ内ブラウザ検出: LINE/X/Instagram → Safari誘導オーバーレイ（最前面） */}
           <InAppBrowserWarning />
+          {/* デバイス制限: PC→ブロック、スマホブラウザ→インストール誘導、PWAのみ通過 */}
+          <DeviceGuard />
           {/* トライアルバナー（NEXT_PUBLIC_TRIAL_MODE=true の場合のみ表示） */}
           {isTrial && <TrialBanner />}
           <main style={{ paddingBottom: 80, paddingTop: isTrial ? 36 : 0 }}>
