@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useRef, useState, useMemo } from 'react'
+import { useEffect, useRef, useState, useMemo, useCallback } from 'react'
 import { NotificationRecord } from '@/lib/types'
 import AuctionThumbnail from '@/components/AuctionThumbnail'
 
@@ -8,22 +8,8 @@ function getUserId() {
   return localStorage.getItem('yahoowatch_user_id') ?? ''
 }
 
-// ─── ヤフオクページへ遷移 ───────────────────────────────────
-// Yahoo URL に直接遷移（/redirect/ は経由しない）
-// ⚠️ /redirect/ 経由は禁止: 302のみのページなのでバック時に空白ページに戻る
-// ⚠️ /open は絶対に使わない: プッシュ通知専用の deeplink インタースティシャル
-// window.open → iOS PWAで SFSafariViewController として開く
-// × で閉じた後に /history へ強制復帰するため sessionStorage にフラグをセット
-function openAuction(url: string) {
-  // × で閉じた後の強制復帰先を記録（layout.tsx の visibilitychange で消費）
-  sessionStorage.setItem('yw_return_to', '/history')
-  const win = window.open(url, '_blank', 'noopener')
-  if (!win) {
-    // iOS PWAではユーザータップ起点のwindow.openは通常成功する
-    // 失敗した場合でも location.href は使わない（WKWebView遷移 → 白画面の原因）
-    sessionStorage.removeItem('yw_return_to')
-  }
-}
+// キャッシュキー: WKWebView再起動後の即時表示・白画面防止用
+const HISTORY_CACHE_KEY = 'yw_history_cache'
 
 // ─── Yahoo公式大カテゴリ分類 ───
 const CATEGORIES = [
@@ -104,9 +90,11 @@ export default function HistoryPage() {
   const [refreshing, setRefreshing] = useState(false)
   const [activeTab, setActiveTab]   = useState<CategoryId>('all')
   const [selectedCondition, setSelectedCondition] = useState<string>('all')
-  const tabsRef    = useRef<HTMLDivElement>(null)
+  const tabsRef     = useRef<HTMLDivElement>(null)
   const touchStartX = useRef(0)
   const touchStartY = useRef(0)
+  // Yahoo遷移フラグ: SFSafariViewController から戻ってきた時に履歴を再取得する
+  const navigatedAway = useRef(false)
 
   // ─── Pull-to-Refresh ──────────────────────────────────────────
   const [pullY, setPullY] = useState(0)
@@ -114,83 +102,64 @@ export default function HistoryPage() {
   const pullStartY = useRef(-1)
   const PULL_THRESHOLD = 40
 
-  // ─── IndexedDB から履歴取得（端末側保存・Supabase不使用）────────
-  function fetchHistoryFromIDB(): Promise<NotificationRecord[]> {
-    return new Promise((resolve) => {
-      if (typeof indexedDB === 'undefined') { resolve([]); return }
-      try {
-        const req = indexedDB.open('yw-history', 1)
-        req.onsuccess = (e: any) => {
-          const db: IDBDatabase = e.target.result
-          if (!db.objectStoreNames.contains('notifications')) { db.close(); resolve([]); return }
-          const tx    = db.transaction('notifications', 'readonly')
-          const store = tx.objectStore('notifications')
-          const index = store.index('notifiedAt')
-          const r     = index.getAll()
-          r.onsuccess = () => {
-            db.close()
-            const items = (r.result as any[]).reverse().map((item: any) => ({
-              id:            item.id            ?? '',
-              userId:        '',
-              conditionId:   '',
-              conditionName: item.conditionName ?? '',
-              auctionId:     item.auctionId     ?? '',
-              title:         item.title         ?? '',
-              price:         item.price         ?? '',
-              url:           item.url           ?? '',
-              imageUrl:      item.imageUrl       ?? '',
-              notifiedAt:    item.notifiedAt     ?? '',
-              remaining:     item.remaining      ?? null,
-            }))
-            resolve(items)
-          }
-          r.onerror = () => { db.close(); resolve([]) }
-        }
-        req.onerror = () => resolve([])
-      } catch { resolve([]) }
-    })
-  }
-
-  // ─── データ取得（IndexedDB優先、空ならSupabaseにフォールバック）───
-  async function fetchHistory() {
-    const idbItems = await fetchHistoryFromIDB()
-    if (idbItems.length > 0) {
-      setHistory(idbItems)
-      return
-    }
-    // IndexedDB空（初回移行）→ Supabaseから取得
+  // ─── データ取得 ─────────────────────────────────────────────
+  const fetchHistory = useCallback(async () => {
     const id = getUserId()
     if (!id) return
-    const data = await fetch(`/api/history?userId=${id}`).then(r => r.json()).catch(() => [])
+    const data = await fetch(`/api/history?userId=${id}`).then(r => r.json())
     setHistory(data)
-  }
-
-  useEffect(() => {
-    fetchHistory().finally(() => setLoading(false))
+    // WKWebView再起動後の白画面防止: 最新データをキャッシュ保存
+    try { localStorage.setItem(HISTORY_CACHE_KEY, JSON.stringify(data)) } catch {}
   }, [])
 
-  // ─── リロード（クリーンアップ + 通知チェック + 履歴更新を同時実行）────
+  useEffect(() => {
+    // キャッシュから即時表示（WKWebView強制終了後の再起動時に白画面にならないよう）
+    try {
+      const cached = localStorage.getItem(HISTORY_CACHE_KEY)
+      if (cached) setHistory(JSON.parse(cached))
+    } catch {}
+    fetchHistory().finally(() => setLoading(false))
+  }, [fetchHistory])
+
+  // SFSafariViewController（Yahoo）から戻ってきた時に履歴を再取得
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (!document.hidden && navigatedAway.current) {
+        navigatedAway.current = false
+        fetchHistory()
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => document.removeEventListener('visibilitychange', handleVisibility)
+  }, [fetchHistory])
+
+  // ─── ヤフオクページを開く ───────────────────────────────────
+  // ⚠️ window.location.href は絶対に使わない:
+  //    PWAのWKWebViewが外部URLへ遷移し、×で戻ると白画面になる
+  // window.open(_blank) → iOS PWAではSFSafariViewControllerとして開く
+  // SFSafariViewController の × → WKWebViewに戻る（PWAの/historyが表示される）
+  const openAuction = useCallback((url: string) => {
+    navigatedAway.current = true
+    window.open(url, '_blank', 'noopener,noreferrer')
+    // フォールバックなし: window.openが失敗しても/historyから離脱しない
+  }, [])
+
+  // ─── 手動リロード（終了オークションのクリーンアップ + 履歴更新）────
   async function refresh() {
     if (refreshing) return
     setRefreshing(true)
     try {
       const id = getUserId()
+      // クリーンアップをバックグラウンドで実行（終了オークション削除・待たない）
       if (id) {
-        // クリーンアップ・通知チェックをバックグラウンドで並列実行（待たない）
         fetch('/api/history/cleanup', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ userId: id }),
         }).catch(() => {})
-        // 取りこぼし通知を即回収
-        fetch('/api/run-now', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: id, manual: false }),
-        }).catch(() => {})
       }
-      // 少し待ってから履歴取得（バックグラウンド処理が先行しやすくする）
-      await new Promise(r => setTimeout(r, 1000))
+      // 少し待ってから取得（クリーンアップが先行して完了しやすくする）
+      await new Promise(r => setTimeout(r, 800))
       await fetchHistory()
     } finally {
       setRefreshing(false)
