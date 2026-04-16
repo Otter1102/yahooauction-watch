@@ -82,7 +82,7 @@ export async function notifyUser(item: AuctionItem, user: User): Promise<boolean
   return results.some(Boolean)
 }
 
-// ==================== サマリー通知（30分に1回まとめて） ====================
+// ==================== サマリー通知（1時間に1回まとめて） ====================
 
 async function sendNtfySummary(count: number, topic: string): Promise<boolean> {
   if (!topic) return false

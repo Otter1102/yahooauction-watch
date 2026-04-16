@@ -1,7 +1,7 @@
 #!/usr/bin/env tsx
 /**
  * ヤフオクwatch チェッカー本体
- * GitHub Actions から30分毎に実行される
+ * GitHub Actions から1時間毎に実行される
  *
  * 実行: npx tsx scripts/run-check.ts
  * 環境変数: NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_KEY
@@ -212,7 +212,7 @@ async function main() {
   }
 
   // ─── サマリー通知（ユーザーごとに1回のみ）───
-  // 個別にブーブー鳴らすのをやめ、30分に1回「N件新着」でまとめて通知
+  // 個別にブーブー鳴らすのをやめ、1時間に1回「N件新着」でまとめて通知
   for (const [userId, items] of pendingByUser) {
     if (items.length === 0) continue
     const user = usersMap.get(userId)
