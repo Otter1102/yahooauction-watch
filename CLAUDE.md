@@ -240,10 +240,10 @@ for (const { userId, auctionId } of ended) {
 - 7日TTL（`cleanupOldNotified`）はあくまで安全網。主系はオークション終了検出で即削除する設計が正しい
 
 <!-- CC_CONTEXT_START -->
-<!-- cc:session:c15157ba-cd57-4092-b924-93046564c39d:2026-04-11 22:59 -->
-**最後の作業** (2026-04-11 22:59)
-- 改善できた？
-- <task-notification> <task-id>befasve0p</task-id> <tool-use-id>toolu_01Lubua3RMidqa21vZCR5LQ9</tool-…
-- <task-notification> <task-id>b6y0sxoue</task-id> <tool-use-id>toolu_01PkrjegJJWX7UHe9yXEkDmX</tool-…
-- 編集ファイル: route.ts、multi-device.spec.ts、TROUBLESHOOT.md、playwright.multi-device.config.ts
+<!-- cc:session:17e6476d-a339-44ac-971b-bff6e0267c93:2026-04-16 12:08 -->
+**最後の作業** (2026-04-16 12:08)
+- アプリは今あるのをそのまま使い続けたらいいですかね。通知をオフにし、各商品の通知条件をオフにした時にまたオンに復帰した時に、現時点の通知や最新情報を一括で取得するようにしたいです。 取得したら30分サイクルをそこからスタートするようにして…
+- 一旦今の状態でGitHubにバックアップ取っておいてもらってOKです。今のこの状況どうですかね？アプリとしてリリースしても問題ないレベルですかね？ 100から200人ぐらいは利用する計算になるんです…
+- じゃあ通知1時間に1回でいいか。 1時間に1回にしましょう。30分から1時間に1回で大丈夫です。
+- 編集ファイル: cron.yml、supabase_rls_morthership.sql、run-check.ts、storage.ts、notifier.ts、setup_all.sql
 <!-- CC_CONTEXT_END -->

@@ -3,6 +3,7 @@ import './globals.css'
 import BottomNav from '@/components/BottomNav'
 import InstallBanner from '@/components/InstallBanner'
 import InAppBrowserWarning from '@/components/InAppBrowserWarning'
+import DeviceGuard from '@/components/DeviceGuard'
 import TrialBanner from '@/components/TrialBanner'
 import SWNavigationHandler from '@/components/SWNavigationHandler'
 
@@ -87,6 +88,8 @@ if('serviceWorker' in navigator){
           <SWNavigationHandler />
           {/* アプリ内ブラウザ検出: LINE/X/Instagram → Safari誘導オーバーレイ（最前面） */}
           <InAppBrowserWarning />
+          {/* デバイス制限: PC→ブロック、スマホブラウザ→インストール誘導、PWAのみ通過 */}
+          <DeviceGuard />
           {/* トライアルバナー（NEXT_PUBLIC_TRIAL_MODE=true の場合のみ表示） */}
           {isTrial && <TrialBanner />}
           <main style={{ paddingBottom: 80, paddingTop: isTrial ? 36 : 0 }}>

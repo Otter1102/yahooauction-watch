@@ -8,19 +8,21 @@ interface Props {
   onChange: () => void
   onEdit: (condition: SearchCondition) => void
   onDuplicate: (condition: SearchCondition) => void
+  onEnable?: () => void  // オフ→オン時に即時チェックを起動するコールバック
 }
 
 const SELLER_LABEL: Record<SearchCondition['sellerType'], string>    = { all: '', store: 'ストア', individual: '個人' }
 const ITEM_LABEL:   Record<SearchCondition['itemCondition'], string> = { all: '', new: '新品', used: '中古' }
 const SORT_LABEL:   Record<SearchCondition['sortBy'], string>        = { endTime: '終了順', bids: '入札数', price: '価格順' }
 
-export default function ConditionCard({ condition, userId, onChange, onEdit, onDuplicate }: Props) {
+export default function ConditionCard({ condition, userId, onChange, onEdit, onDuplicate, onEnable }: Props) {
   const [toggling, setToggling] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [showMenu, setShowMenu] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
 
   async function toggleEnabled() {
+    const turningOn = !condition.enabled  // オン方向のトグルか記録
     setToggling(true)
     try {
       const res = await fetch(`/api/conditions/${condition.id}`, {
@@ -28,7 +30,11 @@ export default function ConditionCard({ condition, userId, onChange, onEdit, onD
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId, enabled: !condition.enabled }),
       })
-      if (res.ok) onChange()
+      if (res.ok) {
+        onChange()
+        // オフ→オンにした時だけ即時チェックを起動（新着を今すぐ取得）
+        if (turningOn) onEnable?.()
+      }
     } catch {
       // ネットワークエラー等は無視して元の状態を保持
     } finally {

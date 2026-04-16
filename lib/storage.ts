@@ -195,6 +195,22 @@ export async function getNotifiedIds(userId: string): Promise<Set<string>> {
   return new Set((data ?? []).map(r => r.auction_id as string))
 }
 
+// 複数ユーザーの通知済みIDを1クエリで一括取得
+// 100ユーザーでも getNotifiedIds を100回呼ぶ代わりに1回で済む
+export async function getAllNotifiedIds(userIds: string[]): Promise<Map<string, Set<string>>> {
+  if (userIds.length === 0) return new Map()
+  const { data } = await supabaseAdmin
+    .from('notified_items')
+    .select('user_id, auction_id')
+    .in('user_id', userIds)
+  const map = new Map<string, Set<string>>()
+  for (const userId of userIds) map.set(userId, new Set())
+  for (const row of data ?? []) {
+    map.get(row.user_id as string)?.add(row.auction_id as string)
+  }
+  return map
+}
+
 export async function clearNotifiedHistory(userId: string): Promise<void> {
   await supabaseAdmin.from('notified_items').delete().eq('user_id', userId)
 }
