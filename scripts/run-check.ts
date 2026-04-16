@@ -6,7 +6,7 @@
  * 実行: npx tsx scripts/run-check.ts
  * 環境変数: NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_KEY
  */
-import { getAllEnabledConditions, getNotifiedIds, markNotified, addHistory, updateCondition, cleanupOldNotified, cleanupOldHistory, resetStalledNotified } from '../lib/storage'
+import { getAllEnabledConditions, getAllNotifiedIds, markNotified, addHistory, updateCondition, cleanupOldNotified, cleanupOldHistory, resetStalledNotified } from '../lib/storage'
 import { fetchAuctionRss, checkAuctionEnded } from '../lib/scraper'
 import { notifyUser } from '../lib/notifier'
 import { sendWebPushToUser } from '../lib/webpush'
@@ -111,14 +111,11 @@ async function main() {
   })
   console.log(`通知設定済みユーザーの条件: ${activeConditions.length}件`)
 
-  // 通知済みIDをユーザーごとに一括取得してキャッシュ
-  // （ループ内で条件数分だけ都度取得するとDB負荷が条件数倍になるため）
+  // 通知済みIDを全ユーザー分まとめて1クエリで取得
+  // 100ユーザー時でもDBアクセスは1回のみ（スケーラブル設計）
   const activeUserIds = [...new Set(activeConditions.map(c => c.userId))]
-  const notifiedIdsCache = new Map<string, Set<string>>()
-  for (const userId of activeUserIds) {
-    notifiedIdsCache.set(userId, await getNotifiedIds(userId))
-  }
-  console.log(`通知済みIDキャッシュ取得完了: ${activeUserIds.length}ユーザー分`)
+  const notifiedIdsCache = await getAllNotifiedIds(activeUserIds)
+  console.log(`通知済みIDキャッシュ取得完了: ${activeUserIds.length}ユーザー分（1クエリ）`)
 
   // キーワード+価格でグループ化（同じ検索は1回のみRSSフェッチ）
   const groups = groupConditions(activeConditions)
@@ -142,16 +139,13 @@ async function main() {
         const user = usersMap.get(cond.userId)
         if (!user) continue
 
-        // 通知済みIDをキャッシュから取得（DB追加アクセスなし）
-        const notifiedIds = notifiedIdsCache.get(cond.userId) ?? new Set<string>()
         const minBids = cond.minBids ?? 0
         const maxBids = cond.maxBids ?? null
-        const newItems = items
-          .filter(item => !notifiedIds.has(item.auctionId))
+        // 入札数・出品形式フィルターのみ事前適用（通知済みチェックは直前に行う）
+        const candidateItems = items
           .filter(item => {
             // 入札数フィルター
             if (minBids <= 0 && maxBids === null) return true
-            // bids=null: startPrice取得失敗で入札数が本当に不明 → minBids>0 なら保守的に除外
             if (item.bids === null) return minBids <= 0
             if (minBids > 0 && item.bids < minBids) return false
             if (maxBids !== null && item.bids >= maxBids) return false
@@ -159,17 +153,18 @@ async function main() {
           })
           .filter(item => {
             // 出品形式フィルター
-            // 入札1件以上 かつ 出品形式=両方 → 純即決（isBuyItNow=true）を除外
-            //   理由: 入札があるということはオークション商品確定。純即決は入札不可なので除外。
-            //   ※ オークション+即決オプション付き商品（isBuyItNow=false）は除外しない
             if (minBids > 0 && cond.buyItNow === null && item.isBuyItNow === true) return false
-            if (cond.buyItNow === null) return true                       // 両方OK
-            if (cond.buyItNow === true) return item.isBuyItNow === true   // 即決ボタン押した時のみ即決
-            return item.isBuyItNow !== true                               // false = オークションのみ
+            if (cond.buyItNow === null) return true
+            if (cond.buyItNow === true) return item.isBuyItNow === true
+            return item.isBuyItNow !== true
           })
 
         let conditionNotified = 0
-        for (const item of newItems) {
+        for (const item of candidateItems) {
+          // 通知済みチェック: 通知直前にキャッシュを参照（並列グループ間の重複送信を防止）
+          // Promise.all で複数グループが並列実行される際、同一オークションへの二重通知を確実に防ぐ
+          if (notifiedIdsCache.get(cond.userId)?.has(item.auctionId)) continue
+
           // ntfy / Discord 通知
           const sentLegacy = user.ntfyTopic || user.discordWebhook
             ? await notifyUser(item, user)
