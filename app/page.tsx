@@ -68,6 +68,8 @@ function SkeletonCard() {
   )
 }
 
+const CONDS_CACHE = 'yw_conditions_cache'
+
 export default function Dashboard() {
   const [userId, setUserId]         = useState('')
   const [conditions, setConditions] = useState<SearchCondition[]>([])
@@ -77,9 +79,6 @@ export default function Dashboard() {
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [notifyReady, setNotifyReady] = useState(false)
   const [pushLost, setPushLost] = useState(false)
-  const [refreshing, setRefreshing] = useState(false)
-  const [runResult, setRunResult] = useState<{ msg: string; type: 'ok' | 'info' | 'warn' } | null>(null)
-  const [running, setRunning] = useState(false)
   const [duplicatingCondition, setDuplicatingCondition] = useState<SearchCondition | null>(null)
 
   // ─── Pull-to-Refresh ─────────────────────────────────────────
@@ -121,7 +120,24 @@ export default function Dashboard() {
   async function init() {
     const id = getUserId()
     if (!id) return
+
+    // PWA（standalone）以外ではDBユーザーを作成しない（幽霊ユーザー防止）
+    // DeviceGuard が非PWAに全画面ブロックを表示するため、ここには実質PWAのみ到達する
+    const isStandalone =
+      ('standalone' in navigator && (navigator as { standalone?: boolean }).standalone === true) ||
+      window.matchMedia('(display-mode: standalone)').matches
+    if (!isStandalone) {
+      setLoading(false)
+      return
+    }
+
     setUserId(id)
+
+    // キャッシュがあれば即表示（API待ちなしで高速起動）
+    try {
+      const cached = localStorage.getItem(CONDS_CACHE)
+      if (cached) { setConditions(JSON.parse(cached)); setLoading(false) }
+    } catch {}
 
     // Yahoo連携済み or オンボーディング完了済みならホームへ（再表示しない）
     if (localStorage.getItem('yahoowatch_yahoo_connected')) {
@@ -138,10 +154,12 @@ export default function Dashboard() {
       fetch(`/api/conditions?userId=${id}`),
     ])
 
-    // 条件を即表示（最優先）
+    // 条件を即表示（最優先）、キャッシュも更新
     try {
       if (conditionsRes.status === 'fulfilled' && conditionsRes.value.ok) {
-        setConditions(await conditionsRes.value.json())
+        const data = await conditionsRes.value.json()
+        setConditions(data)
+        try { localStorage.setItem(CONDS_CACHE, JSON.stringify(data)) } catch {}
       }
     } catch { /* JSON parseエラーは無視 */ } finally {
       setLoading(false)
@@ -172,80 +190,24 @@ export default function Dashboard() {
   async function loadConditions(uid?: string) {
     const id = uid ?? userId
     if (!id) return
-    setRefreshing(true)
     try {
       const res = await fetch(`/api/conditions?userId=${id}`)
-      if (res.ok) setConditions(await res.json())
-    } catch { /* ネットワークエラーは無視 */ } finally {
-      setRefreshing(false)
-    }
+      if (res.ok) {
+        const data = await res.json()
+        setConditions(data)
+        try { localStorage.setItem(CONDS_CACHE, JSON.stringify(data)) } catch {}
+      }
+    } catch { /* ネットワークエラーは無視 */ }
   }
 
-  // 条件登録・更新時にバックグラウンドで即チェック、結果をトーストで表示
-  async function runNow(showToast = false) {
-    if (!userId || running) return
-    if (showToast) {
-      setRunning(true)
-      // 手動実行時は通知済みログをリセットして全件再チェック
-      // （notified_items が残っていると既通知商品が再通知されないため）
-      await fetch('/api/reset-notified', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId }),
-      }).catch(() => {})
-    }
-    try {
-      const res = await fetch('/api/run-now', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, manual: showToast }),
-      })
-      await loadConditions(userId)
-      if (!showToast) return
-      const data = await res.json()
-      if (!res.ok) {
-        setRunResult({ msg: data.error ?? 'チェックに失敗しました', type: 'warn' })
-        setTimeout(() => setRunResult(null), 5000)
-        return
-      }
-      const notified: number = data.notified ?? 0
-      type ResultRow = { name: string; fetched: number; rawCount: number; alreadyNotified: number; filteredByBids: number; filteredByFormat: number; newItems: number; notified: number; priceWarning?: boolean; simpleCount?: number }
-      const results: ResultRow[] = data.results ?? []
-      console.log('[run-now] 診断結果:', JSON.stringify(results, null, 2))
-      const totalAlready = results.reduce((s, r) => s + (r.alreadyNotified ?? 0), 0)
-      const totalBidsFiltered = results.reduce((s, r) => s + (r.filteredByBids ?? 0), 0)
-      const totalFormatFiltered = results.reduce((s, r) => s + (r.filteredByFormat ?? 0), 0)
-      const totalFetched = results.reduce((s, r) => s + (r.fetched ?? 0), 0)
-
-      // 問題のある条件を特定して表示
-      const issues: string[] = []
-      for (const r of results) {
-        if (r.notified > 0) continue
-        if (r.priceWarning) issues.push(`「${r.name}」最低価格≥最高価格`)
-        else if (r.rawCount === 0) issues.push(`「${r.name}」商品なし`)
-        else if (r.filteredByBids > 0) issues.push(`「${r.name}」入札数フィルターで除外`)
-        else if (r.filteredByFormat > 0) issues.push(`「${r.name}」出品形式フィルターで除外`)
-        else if (r.alreadyNotified > 0) issues.push(`「${r.name}」通知済み`)
-        else if ((r.newItems ?? 0) > 0) issues.push(`「${r.name}」通知の送信に失敗しました — 設定ページでテスト通知をご確認ください`)
-      }
-
-      if (notified > 0) {
-        setRunResult({ msg: `✓ ${notified}件通知しました`, type: 'ok' })
-      } else if (issues.length > 0) {
-        setRunResult({ msg: issues.join('\n'), type: 'info' })
-      } else if (totalAlready > 0 && totalFetched > 0) {
-        setRunResult({ msg: `${totalAlready}件は通知済み。新着を待っています`, type: 'info' })
-      } else if (totalBidsFiltered > 0 || totalFormatFiltered > 0) {
-        setRunResult({ msg: `入札数・出品形式フィルターで除外（${totalBidsFiltered + totalFormatFiltered}件）。条件を緩めてみてください`, type: 'info' })
-      } else if (totalFetched === 0) {
-        setRunResult({ msg: 'ヤフオクで該当商品が見つかりません', type: 'warn' })
-      } else {
-        setRunResult({ msg: '新着なし', type: 'info' })
-      }
-      setTimeout(() => setRunResult(null), 8000)
-    } catch { /* ignore */ } finally {
-      if (showToast) setRunning(false)
-    }
+  // 条件登録・更新・オン復帰時にバックグラウンドで即チェック（合計件数を1通知）
+  function runNow() {
+    if (!userId) return
+    fetch('/api/run-now', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, manual: true }),
+    }).catch(() => {})
   }
 
   useEffect(() => { init() }, [])
@@ -280,6 +242,7 @@ export default function Dashboard() {
             animation: (pullY >= PULL_THRESHOLD || isPullRefreshing) ? 'spin 0.6s linear infinite' : 'none',
             transition: 'border-top-color 0.15s',
           }} />
+          <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
         </div>
       )}
 
@@ -310,22 +273,6 @@ export default function Dashboard() {
                 </p>
               )}
             </div>
-            <button
-              onClick={() => loadConditions()}
-              disabled={refreshing}
-              style={{
-                background: 'var(--fill)', border: '1px solid var(--border)', borderRadius: 20,
-                width: 32, height: 32, cursor: refreshing ? 'default' : 'pointer',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                color: 'var(--text-secondary)', opacity: refreshing ? 0.5 : 1,
-              }}
-            >
-              <span style={{
-                fontSize: 15, lineHeight: 1, display: 'inline-block',
-                animation: refreshing ? 'spin 0.8s linear infinite' : 'none',
-              }}>↻</span>
-              <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
-            </button>
           </div>
         </div>
 
@@ -393,7 +340,7 @@ export default function Dashboard() {
                 {[
                   { val: String(activeCount), label: '稼働中', highlight: activeCount > 0 },
                   { val: String(conditions.length), label: '登録条件', highlight: false },
-                  { val: '10分', label: '更新間隔', highlight: false },
+                  { val: '30分', label: '更新間隔', highlight: false },
                 ].map((item, i) => (
                   <div key={i} style={{
                     textAlign: 'center', flex: 1,
@@ -445,6 +392,7 @@ export default function Dashboard() {
                     onChange={() => loadConditions()}
                     onEdit={cond => setEditingCondition(cond)}
                     onDuplicate={cond => { window.scrollTo({ top: 0, behavior: 'smooth' }); setDuplicatingCondition(cond) }}
+                    onEnable={() => runNow()}
                   />
                 ))}
                 {/* 条件追加ボタン（条件がある時も常に表示） */}
@@ -465,66 +413,10 @@ export default function Dashboard() {
               </div>
             )}
 
-            {/* ─── 今すぐ確認 + 自動チェック表示 ─── */}
-            {conditions.length > 0 && (
-              <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <button
-                  onClick={() => runNow(true)}
-                  disabled={running}
-                  style={{
-                    width: '100%', height: 44, borderRadius: 14,
-                    background: running ? 'var(--fill)' : 'var(--grad-primary)',
-                    color: running ? 'var(--text-tertiary)' : 'white',
-                    border: 'none', fontWeight: 600, fontSize: 14,
-                    cursor: running ? 'default' : 'pointer', fontFamily: 'inherit',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                    transition: 'opacity 0.15s',
-                    boxShadow: running ? 'none' : '0 2px 10px rgba(0,153,226,0.25)',
-                  }}
-                >
-                  {running ? (
-                    <><span style={{ fontSize: 15, animation: 'spin 0.8s linear infinite', display: 'inline-block' }}>↻</span> チェック中...</>
-                  ) : (
-                    <><span style={{ fontSize: 16 }}>🔍</span> 今すぐ確認</>
-                  )}
-                </button>
-                <div style={{
-                  padding: '10px 14px', borderRadius: 22,
-                  background: 'var(--card)', border: '1px solid var(--border)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                }}>
-                  <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 400, letterSpacing: '0.3px' }}>
-                    10分ごとに自動チェック · 新着のみ通知
-                  </span>
-                </div>
-              </div>
-            )}
           </>
         )}
       </div>
 
-      {/* ─── 結果トースト ─── */}
-      {runResult && (
-        <div style={{
-          position: 'fixed',
-          bottom: 'calc(env(safe-area-inset-bottom, 0px) + 76px)',
-          left: '50%', transform: 'translateX(-50%)',
-          maxWidth: 340, width: 'calc(100% - 32px)',
-          background: runResult.type === 'ok' ? '#1a8a4a' : runResult.type === 'warn' ? '#b35a00' : '#333',
-          color: 'white', borderRadius: 12,
-          padding: '12px 16px',
-          fontSize: 13, fontWeight: 500, lineHeight: 1.4,
-          boxShadow: '0 4px 20px rgba(0,0,0,0.25)',
-          zIndex: 200,
-          animation: 'fadeInUp 0.2s ease',
-          textAlign: 'center',
-        }}>
-          {runResult.msg.split('\n').map((line, i) => (
-            <div key={i} style={{ marginTop: i > 0 ? 4 : 0 }}>{line}</div>
-          ))}
-        </div>
-      )}
-      <style>{`@keyframes fadeInUp{from{opacity:0;transform:translateX(-50%) translateY(8px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}`}</style>
 
       {/* ─── FAB ─── */}
       <button
