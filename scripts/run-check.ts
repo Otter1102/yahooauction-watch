@@ -244,6 +244,12 @@ async function main() {
     console.log(`[自己修復] ${stalledUsers.length}ユーザーの通知ログをリセット`)
   }
 
+  // ─── 幽霊ユーザー削除（通知設定なし + 14日以上経過）───
+  const ghostCount = await cleanupGhostUsers()
+  if (ghostCount > 0) {
+    console.log(`[幽霊ユーザー] ${ghostCount}件削除（通知設定なし+14日経過）`)
+  }
+
   console.log(`\n=== 完了: 合計${totalNotified}件通知 ===\n`)
 }
 
@@ -291,6 +297,37 @@ async function cleanupEndedAuctions(): Promise<void> {
   }
 
   console.log(`終了オークション ${toDeleteHistoryIds.length}件を履歴・通知ログから削除`)
+}
+
+/**
+ * 幽霊ユーザーを削除する
+ * 条件: push_sub なし + ntfy/discord 未設定 + 14日以上経過
+ * → PWA未インストールのまま放置されたゴーストアカウントを定期削除
+ * conditions は users に CASCADE DELETE されるため一緒に消える
+ */
+async function cleanupGhostUsers(): Promise<number> {
+  const cutoff = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString()
+  try {
+    // 幽霊ユーザー候補: push_sub なし かつ 14日以上前に作成
+    const { data: candidates } = await supabaseAdmin
+      .from('users')
+      .select('id, ntfy_topic, discord_webhook')
+      .is('push_sub', null)
+      .lt('created_at', cutoff)
+    if (!candidates?.length) return 0
+
+    // JS側でntfy/discordも未設定を確認（null/空文字両方対応）
+    const ghostIds = candidates
+      .filter(u => !u.ntfy_topic && !u.discord_webhook)
+      .map(u => u.id as string)
+    if (ghostIds.length === 0) return 0
+
+    await supabaseAdmin.from('users').delete().in('id', ghostIds)
+    return ghostIds.length
+  } catch (err) {
+    console.error('[幽霊ユーザー削除エラー]', err instanceof Error ? err.message : err)
+    return 0
+  }
 }
 
 main().catch(err => {
