@@ -1,15 +1,15 @@
 #!/usr/bin/env tsx
 /**
  * ヤフオクwatch チェッカー本体
- * GitHub Actions から30分毎に実行される
+ * GitHub Actions から1時間毎に実行される
  *
  * 実行: npx tsx scripts/run-check.ts
  * 環境変数: NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_KEY
  */
-import { getAllEnabledConditions, getNotifiedIds, markNotified, addHistory, updateCondition, cleanupOldNotified, cleanupOldHistory, resetStalledNotified } from '../lib/storage'
+import { getAllEnabledConditions, getAllNotifiedIds, markNotified, addHistory, updateCondition, cleanupOldNotified, cleanupOldHistory, resetStalledNotified } from '../lib/storage'
 import { fetchAuctionRss, checkAuctionEnded } from '../lib/scraper'
-import { notifyUser } from '../lib/notifier'
-import { sendWebPushToUser } from '../lib/webpush'
+import { notifyUserSummary } from '../lib/notifier'
+import { sendWebPushSummary } from '../lib/webpush'
 import { getSupabaseAdmin } from '../lib/supabase'
 const supabaseAdmin = { from: (...args: Parameters<ReturnType<typeof getSupabaseAdmin>['from']>) => getSupabaseAdmin().from(...args) }
 import { User, SearchCondition, AuctionItem } from '../lib/types'
@@ -111,11 +111,19 @@ async function main() {
   })
   console.log(`通知設定済みユーザーの条件: ${activeConditions.length}件`)
 
+  // 通知済みIDを全ユーザー分まとめて1クエリで取得
+  // 100ユーザー時でもDBアクセスは1回のみ（スケーラブル設計）
+  const activeUserIds = [...new Set(activeConditions.map(c => c.userId))]
+  const notifiedIdsCache = await getAllNotifiedIds(activeUserIds)
+  console.log(`通知済みIDキャッシュ取得完了: ${activeUserIds.length}ユーザー分（1クエリ）`)
+
   // キーワード+価格でグループ化（同じ検索は1回のみRSSフェッチ）
   const groups = groupConditions(activeConditions)
   console.log(`ユニーク検索: ${groups.length}件（重複排除後）`)
 
   let totalNotified = 0
+  // ユーザーごとの新着アイテム収集（メインループ後にサマリー1回で通知）
+  const pendingByUser = new Map<string, AuctionItem[]>()
 
   // 並列でRSSフェッチ（10並列）
   // startOffset=1: スクレイパー内で b=1(1〜50件) + b=51(51〜100件) の2ページを自動取得
@@ -133,16 +141,13 @@ async function main() {
         const user = usersMap.get(cond.userId)
         if (!user) continue
 
-        // 通知済みIDを取得
-        const notifiedIds = await getNotifiedIds(cond.userId)
         const minBids = cond.minBids ?? 0
         const maxBids = cond.maxBids ?? null
-        const newItems = items
-          .filter(item => !notifiedIds.has(item.auctionId))
+        // 入札数・出品形式フィルターのみ事前適用（通知済みチェックは直前に行う）
+        const candidateItems = items
           .filter(item => {
             // 入札数フィルター
             if (minBids <= 0 && maxBids === null) return true
-            // bids=null: startPrice取得失敗で入札数が本当に不明 → minBids>0 なら保守的に除外
             if (item.bids === null) return minBids <= 0
             if (minBids > 0 && item.bids < minBids) return false
             if (maxBids !== null && item.bids >= maxBids) return false
@@ -150,60 +155,52 @@ async function main() {
           })
           .filter(item => {
             // 出品形式フィルター
-            // 入札1件以上 かつ 出品形式=両方 → 純即決（isBuyItNow=true）を除外
-            //   理由: 入札があるということはオークション商品確定。純即決は入札不可なので除外。
-            //   ※ オークション+即決オプション付き商品（isBuyItNow=false）は除外しない
             if (minBids > 0 && cond.buyItNow === null && item.isBuyItNow === true) return false
-            if (cond.buyItNow === null) return true                       // 両方OK
-            if (cond.buyItNow === true) return item.isBuyItNow === true   // 即決ボタン押した時のみ即決
-            return item.isBuyItNow !== true                               // false = オークションのみ
+            if (cond.buyItNow === null) return true
+            if (cond.buyItNow === true) return item.isBuyItNow === true
+            return item.isBuyItNow !== true
           })
 
         let conditionNotified = 0
-        for (const item of newItems) {
-          // ntfy / Discord 通知
-          const sentLegacy = user.ntfyTopic || user.discordWebhook
-            ? await notifyUser(item, user)
-            : false
-          // Web Push 通知（push購読があれば常に送信）
-          let sentPush = false
-          if (pushUserIds.has(cond.userId)) {
-            const pushResult = await sendWebPushToUser(cond.userId, item)
-            sentPush = pushResult > 0
-            if (!sentPush) console.log(`    ⚠️ Push失敗 [${cond.name}] userId=${cond.userId.slice(0,8)}`)
+        for (const item of candidateItems) {
+          // 通知済みチェック: 送信直前にキャッシュを参照（並列グループ間の重複防止）
+          if (notifiedIdsCache.get(cond.userId)?.has(item.auctionId)) continue
+
+          // 履歴への記録と通知済みマーク（個別通知はせずサマリー用に収集）
+          await markNotified(cond.userId, item.auctionId)
+          notifiedIdsCache.get(cond.userId)?.add(item.auctionId)
+          await addHistory({
+            userId: cond.userId,
+            conditionId: cond.id,
+            conditionName: cond.name,
+            auctionId: item.auctionId,
+            title: item.title,
+            price: item.price,
+            url: item.url,
+            imageUrl: item.imageUrl ?? '',
+            notifiedAt: new Date().toISOString(),
+            remaining: item.remaining ?? null,
+          })
+          // サマリー通知用に収集（同一実行内で同一商品の重複を除く）
+          if (!pendingByUser.has(cond.userId)) pendingByUser.set(cond.userId, [])
+          const alreadyPending = pendingByUser.get(cond.userId)!
+          if (!alreadyPending.some(a => a.auctionId === item.auctionId)) {
+            alreadyPending.push(item)
           }
-          const sent = sentLegacy || sentPush
-          if (sent) {
-            await markNotified(cond.userId, item.auctionId)
-            await addHistory({
-              userId: cond.userId,
-              conditionId: cond.id,
-              conditionName: cond.name,
-              auctionId: item.auctionId,
-              title: item.title,
-              price: item.price,
-              url: item.url,
-              imageUrl: item.imageUrl ?? '',
-              notifiedAt: new Date().toISOString(),
-              remaining: item.remaining ?? null,
-            })
-            conditionNotified++
-            totalNotified++
-            // ntfy.sh レート制限対策
-            await new Promise(r => setTimeout(r, 300))
-          }
+          conditionNotified++
+          totalNotified++
         }
 
         // 変化があった時のみ更新（DB帯域節約: 変化なし=スキップで月間UPDATE数を大幅削減）
-        if (conditionNotified > 0 || newItems.length !== (cond.lastFoundCount ?? -1)) {
+        if (conditionNotified > 0 || candidateItems.length !== (cond.lastFoundCount ?? -1)) {
           await updateCondition(cond.id, {
             lastCheckedAt: new Date().toISOString(),
-            lastFoundCount: newItems.length,
+            lastFoundCount: candidateItems.length,
           })
         }
 
         if (conditionNotified > 0) {
-          console.log(`  ✅ [${cond.name}] ${conditionNotified}件通知`)
+          console.log(`  ✅ [${cond.name}] ${conditionNotified}件新着`)
         }
       }
     }))
@@ -212,6 +209,24 @@ async function main() {
     if (i + CONCURRENCY < groups.length) {
       await new Promise(r => setTimeout(r, 1000))
     }
+  }
+
+  // ─── サマリー通知（ユーザーごとに1回のみ）───
+  // 個別にブーブー鳴らすのをやめ、1時間に1回「N件新着」でまとめて通知
+  for (const [userId, items] of pendingByUser) {
+    if (items.length === 0) continue
+    const user = usersMap.get(userId)
+    if (!user) continue
+
+    // Web Push サマリー（push購読あり）
+    if (pushUserIds.has(userId)) {
+      await sendWebPushSummary(userId, items.length, items[0])
+    }
+    // ntfy / Discord サマリー
+    if (user.ntfyTopic || user.discordWebhook) {
+      await notifyUserSummary(items.length, user)
+    }
+    console.log(`  📨 [${userId.slice(0,8)}] サマリー通知: 新着${items.length}件`)
   }
 
   // ─── 終了済みオークションを履歴から削除 ───
@@ -227,6 +242,12 @@ async function main() {
   const stalledUsers = await resetStalledNotified()
   if (stalledUsers.length > 0) {
     console.log(`[自己修復] ${stalledUsers.length}ユーザーの通知ログをリセット`)
+  }
+
+  // ─── 幽霊ユーザー削除（通知設定なし + 14日以上経過）───
+  const ghostCount = await cleanupGhostUsers()
+  if (ghostCount > 0) {
+    console.log(`[幽霊ユーザー] ${ghostCount}件削除（通知設定なし+14日経過）`)
   }
 
   console.log(`\n=== 完了: 合計${totalNotified}件通知 ===\n`)
@@ -276,6 +297,37 @@ async function cleanupEndedAuctions(): Promise<void> {
   }
 
   console.log(`終了オークション ${toDeleteHistoryIds.length}件を履歴・通知ログから削除`)
+}
+
+/**
+ * 幽霊ユーザーを削除する
+ * 条件: push_sub なし + ntfy/discord 未設定 + 14日以上経過
+ * → PWA未インストールのまま放置されたゴーストアカウントを定期削除
+ * conditions は users に CASCADE DELETE されるため一緒に消える
+ */
+async function cleanupGhostUsers(): Promise<number> {
+  const cutoff = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString()
+  try {
+    // 幽霊ユーザー候補: push_sub なし かつ 14日以上前に作成
+    const { data: candidates } = await supabaseAdmin
+      .from('users')
+      .select('id, ntfy_topic, discord_webhook')
+      .is('push_sub', null)
+      .lt('created_at', cutoff)
+    if (!candidates?.length) return 0
+
+    // JS側でntfy/discordも未設定を確認（null/空文字両方対応）
+    const ghostIds = candidates
+      .filter(u => !u.ntfy_topic && !u.discord_webhook)
+      .map(u => u.id as string)
+    if (ghostIds.length === 0) return 0
+
+    await supabaseAdmin.from('users').delete().in('id', ghostIds)
+    return ghostIds.length
+  } catch (err) {
+    console.error('[幽霊ユーザー削除エラー]', err instanceof Error ? err.message : err)
+    return 0
+  }
 }
 
 main().catch(err => {

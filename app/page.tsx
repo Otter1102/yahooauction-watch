@@ -292,7 +292,7 @@ export default function Dashboard() {
                 {[
                   { val: String(activeCount), label: '稼働中', highlight: activeCount > 0 },
                   { val: String(conditions.length), label: '登録条件', highlight: false },
-                  { val: '30分', label: '更新間隔', highlight: false },
+                  { val: '1時間', label: '更新間隔', highlight: false },
                 ].map((item, i) => (
                   <div key={i} style={{
                     textAlign: 'center', flex: 1,

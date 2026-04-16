@@ -82,6 +82,58 @@ export async function notifyUser(item: AuctionItem, user: User): Promise<boolean
   return results.some(Boolean)
 }
 
+// ==================== サマリー通知（1時間に1回まとめて） ====================
+
+async function sendNtfySummary(count: number, topic: string): Promise<boolean> {
+  if (!topic) return false
+  const title = `ヤフオクwatch 新着${count}件`
+  const body = `${count}件の新着商品が見つかりました → アプリで確認`
+  try {
+    const url = new URL(`https://ntfy.sh/${encodeURIComponent(topic)}`)
+    url.searchParams.set('title', title)
+    const res = await fetch(url.toString(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+      body,
+      signal: AbortSignal.timeout(10000),
+    })
+    return res.ok
+  } catch { return false }
+}
+
+async function sendDiscordSummary(count: number, webhookUrl: string): Promise<boolean> {
+  if (!webhookUrl) return false
+  try {
+    const host = new URL(webhookUrl).hostname
+    if (host !== 'discord.com' && host !== 'discordapp.com') return false
+  } catch { return false }
+  try {
+    const res = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: 'ヤフオクwatch',
+        embeds: [{
+          title: `🔔 新着 ${count} 件`,
+          description: `${count}件の新着商品が見つかりました。アプリの通知履歴をご確認ください。`,
+          color: 0xff6600,
+        }],
+      }),
+      signal: AbortSignal.timeout(10000),
+    })
+    return res.status === 204
+  } catch { return false }
+}
+
+export async function notifyUserSummary(count: number, user: User): Promise<boolean> {
+  const ch = user.notificationChannel
+  const results = await Promise.all([
+    (ch === 'ntfy' || ch === 'both') ? sendNtfySummary(count, user.ntfyTopic) : Promise.resolve(false),
+    (ch === 'discord' || ch === 'both') ? sendDiscordSummary(count, user.discordWebhook) : Promise.resolve(false),
+  ])
+  return results.some(Boolean)
+}
+
 // ==================== テスト通知 ====================
 
 export async function sendTestNtfy(topic: string): Promise<boolean> {
