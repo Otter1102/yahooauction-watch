@@ -79,9 +79,32 @@ CREATE INDEX IF NOT EXISTS idx_notification_history_user_id
 CREATE INDEX IF NOT EXISTS idx_notification_history_notified_at
   ON notification_history(notified_at);
 
--- ─── Row Level Security（RLSは使わない設計 — service_roleキーで操作）
--- アプリはサーバーサイド（GitHub Actions / API Routes）から
--- SUPABASE_SERVICE_KEY を使って操作するため RLS 不要
+-- ─── Row Level Security（全テーブルで有効化）──────────────
+-- サービスロールキーはRLSをバイパスするため既存の動作は変わらない
+-- anon キーからの直接アクセスを全て拒否（push_sub/discord_webhook の漏洩防止）
+
+ALTER TABLE users               ENABLE ROW LEVEL SECURITY;
+ALTER TABLE conditions          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE notified_items      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE notification_history ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "anon_deny_users"                ON users;
+DROP POLICY IF EXISTS "anon_deny_conditions"           ON conditions;
+DROP POLICY IF EXISTS "anon_deny_notified_items"       ON notified_items;
+DROP POLICY IF EXISTS "anon_deny_notification_history" ON notification_history;
+
+CREATE POLICY "anon_deny_users"                ON users                FOR ALL TO anon USING (false);
+CREATE POLICY "anon_deny_conditions"           ON conditions           FOR ALL TO anon USING (false);
+CREATE POLICY "anon_deny_notified_items"       ON notified_items       FOR ALL TO anon USING (false);
+CREATE POLICY "anon_deny_notification_history" ON notification_history FOR ALL TO anon USING (false);
+
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'trial_sessions') THEN
+    EXECUTE 'ALTER TABLE trial_sessions ENABLE ROW LEVEL SECURITY';
+    EXECUTE 'DROP POLICY IF EXISTS "anon_deny_trial_sessions" ON trial_sessions';
+    EXECUTE 'CREATE POLICY "anon_deny_trial_sessions" ON trial_sessions FOR ALL TO anon USING (false)';
+  END IF;
+END $$;
 
 -- ─── 完了メッセージ ────────────────────────────────────
 -- 上記を実行後、以下の環境変数を Vercel と GitHub Actions に設定:
