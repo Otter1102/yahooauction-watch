@@ -8,8 +8,8 @@
  */
 import { getAllEnabledConditions, getAllNotifiedIds, markNotified, addHistory, updateCondition, cleanupOldNotified, cleanupOldHistory, resetStalledNotified } from '../lib/storage'
 import { fetchAuctionRss, checkAuctionEnded } from '../lib/scraper'
-import { notifyUser } from '../lib/notifier'
-import { sendWebPushToUser } from '../lib/webpush'
+import { notifyUserSummary } from '../lib/notifier'
+import { sendWebPushSummary } from '../lib/webpush'
 import { getSupabaseAdmin } from '../lib/supabase'
 const supabaseAdmin = { from: (...args: Parameters<ReturnType<typeof getSupabaseAdmin>['from']>) => getSupabaseAdmin().from(...args) }
 import { User, SearchCondition, AuctionItem } from '../lib/types'
@@ -122,6 +122,8 @@ async function main() {
   console.log(`ユニーク検索: ${groups.length}件（重複排除後）`)
 
   let totalNotified = 0
+  // ユーザーごとの新着アイテム収集（メインループ後にサマリー1回で通知）
+  const pendingByUser = new Map<string, AuctionItem[]>()
 
   // 並列でRSSフェッチ（10並列）
   // startOffset=1: スクレイパー内で b=1(1〜50件) + b=51(51〜100件) の2ページを自動取得
@@ -161,55 +163,44 @@ async function main() {
 
         let conditionNotified = 0
         for (const item of candidateItems) {
-          // 通知済みチェック: 通知直前にキャッシュを参照（並列グループ間の重複送信を防止）
-          // Promise.all で複数グループが並列実行される際、同一オークションへの二重通知を確実に防ぐ
+          // 通知済みチェック: 送信直前にキャッシュを参照（並列グループ間の重複防止）
           if (notifiedIdsCache.get(cond.userId)?.has(item.auctionId)) continue
 
-          // ntfy / Discord 通知
-          const sentLegacy = user.ntfyTopic || user.discordWebhook
-            ? await notifyUser(item, user)
-            : false
-          // Web Push 通知（push購読があれば常に送信）
-          let sentPush = false
-          if (pushUserIds.has(cond.userId)) {
-            const pushResult = await sendWebPushToUser(cond.userId, item)
-            sentPush = pushResult > 0
-            if (!sentPush) console.log(`    ⚠️ Push失敗 [${cond.name}] userId=${cond.userId.slice(0,8)}`)
+          // 履歴への記録と通知済みマーク（個別通知はせずサマリー用に収集）
+          await markNotified(cond.userId, item.auctionId)
+          notifiedIdsCache.get(cond.userId)?.add(item.auctionId)
+          await addHistory({
+            userId: cond.userId,
+            conditionId: cond.id,
+            conditionName: cond.name,
+            auctionId: item.auctionId,
+            title: item.title,
+            price: item.price,
+            url: item.url,
+            imageUrl: item.imageUrl ?? '',
+            notifiedAt: new Date().toISOString(),
+            remaining: item.remaining ?? null,
+          })
+          // サマリー通知用に収集（同一実行内で同一商品の重複を除く）
+          if (!pendingByUser.has(cond.userId)) pendingByUser.set(cond.userId, [])
+          const alreadyPending = pendingByUser.get(cond.userId)!
+          if (!alreadyPending.some(a => a.auctionId === item.auctionId)) {
+            alreadyPending.push(item)
           }
-          const sent = sentLegacy || sentPush
-          if (sent) {
-            await markNotified(cond.userId, item.auctionId)
-            // キャッシュも更新（同一実行内での重複通知を防止）
-            notifiedIdsCache.get(cond.userId)?.add(item.auctionId)
-            await addHistory({
-              userId: cond.userId,
-              conditionId: cond.id,
-              conditionName: cond.name,
-              auctionId: item.auctionId,
-              title: item.title,
-              price: item.price,
-              url: item.url,
-              imageUrl: item.imageUrl ?? '',
-              notifiedAt: new Date().toISOString(),
-              remaining: item.remaining ?? null,
-            })
-            conditionNotified++
-            totalNotified++
-            // ntfy.sh レート制限対策
-            await new Promise(r => setTimeout(r, 300))
-          }
+          conditionNotified++
+          totalNotified++
         }
 
         // 変化があった時のみ更新（DB帯域節約: 変化なし=スキップで月間UPDATE数を大幅削減）
-        if (conditionNotified > 0 || newItems.length !== (cond.lastFoundCount ?? -1)) {
+        if (conditionNotified > 0 || candidateItems.length !== (cond.lastFoundCount ?? -1)) {
           await updateCondition(cond.id, {
             lastCheckedAt: new Date().toISOString(),
-            lastFoundCount: newItems.length,
+            lastFoundCount: candidateItems.length,
           })
         }
 
         if (conditionNotified > 0) {
-          console.log(`  ✅ [${cond.name}] ${conditionNotified}件通知`)
+          console.log(`  ✅ [${cond.name}] ${conditionNotified}件新着`)
         }
       }
     }))
@@ -218,6 +209,24 @@ async function main() {
     if (i + CONCURRENCY < groups.length) {
       await new Promise(r => setTimeout(r, 1000))
     }
+  }
+
+  // ─── サマリー通知（ユーザーごとに1回のみ）───
+  // 個別にブーブー鳴らすのをやめ、30分に1回「N件新着」でまとめて通知
+  for (const [userId, items] of pendingByUser) {
+    if (items.length === 0) continue
+    const user = usersMap.get(userId)
+    if (!user) continue
+
+    // Web Push サマリー（push購読あり）
+    if (pushUserIds.has(userId)) {
+      await sendWebPushSummary(userId, items.length, items[0])
+    }
+    // ntfy / Discord サマリー
+    if (user.ntfyTopic || user.discordWebhook) {
+      await notifyUserSummary(items.length, user)
+    }
+    console.log(`  📨 [${userId.slice(0,8)}] サマリー通知: 新着${items.length}件`)
   }
 
   // ─── 終了済みオークションを履歴から削除 ───
