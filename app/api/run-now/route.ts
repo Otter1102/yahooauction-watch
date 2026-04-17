@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getConditions, getNotifiedIds, markNotified, addHistory, updateCondition } from '@/lib/storage'
 import { getSupabaseAdmin } from '@/lib/supabase'
 import { fetchAuctionRssWithMeta, fetchAuctionRssSimple } from '@/lib/scraper'
-import { notifyUser } from '@/lib/notifier'
-import { sendWebPushToUser, sendWebPushSummary } from '@/lib/webpush'
+import { notifyUserSummary } from '@/lib/notifier'
+import { sendWebPushSummary } from '@/lib/webpush'
 import { checkRateLimit } from '@/lib/rateLimiter'
 import { User, SearchCondition, AuctionItem } from '@/lib/types'
 
@@ -122,11 +122,9 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // ── Phase 2 + 3: 条件ごとにフィルター → 通知 ─────────────────────────────────
-    // manual=true: 全件を履歴に記録し、最後にサマリーPush1通だけ送信（遅延なし）
-    // manual=false(cron): アイテムごとにPush送信、成功時のみ履歴記録（300ms遅延あり）
-
-    // manual モード用: 全条件の fresh items を集約
+    // ── Phase 2 + 3: 条件ごとにフィルター → サマリー通知 ──────────────────────────
+    // manual/cron 共通: 全件を履歴に記録し、最後にサマリーを1通だけ送信
+    // → 同じ商品を何度も通知しない（markNotified を送信前に記録）
     const allFreshForSummary: { item: AuctionItem; cond: SearchCondition }[] = []
 
     for (const { cond, items, rawCount, rssUrl, httpStatus, xmlPreview, simpleCount, priceWarning } of fetchResults) {
@@ -155,62 +153,24 @@ export async function POST(req: NextRequest) {
       const filteredByFormat = afterBidsFilter.length - freshItems.length
       let condNotified = 0
 
-      if (manual) {
-        // ── 手動チェック: 全件を履歴に無条件記録（Push は後でサマリー1通）──
-        for (const item of freshItems) {
-          if (notifiedIds.has(item.auctionId)) continue
-          try {
-            await markNotified(userId, item.auctionId)
-            notifiedIds.add(item.auctionId)
-            await addHistory({
-              userId, conditionId: cond.id, conditionName: cond.name,
-              auctionId: item.auctionId, title: item.title, price: item.price,
-              url: item.url, imageUrl: item.imageUrl ?? '',
-              notifiedAt: new Date().toISOString(), remaining: item.remaining ?? null,
-            })
-            allFreshForSummary.push({ item, cond })
-            condNotified++
-            totalNotified++
-          } catch (e: any) {
-            console.warn('[run-now] manual 記録失敗 (継続):', e?.message)
-          }
-        }
-      } else {
-        // ── cron: アイテムごとにPush送信、成功時のみ履歴記録 ──
-        for (const item of freshItems) {
-          if (notifiedIds.has(item.auctionId)) continue
-          try {
-            const sentLegacy = (user.ntfyTopic || user.discordWebhook)
-              ? await notifyUser(item, user)
-              : false
-            let sentPush = false
-            if (hasPush) {
-              const pushResult = await sendWebPushToUser(userId, item)
-              sentPush = pushResult > 0
-            }
-            const sent = sentLegacy || sentPush
-            if (sent) {
-              try { await markNotified(userId, item.auctionId) } catch (e: any) {
-                console.warn('[run-now] markNotified失敗 (継続):', e?.message)
-              }
-              notifiedIds.add(item.auctionId)
-              try {
-                await addHistory({
-                  userId, conditionId: cond.id, conditionName: cond.name,
-                  auctionId: item.auctionId, title: item.title, price: item.price,
-                  url: item.url, imageUrl: item.imageUrl ?? '',
-                  notifiedAt: new Date().toISOString(), remaining: item.remaining ?? null,
-                })
-              } catch (e: any) {
-                console.warn('[run-now] addHistory失敗 (継続):', e?.message)
-              }
-              condNotified++
-              totalNotified++
-            }
-          } catch (e: any) {
-            console.error('[run-now] 通知送信エラー (スキップして継続):', e?.name, e?.message)
-          }
-          await new Promise(r => setTimeout(r, 300))
+      // ── manual/cron 共通: 新着をサマリー用に収集（通知は後で1回まとめて送信）──
+      // markNotified は送信前に記録する（送信失敗でも次回重複防止）
+      for (const item of freshItems) {
+        if (notifiedIds.has(item.auctionId)) continue
+        try {
+          await markNotified(userId, item.auctionId)
+          notifiedIds.add(item.auctionId)
+          await addHistory({
+            userId, conditionId: cond.id, conditionName: cond.name,
+            auctionId: item.auctionId, title: item.title, price: item.price,
+            url: item.url, imageUrl: item.imageUrl ?? '',
+            notifiedAt: new Date().toISOString(), remaining: item.remaining ?? null,
+          })
+          allFreshForSummary.push({ item, cond })
+          condNotified++
+          totalNotified++
+        } catch (e: any) {
+          console.warn('[run-now] 記録失敗 (継続):', e?.message)
         }
       }
 
@@ -230,13 +190,24 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    // ── manual モード: サマリーPush1通送信 ──
-    if (manual && allFreshForSummary.length > 0 && hasPush) {
-      try {
-        const topItem = allFreshForSummary[0].item
-        await sendWebPushSummary(userId, allFreshForSummary.length, topItem, getSupabaseAdmin())
-      } catch (e: any) {
-        console.warn('[run-now] サマリーPush送信失敗 (継続):', e?.message)
+    // ── サマリー通知（新着ありの時のみ・1回まとめて送信）──
+    if (allFreshForSummary.length > 0) {
+      const topItem = allFreshForSummary[0].item
+      // Web Push サマリー
+      if (hasPush) {
+        try {
+          await sendWebPushSummary(userId, allFreshForSummary.length, topItem, getSupabaseAdmin())
+        } catch (e: any) {
+          console.warn('[run-now] サマリーPush送信失敗 (継続):', e?.message)
+        }
+      }
+      // ntfy / Discord サマリー
+      if (user.ntfyTopic || user.discordWebhook) {
+        try {
+          await notifyUserSummary(allFreshForSummary.length, user)
+        } catch (e: any) {
+          console.warn('[run-now] ntfy/Discordサマリー送信失敗 (継続):', e?.message)
+        }
       }
     }
 

@@ -2,10 +2,11 @@
 // GET /api/cron/check/[0-3] — シャード専用エンドポイント（推奨）
 //
 // ── cron-job.org 推奨設定（4シャード・100人対応）──
-//   job0: /api/cron/check/0?secret=xxx  毎10分 :00
-//   job1: /api/cron/check/1?secret=xxx  毎10分 :02
-//   job2: /api/cron/check/2?secret=xxx  毎10分 :05
-//   job3: /api/cron/check/3?secret=xxx  毎10分 :07
+//   通知間隔: 1時間に1回（毎正時）
+//   job0: /api/cron/check/0?secret=xxx  毎時 :00
+//   job1: /api/cron/check/1?secret=xxx  毎時 :02
+//   job2: /api/cron/check/2?secret=xxx  毎時 :05
+//   job3: /api/cron/check/3?secret=xxx  毎時 :07
 //
 // ── 監視設定（.env に追加）──
 //   DISCORD_ADMIN_WEBHOOK  = Discord webhook URL（エラー時にアラート）
@@ -193,6 +194,7 @@ async function cleanupEndedAuctionsFromHistory(): Promise<void> {
   const supabase = getSupabaseAdmin()
   const now = Date.now()
 
+  // ハードカットオフ: 25時間超は Yahoo確認なしで即削除（確実に終了済み）
   const hardCutoff = new Date(now - 25 * 60 * 60 * 1000).toISOString()
   await supabase.from('notification_history').delete().lt('notified_at', hardCutoff)
   await supabase.from('notified_items').delete().lt('notified_at', hardCutoff)

@@ -57,8 +57,7 @@ function buildSearchUrl(key: RssKey, offset: number): string {
     aucmaxprice: String(key.maxPrice),
     b:           String(offset),
     n:           '50',
-    // 終了24時間以内に絞る: 「終了1時間前」の通知は直近すぎてビッドが困難なため
-    // aucend=1 で「終了24時間以内」のみ取得 → ユーザーが余裕を持って入札できる
+    // 終了24時間以内に絞る: ユーザーが余裕を持って入札できるタイミングで通知
     aucend:      '1',
   }
   if (key.minPrice > 0) params.aucminprice = String(key.minPrice)
@@ -306,9 +305,14 @@ async function fetchPage(url: string): Promise<{
 // Public API（run-now/route.ts と scripts/run-check.ts から使用）
 // ============================================================
 
+// 1回の検索で取得するページ数（b=1〜b=451 の10ページ並列 = 最大500件）
+// 調査結果: aucend=1（24時間以内）で人気キーワードは20ページ以上存在することを確認済み
+// 10ページ並列取得でYahooのbot検知リスクを抑えつつ、十分な件数を確保する
+const FETCH_PAGES = 10
+
 /**
- * Vercel API Routes 用: 2ページ同時取得 + メタデータ付き
- * CLAUDE.md: 常に b=1 と b=51 の2ページを取得（最大100件）
+ * Vercel API Routes 用: 10ページ同時取得 + メタデータ付き
+ * b=1〜b=451 の10ページを並列取得（最大500件）
  */
 export async function fetchAuctionRssWithMeta(key: RssKey): Promise<{
   items:      AuctionItem[]
@@ -317,21 +321,22 @@ export async function fetchAuctionRssWithMeta(key: RssKey): Promise<{
   rawCount:   number
   xmlPreview: string
 }> {
-  const url1 = buildSearchUrl(key, 1)
-  const url2 = buildSearchUrl(key, 51)
-  const [p1, p2] = await Promise.all([fetchPage(url1), fetchPage(url2)])
+  const urls = Array.from({ length: FETCH_PAGES }, (_, i) => buildSearchUrl(key, 1 + i * 50))
+  const pages = await Promise.all(urls.map(url => fetchPage(url)))
 
   const seen  = new Set<string>()
   const allRaw: AuctionItem[] = []
-  for (const item of [...p1.items, ...p2.items]) {
-    if (!seen.has(item.auctionId)) {
-      seen.add(item.auctionId)
-      allRaw.push(item)
+  for (const page of pages) {
+    for (const item of page.items) {
+      if (!seen.has(item.auctionId)) {
+        seen.add(item.auctionId)
+        allRaw.push(item)
+      }
     }
   }
 
   // 24時間フィルター:
-  //   終了まで24時間以上ある商品は除外（通知が早すぎて入札判断が難しい）
+  //   終了まで24時間以上ある商品は除外（ユーザーが余裕を持って入札できる範囲）
   //   endtimeMs=null の場合は終了時刻不明のため除外しない（安全側に倒す）
   const now = Date.now()
   const HOURS_24 = 24 * 60 * 60 * 1_000
@@ -341,10 +346,10 @@ export async function fetchAuctionRssWithMeta(key: RssKey): Promise<{
 
   return {
     items,
-    url:        url1,
-    httpStatus: p1.httpStatus,
+    url:        urls[0],
+    httpStatus: pages[0].httpStatus,
     rawCount:   allRaw.length,
-    xmlPreview: p1.rawHtml.slice(0, 500),
+    xmlPreview: pages[0].rawHtml.slice(0, 500),
   }
 }
 
@@ -367,19 +372,20 @@ export async function fetchAuctionRssSimple(
 
 /**
  * GitHub Actions スクリプト用: AuctionItem[] を直接返す
- * CLAUDE.md: b=1 + b=51 の2ページ固定（ローテーションなし）
+ * FETCH_PAGES（10ページ）並列取得 → 最大500件
  */
 export async function fetchAuctionRss(key: RssKey, startOffset = 1): Promise<AuctionItem[]> {
-  const url1 = buildSearchUrl(key, startOffset)
-  const url2 = buildSearchUrl(key, startOffset + 50)
-  const [p1, p2] = await Promise.all([fetchPage(url1), fetchPage(url2)])
+  const urls = Array.from({ length: FETCH_PAGES }, (_, i) => buildSearchUrl(key, startOffset + i * 50))
+  const pages = await Promise.all(urls.map(url => fetchPage(url)))
 
   const seen  = new Set<string>()
   const items: AuctionItem[] = []
-  for (const item of [...p1.items, ...p2.items]) {
-    if (!seen.has(item.auctionId)) {
-      seen.add(item.auctionId)
-      items.push(item)
+  for (const page of pages) {
+    for (const item of page.items) {
+      if (!seen.has(item.auctionId)) {
+        seen.add(item.auctionId)
+        items.push(item)
+      }
     }
   }
   return items

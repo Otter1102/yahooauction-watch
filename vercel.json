@@ -1,10 +1,4 @@
 {
-  "crons": [
-    {
-      "path": "/api/cron/check",
-      "schedule": "0 0 * * *"
-    }
-  ],
   "functions": {
     "app/api/cron/coordinator/route.ts":   { "maxDuration": 60 },
     "app/api/cron/check/route.ts":         { "maxDuration": 60 },

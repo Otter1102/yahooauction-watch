@@ -87,10 +87,12 @@ self.addEventListener('push', (event) => {
 })
 
 // ── 通知タップ → 通知履歴ページへ遷移 ──────────────────────────────────
-// ※ iOS PWA (WKWebView) での白画面問題を回避するための設計：
-//   - client.navigate() は iOS で動作しないケースがあるため postMessage を使用
-//   - 既存ウィンドウがある場合: focus() + postMessage(NAVIGATE) でアプリ内ナビゲーション
-//   - 既存ウィンドウがない場合: openWindow('/history') でアプリを起動して直接遷移
+// ※ iOS PWA (WKWebView) での白画面・フリーズ問題を回避するための設計：
+//   - 既存ウィンドウがある場合:
+//       focus() → 400ms待機（iOS suspended 復帰に要する時間）→ postMessage(NAVIGATE)
+//       + navigate() も試みる（Android/Chrome で即座にURL変更）
+//   - 既存ウィンドウがない場合:
+//       openWindow('/history') でアプリ起動して直接遷移
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
 
@@ -98,13 +100,18 @@ self.addEventListener('notificationclick', (event) => {
   const targetUrl = base + '/history'
 
   event.waitUntil((async () => {
-    // 既存のPWAウィンドウを探してフォーカス（新規タブを作らない）
+    // 既存のPWAウィンドウを探す
     const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
     for (const client of clients) {
       if (client.url.startsWith(base)) {
         await client.focus()
-        // client.navigate() は iOS PWA で動作しないため postMessage でナビゲーション
+        // iOS PWA: suspended状態からの復帰に時間がかかるため少し待つ
+        // （この待機なしだと postMessage が届く前にページが準備できず白画面になる）
+        await new Promise(r => setTimeout(r, 400))
+        // postMessage でソフトナビゲーション（SWNavigationHandler.tsx が受け取る）
         client.postMessage({ type: 'NAVIGATE', url: '/history' })
+        // Android/Chrome では navigate() で確実にURLを変更（iOS ではエラーになるが無視）
+        try { await client.navigate(targetUrl) } catch {}
         return
       }
     }

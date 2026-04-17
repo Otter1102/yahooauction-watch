@@ -219,7 +219,8 @@ export async function cleanupOldNotified(): Promise<void> {
   // 25時間以上古い重複防止レコードを削除
   // 根拠: 通知対象は「残り24時間以内」のオークションのみ。
   //       25時間後には全て終了済みのため、安全に削除できる。
-  //       これにより「通知済みIDが溜まって新着が届かない」障害を自動防止。
+  //       終了済みオークションは cleanupEndedAuctions() でリアルタイム削除されるため、
+  //       このTTLはあくまで安全網。
   const cutoff = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString()
   await supabaseAdmin
     .from('notified_items')
