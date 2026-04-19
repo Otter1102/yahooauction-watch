@@ -113,3 +113,35 @@ export async function sendWebPushSummary(
 
   return result === 'ok'
 }
+
+/** 新着なし通知プッシュ */
+export async function sendWebPushNoItems(
+  userId: string,
+  supabaseAdmin = getSupabaseAdmin(),
+): Promise<boolean> {
+  const { data } = await supabaseAdmin
+    .from('users')
+    .select('push_sub')
+    .eq('id', userId)
+    .single()
+
+  const sub = data?.push_sub as PushSub | null
+  if (!sub?.endpoint) return false
+
+  const result = await sendToSub(sub, {
+    title: 'ヤフオクwatch チェック完了',
+    body: '新着情報はありませんでした',
+    url: APP_URL + '/history',
+    imageUrl: null,
+    auctionId: null,
+    auctionUrl: null,
+  })
+
+  console.log(`  📱 NoItemsPush [${userId.slice(0, 8)}] → ${result}`)
+
+  if (result === 'expired') {
+    await supabaseAdmin.from('users').update({ push_sub: null }).eq('id', userId)
+  }
+
+  return result === 'ok'
+}

@@ -8,8 +8,8 @@
  */
 import { getAllEnabledConditions, getAllNotifiedIds, markNotified, addHistory, updateCondition, cleanupOldNotified, cleanupOldHistory, resetStalledNotified } from '../lib/storage'
 import { fetchAuctionRss, checkAuctionEnded } from '../lib/scraper'
-import { notifyUserSummary } from '../lib/notifier'
-import { sendWebPushSummary } from '../lib/webpush'
+import { notifyUserSummary, notifyUserNoItems } from '../lib/notifier'
+import { sendWebPushSummary, sendWebPushNoItems } from '../lib/webpush'
 import { getSupabaseAdmin } from '../lib/supabase'
 const supabaseAdmin = { from: (...args: Parameters<ReturnType<typeof getSupabaseAdmin>['from']>) => getSupabaseAdmin().from(...args) }
 import { User, SearchCondition, AuctionItem } from '../lib/types'
@@ -212,22 +212,32 @@ async function main() {
     }
   }
 
-  // ─── サマリー通知（ユーザーごとに1回のみ）───
-  // 個別にブーブー鳴らすのをやめ、1時間に1回「N件新着」でまとめて通知
-  for (const [userId, items] of pendingByUser) {
-    if (items.length === 0) continue
+  // ─── 通知（ユーザーごとに1回）───
+  // 新着あり → サマリー通知 / 新着なし → 「新着情報はありませんでした」通知
+  for (const userId of activeUserIds) {
     const user = usersMap.get(userId)
     if (!user) continue
 
-    // Web Push サマリー（push購読あり）
-    if (pushUserIds.has(userId)) {
-      await sendWebPushSummary(userId, items.length, items[0])
+    const items = pendingByUser.get(userId)
+    if (items && items.length > 0) {
+      // 新着あり: サマリー通知
+      if (pushUserIds.has(userId)) {
+        await sendWebPushSummary(userId, items.length, items[0])
+      }
+      if (user.ntfyTopic || user.discordWebhook) {
+        await notifyUserSummary(items.length, user)
+      }
+      console.log(`  📨 [${userId.slice(0,8)}] 新着${items.length}件 通知`)
+    } else {
+      // 新着なし: 「取れませんでした」通知
+      if (pushUserIds.has(userId)) {
+        await sendWebPushNoItems(userId)
+      }
+      if (user.ntfyTopic || user.discordWebhook) {
+        await notifyUserNoItems(user)
+      }
+      console.log(`  📭 [${userId.slice(0,8)}] 新着なし通知`)
     }
-    // ntfy / Discord サマリー
-    if (user.ntfyTopic || user.discordWebhook) {
-      await notifyUserSummary(items.length, user)
-    }
-    console.log(`  📨 [${userId.slice(0,8)}] サマリー通知: 新着${items.length}件`)
   }
 
   // ─── 終了済みオークションを履歴から削除 ───
