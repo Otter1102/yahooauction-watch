@@ -152,14 +152,17 @@ input::placeholder { color: var(--text-tertiary); }
 }
 
 /* ─── Bottom nav ─── */
-.bottom-nav {
-  position: fixed; bottom: 0; z-index: 100;
-  left: 50%; transform: translateX(-50%);
-  width: 100%; max-width: 480px;
-  background: rgba(255,255,255,0.92);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+/* 【iOS Safari スクロール崩れ修正】
+   原因: position:fixed + transform:translateX(-50%) + backdrop-filter:blur() の組み合わせが
+         iOS Safari でスクロール時に位置ずれ・消滅を引き起こす
+   修正: 外側ラッパーで full-width fixed → 内側 nav で max-width centering */
+.bottom-nav-outer {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
+  background: rgba(255,255,255,0.97);
   border-top: 1px solid var(--border);
+}
+.bottom-nav {
+  max-width: 480px; margin: 0 auto;
   display: flex; justify-content: space-around; align-items: center;
   height: calc(var(--nav-height) + env(safe-area-inset-bottom, 0px));
   padding-bottom: env(safe-area-inset-bottom, 0px);
