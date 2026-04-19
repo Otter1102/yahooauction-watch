@@ -126,12 +126,8 @@ async function sendDiscordSummary(count: number, webhookUrl: string): Promise<bo
 }
 
 export async function notifyUserSummary(count: number, user: User): Promise<boolean> {
-  const ch = user.notificationChannel
-  const results = await Promise.all([
-    (ch === 'ntfy' || ch === 'both') ? sendNtfySummary(count, user.ntfyTopic) : Promise.resolve(false),
-    (ch === 'discord' || ch === 'both') ? sendDiscordSummary(count, user.discordWebhook) : Promise.resolve(false),
-  ])
-  return results.some(Boolean)
+  // Discord は一旦無効化（ntfy のみ）
+  return sendNtfySummary(count, user.ntfyTopic)
 }
 
 // ==================== 新着なし通知 ====================
@@ -176,12 +172,8 @@ async function sendDiscordNoItems(webhookUrl: string): Promise<boolean> {
 }
 
 export async function notifyUserNoItems(user: User): Promise<boolean> {
-  const ch = user.notificationChannel
-  const results = await Promise.all([
-    (ch === 'ntfy' || ch === 'both') ? sendNtfyNoItems(user.ntfyTopic) : Promise.resolve(false),
-    (ch === 'discord' || ch === 'both') ? sendDiscordNoItems(user.discordWebhook) : Promise.resolve(false),
-  ])
-  return results.some(Boolean)
+  // Discord は一旦無効化（ntfy のみ）
+  return sendNtfyNoItems(user.ntfyTopic)
 }
 
 // ==================== テスト通知 ====================
