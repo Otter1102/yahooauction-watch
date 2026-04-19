@@ -134,6 +134,56 @@ export async function notifyUserSummary(count: number, user: User): Promise<bool
   return results.some(Boolean)
 }
 
+// ==================== 新着なし通知 ====================
+
+async function sendNtfyNoItems(topic: string): Promise<boolean> {
+  if (!topic) return false
+  try {
+    const url = new URL(`https://ntfy.sh/${encodeURIComponent(topic)}`)
+    url.searchParams.set('title', 'ヤフオクwatch チェック完了')
+    const res = await fetch(url.toString(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+      body: '新着情報はありませんでした',
+      signal: AbortSignal.timeout(10000),
+    })
+    return res.ok
+  } catch { return false }
+}
+
+async function sendDiscordNoItems(webhookUrl: string): Promise<boolean> {
+  if (!webhookUrl) return false
+  try {
+    const host = new URL(webhookUrl).hostname
+    if (host !== 'discord.com' && host !== 'discordapp.com') return false
+  } catch { return false }
+  try {
+    const res = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: 'ヤフオクwatch',
+        embeds: [{
+          title: '🔍 チェック完了',
+          description: '新着情報はありませんでした',
+          color: 0x808080,
+        }],
+      }),
+      signal: AbortSignal.timeout(10000),
+    })
+    return res.status === 204
+  } catch { return false }
+}
+
+export async function notifyUserNoItems(user: User): Promise<boolean> {
+  const ch = user.notificationChannel
+  const results = await Promise.all([
+    (ch === 'ntfy' || ch === 'both') ? sendNtfyNoItems(user.ntfyTopic) : Promise.resolve(false),
+    (ch === 'discord' || ch === 'both') ? sendDiscordNoItems(user.discordWebhook) : Promise.resolve(false),
+  ])
+  return results.some(Boolean)
+}
+
 // ==================== テスト通知 ====================
 
 export async function sendTestNtfy(topic: string): Promise<boolean> {

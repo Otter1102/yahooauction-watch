@@ -31,8 +31,7 @@ async function sendToSub(sub: PushSub, payload: object): Promise<'ok' | 'expired
     return 'ok'
   } catch (err: any) {
     if (err?.statusCode === 410 || err?.statusCode === 404) return 'expired'
-    // エンドポイントURLなど秘密情報がスタックトレースに混入しないよう最小限のみ出力
-    console.error('Web Push error:', err?.statusCode, String(err?.message ?? '').slice(0, 80))
+    console.error('Web Push error:', err?.statusCode, err?.message ?? err)
     return 'error'
   }
 }
@@ -42,21 +41,14 @@ export async function sendWebPushToUser(
   userId: string,
   item: AuctionItem,
   supabaseAdmin = getSupabaseAdmin(),
-  cachedSub?: PushSub | null,  // run-now でキャッシュ済みの push_sub を渡すと DB クエリをスキップ
-  opts?: { conditionName?: string },
 ): Promise<number> {
-  // cachedSub が明示的に渡された場合は DB クエリをスキップ（cron実行時の高速化）
-  let sub: PushSub | null
-  if (cachedSub !== undefined) {
-    sub = cachedSub
-  } else {
-    const { data } = await supabaseAdmin
-      .from('users')
-      .select('push_sub')
-      .eq('id', userId)
-      .single()
-    sub = data?.push_sub as PushSub | null
-  }
+  const { data } = await supabaseAdmin
+    .from('users')
+    .select('push_sub')
+    .eq('id', userId)
+    .single()
+
+  const sub = data?.push_sub as PushSub | null
   if (!sub?.endpoint) return 0
 
   const priceText = (item.price && item.price !== '価格不明') ? item.price : '現在価格なし（入札0）'
@@ -65,15 +57,12 @@ export async function sendWebPushToUser(
     (item.remaining ? `  ⏰ ${item.remaining}` : '')
 
   const result = await sendToSub(sub, {
-    title:         item.title.slice(0, 60),
+    title:     item.title.slice(0, 60),
     body,
-    url:           APP_URL + '/history',  // 通知タップ時は常にアプリ履歴ページへ
-    imageUrl:      item.imageUrl ?? null,
-    auctionId:     item.auctionId,
-    auctionUrl:    item.url,              // Yahoo URLはauctionUrlで保持（履歴ページからの遷移用）
-    conditionName: opts?.conditionName ?? '',  // 端末側IndexedDB履歴保存用
-    price:         item.price ?? '',           // 端末側IndexedDB履歴保存用
-    remaining:     item.remaining ?? null,     // 端末側IndexedDB履歴保存用
+    url:       APP_URL + '/history',  // 通知タップ時は常にアプリ履歴ページへ（Yahoo直リンクは空白画面の原因になる）
+    imageUrl:  item.imageUrl ?? null,
+    auctionId: item.auctionId,
+    auctionUrl: item.url,             // Yahoo URLはauctionUrlで保持（履歴ページからの遷移用）
   })
 
   console.log(`  📱 Push [${userId.slice(0,8)}] → ${result} (${sub.endpoint.slice(8,40)}...)`)
@@ -117,6 +106,38 @@ export async function sendWebPushSummary(
   })
 
   console.log(`  📱 SummaryPush [${userId.slice(0, 8)}] ${count}件 → ${result}`)
+
+  if (result === 'expired') {
+    await supabaseAdmin.from('users').update({ push_sub: null }).eq('id', userId)
+  }
+
+  return result === 'ok'
+}
+
+/** 新着なし通知プッシュ */
+export async function sendWebPushNoItems(
+  userId: string,
+  supabaseAdmin = getSupabaseAdmin(),
+): Promise<boolean> {
+  const { data } = await supabaseAdmin
+    .from('users')
+    .select('push_sub')
+    .eq('id', userId)
+    .single()
+
+  const sub = data?.push_sub as PushSub | null
+  if (!sub?.endpoint) return false
+
+  const result = await sendToSub(sub, {
+    title: 'ヤフオクwatch チェック完了',
+    body: '新着情報はありませんでした',
+    url: APP_URL + '/history',
+    imageUrl: null,
+    auctionId: null,
+    auctionUrl: null,
+  })
+
+  console.log(`  📱 NoItemsPush [${userId.slice(0, 8)}] → ${result}`)
 
   if (result === 'expired') {
     await supabaseAdmin.from('users').update({ push_sub: null }).eq('id', userId)
