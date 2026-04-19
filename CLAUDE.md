@@ -184,12 +184,13 @@ window.open(`/redirect/${auctionId}`, '_blank', 'noopener')
 ヤフオクのような検索結果が複数ページにわたるサービスでは、**1ページ取得だけでは候補の大半を見落とす**。
 cron/バッチ設計時は以下のパターンを必ず採用すること。
 
-### 基本戦略: 常に b=1 から10ページ同時取得（最大500件）
+### 基本戦略: b=1 から3ページ同時取得（最大150件）【2026-04-19 変更: 10→3】
 
 ```typescript
-// scraper 内で b=1〜b=451 の10ページを並列取得（FETCH_PAGES=10）
-// 調査結果: aucend=1（24時間以内）で「バレンティノ」だけで20ページ以上存在確認済み
-// 10ページ（500件）取得でYahooのbot検知リスクを抑えつつ全件に近い数を確保
+// scraper 内で b=1〜b=101 の3ページを並列取得（FETCH_PAGES=3）
+// 【変更理由】Vercel Fluid Active CPU 無料枠(4時間/月)超過のため10→3に削減
+//   aucend=1 + sortBy=endTime ASC では終了間近の商品が1〜3ページ目に集中するため実用上問題なし
+//   見逃しがあっても次のcron（最大30分後）で補足できる
 const items = await fetchWithRetry(group.key)  // startOffset デフォルト=1
 ```
 
@@ -202,11 +203,13 @@ const runGroupIndex = Math.floor(Date.now() / (60 * 60 * 1000)) % 5
 const pageStartOffset = runGroupIndex * 100 + 1
 ```
 
-### なぜ10ページ固定が正しいか
+### なぜ3ページで十分か
 
-- aucend=1（24時間以内）の結果は人気キーワードで1000件以上存在することを確認
-- 10ページ（500件）並列取得で大部分をカバー
+- `aucend=1` + `sortBy=endTime ASC` → 終了が近い商品ほど上位表示
+- 1〜3ページ目（150件）で24時間以内に終了する大半をカバー
 - `notifiedIds` の重複排除で2回目以降は新着のみ通知される
+- 見逃しがあっても次のcron（30分後推奨）で補足可能
+- ⚠️ Vercel Fluid CPU 節約のため **10に戻さないこと**（コスト起因の設計変更）
 
 ### ⚠️ `abuynow=2` 自動適用禁止（2026-04-10 廃止）
 
@@ -241,10 +244,10 @@ for (const { userId, auctionId } of ended) {
 - 7日TTL（`cleanupOldNotified`）はあくまで安全網。主系はオークション終了検出で即削除する設計が正しい
 
 <!-- CC_CONTEXT_START -->
-<!-- cc:session:1e147f02-028c-4a91-87de-736986b3533b:2026-04-17 18:28 -->
-**最後の作業** (2026-04-17 18:28)
-- 3日以内の商品はいらなくて、本日オークション終了するやつで大丈夫です。1日設定というよりかは、もう24時間以内に終了するやつだけを通知してほしいです。なので戻してください。3日以内のやつを取っても仕方ないので。 その上で取得できる件数を増…
-- '/Users/sawadaakira/Projects/MOTHERSHIP/apps/yahoo-auction-watcher'今、このヤフオクのウォッチですが、正常に動いていますか？改善した…
-- てか、今回ってもうあれですかね。GitHub Actionsを使って、クローンのcron.ymlやってるので、クローン・ジョバーを使う必要ないって感じですかね。Vercelもなんかそれ連動してる感じ…
-- 編集ファイル: scraper.ts、route.ts、sw.js、CLAUDE.md、vercel.json、storage.ts
+<!-- cc:session:98c0cb21-8366-4eef-b4e6-3d2ce16f8a39:2026-04-19 16:05 -->
+**最後の作業** (2026-04-19 16:05)
+- スパベースを実行しました。 また、左上の "otta" という管理名は変更できますか？プロジェクト名を同じように反映させたいのですが、変更方法を教えてください。
+- https://yahooauction-watch.vercel.app/ このアプリは今、いい感じに作れてるんですけど、アプリの最初にログインし、Yahoo!オークションにログインしていると思う…
+- 例えば、ヤフオクウォッチ本番アプリをダウンロードして検索条件などを登録した後、アプリを削除して再インストールした場合、削除した方の通知は不要なので削除しても問題ありません。またその際、データの保管も…
+- 編集ファイル: page.tsx、ConditionForm.tsx、manifest.json、manifest-trial.json、fingerprint.ts、route.ts
 <!-- CC_CONTEXT_END -->

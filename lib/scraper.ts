@@ -305,10 +305,14 @@ async function fetchPage(url: string): Promise<{
 // Public API（run-now/route.ts と scripts/run-check.ts から使用）
 // ============================================================
 
-// 1回の検索で取得するページ数（b=1〜b=451 の10ページ並列 = 最大500件）
-// 調査結果: aucend=1（24時間以内）で人気キーワードは20ページ以上存在することを確認済み
-// 10ページ並列取得でYahooのbot検知リスクを抑えつつ、十分な件数を確保する
-const FETCH_PAGES = 10
+// 1回の検索で取得するページ数（b=1〜b=151 の3ページ並列 = 最大150件）
+// 【2026-04-19 変更: 10→3】
+//   理由: Vercel Fluid Active CPU 無料枠(4時間/月)を超過したため。
+//   10ページ×8シャード×144サイクル/日 → CPU枠を1日で消費していた。
+//   aucend=1（24時間以内）+ sortBy=endTime ASC の組み合わせでは
+//   終了間近の商品が1〜3ページ目に集中するため、3ページで実用上の網羅性は保てる。
+//   仮に3ページ目以降に新着があっても次のcron実行（最大30分後）で補足できる。
+const FETCH_PAGES = 3
 
 /**
  * Vercel API Routes 用: 10ページ同時取得 + メタデータ付き
@@ -372,7 +376,7 @@ export async function fetchAuctionRssSimple(
 
 /**
  * GitHub Actions スクリプト用: AuctionItem[] を直接返す
- * FETCH_PAGES（10ページ）並列取得 → 最大500件
+ * FETCH_PAGES（3ページ）並列取得 → 最大150件
  */
 export async function fetchAuctionRss(key: RssKey, startOffset = 1): Promise<AuctionItem[]> {
   const urls = Array.from({ length: FETCH_PAGES }, (_, i) => buildSearchUrl(key, startOffset + i * 50))

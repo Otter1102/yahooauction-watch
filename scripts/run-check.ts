@@ -126,7 +126,8 @@ async function main() {
   const pendingByUser = new Map<string, AuctionItem[]>()
 
   // 並列でRSSフェッチ（10並列）
-  // startOffset=1: スクレイパー内で b=1(1〜50件) + b=51(51〜100件) の2ページを自動取得
+  // startOffset=1: スクレイパー内で FETCH_PAGES=3 ページを自動取得（b=1,51,101 = 最大150件）
+  // 【2026-04-19 変更】 Vercel CPU コスト削減のため10→3ページに削減
   const CONCURRENCY = 10
   for (let i = 0; i < groups.length; i += CONCURRENCY) {
     const batch = groups.slice(i, i + CONCURRENCY)

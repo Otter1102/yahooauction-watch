@@ -1,30 +1,24 @@
-// GET /api/cron/check/[shard] — シャード番号をURLパスで指定する便利エンドポイント
+// POST /api/cron/check/[shard] — coordinator から呼ばれるシャードワーカー
+// GET  /api/cron/check/[shard] — フォールバック（直接呼び出し時）
 //
-// cron-job.org 設定（8シャード・200人対応）:
-//   job0: /api/cron/check/0?secret=xxx  毎10分 :00
-//   job1: /api/cron/check/1?secret=xxx  毎10分 :01
-//   job2: /api/cron/check/2?secret=xxx  毎10分 :02
-//   job3: /api/cron/check/3?secret=xxx  毎10分 :03
-//   job4: /api/cron/check/4?secret=xxx  毎10分 :04
-//   job5: /api/cron/check/5?secret=xxx  毎10分 :05
-//   job6: /api/cron/check/6?secret=xxx  毎10分 :06
-//   job7: /api/cron/check/7?secret=xxx  毎10分 :07
+// 【2026-04-19 waitUntil 廃止】
+//   理由: waitUntil() = Vercel Fluid Compute 課金（無料枠 4時間/月）
+//         同期処理に変更することで通常のサーバーレス（100 GB-hours/月無料）へ移行
 //
-// スケーリング計算:
-//   TOTAL_SHARDS=8: 200ユーザー ÷ 8 = 25ユーザー/シャード
-//   CONCURRENCY=25: 25ユーザーを1バッチで並列処理 → バッチ数=1
-//   USER_TIMEOUT_MS=30s: 1バッチ × 30s = 30s << Vercel 60s制限
-//   run-now側: CONDITION_CONCURRENCY=5 → 30条件 ÷ 5 = 6バッチ × 2s = 12s << 30s
+// 【スケーリング計算（100ユーザー対応）】
+//   TOTAL_SHARDS=8: 100ユーザー ÷ 8 = 13ユーザー/シャード
+//   CONCURRENCY=25: 13ユーザーが1バッチで並列処理 → 処理時間 ≒ 1ユーザー分
+//   USER_TIMEOUT_MS=30s: 1バッチ × 30s = 30s << Vercel 60s制限 ✅
+//   run-now側: CONDITION_CONCURRENCY=5 × FETCH_PAGES=3 → ~5-10s << 30s ✅
 import { NextRequest, NextResponse } from 'next/server'
-import { waitUntil } from '@vercel/functions'
 import { getSupabaseAdmin } from '@/lib/supabase'
 import { cleanupOldNotified, cleanupOldHistory, resetStalledNotified } from '@/lib/storage'
 import { checkAuctionEnded } from '@/lib/scraper'
 
 const APP_URL         = process.env.NEXT_PUBLIC_APP_URL ?? 'https://yahooauction-watch.vercel.app'
-const CONCURRENCY     = 25   // 25ユーザーを1バッチで並列処理
-const USER_TIMEOUT_MS = 30_000  // 30条件×並列フェッチ=12s + 通知 < 30s
-const TOTAL_SHARDS    = 8   // 200ユーザー ÷ 8 = 25ユーザー/シャード
+const CONCURRENCY     = 25
+const USER_TIMEOUT_MS = 30_000
+const TOTAL_SHARDS    = 8
 
 function getUserShard(userId: string, totalShards: number): number {
   const hex = userId.replace(/-/g, '').slice(-4)
@@ -45,7 +39,6 @@ async function alertAdmin(message: string): Promise<void> {
 }
 
 async function pingHealthcheck(shard: number): Promise<void> {
-  // シャード0のみpingしてhealthchecks.ioの重複カウントを防ぐ
   if (shard !== 0) return
   const url = process.env.HEALTHCHECK_PING_URL
   if (!url) return
@@ -55,8 +48,8 @@ async function pingHealthcheck(shard: number): Promise<void> {
   } catch { /* ping失敗は無視 */ }
 }
 
-// ── POST: コーディネーター(/api/cron/coordinator)から呼ばれる ───────────────
-// 事前に振り分けられたuserIdsを受け取り、Supabase接続なしで処理する
+// ── POST: coordinator から呼ばれる（メインパス）───────────────────────────────
+// waitUntil 廃止: 同期処理で通常サーバーレス課金（GB-hours）に移行
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ shard: string }> }
@@ -74,34 +67,33 @@ export async function POST(
   }
 
   const { userIds } = await req.json() as { userIds: string[] }
-  const cronSecret  = envSecret
 
-  // Supabase不要: コーディネーターが既に取得・振り分け済み
-  waitUntil(runShardWithUsers(shard, userIds, cronSecret))
-  return NextResponse.json({ ok: true, started: true, shard, userCount: userIds.length })
-}
-
-async function runShardWithUsers(shard: number, userIds: string[], cronSecret: string): Promise<void> {
+  // waitUntil 廃止: await で同期処理（通常サーバーレス課金）
   try {
-    const users = userIds.map(id => ({ id }))
-    console.log(`[cron/shard${shard}] コーディネーターから${users.length}人受信`)
-    await processUsers(users, shard, cronSecret)
-    await pingHealthcheck(shard)
+    await runShardWithUsers(shard, userIds, envSecret)
   } catch (e) {
     const msg = String(e)
     console.error(`[cron/shard${shard}] エラー:`, msg)
     await alertAdmin(`[shard${shard}] 予期しないエラー: ${msg}`)
+    return NextResponse.json({ ok: false, error: msg }, { status: 500 })
   }
+
+  return NextResponse.json({ ok: true, shard, userCount: userIds.length })
 }
 
-// ── GET: cron-job.org から直接呼ばれる場合のフォールバック ──────────────────
-// コーディネーターへ移行済みなら通常はここに来ない。
-// 旧設定や手動テスト用として残す（各シャードが自分でSupabaseを叩く旧動作）
+async function runShardWithUsers(shard: number, userIds: string[], cronSecret: string): Promise<void> {
+  console.log(`[cron/shard${shard}] コーディネーターから${userIds.length}人受信`)
+  const users = userIds.map(id => ({ id }))
+  await processUsers(users, shard, cronSecret)
+  await pingHealthcheck(shard)
+}
+
+// ── GET: フォールバック（直接呼び出し・手動テスト用）──────────────────────────
+// waitUntil 廃止: 同期処理。100ユーザー以内であれば60s以内に完了する。
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ shard: string }> }
 ) {
-  // ── 認証 ────────────────────────────────────────────────────────────────
   const auth        = req.headers.get('authorization')
   const querySecret = req.nextUrl.searchParams.get('secret')
   const secret      = process.env.CRON_SECRET?.trim()
@@ -117,54 +109,30 @@ export async function GET(
 
   const cronSecret = (process.env.CRON_SECRET ?? '').trim()
 
-  // 認証通過後すぐ200を返し、全処理をバックグラウンドで実行
-  waitUntil(runShardJob(shard, cronSecret))
-  return NextResponse.json({ ok: true, started: true, shard, totalShards: TOTAL_SHARDS })
-}
-
-async function runShardJob(shard: number, cronSecret: string): Promise<void> {
   try {
-    // シャードの起動タイミングをずらしてSupabase接続負荷を分散
-    // 理由: 8シャードが同時起動するとSupabaseへの同時接続が集中し20秒超えのタイムアウトが多発
-    //       shard0: 0ms, shard1: 1000ms, ..., shard7: 7000ms
-    //       shard7 worst case: 7s + 20s×2 + 3s = 50s < 60s ✅
-    if (shard > 0) await new Promise(r => setTimeout(r, shard * 1000))
-
+    // Supabase からユーザー取得（1回のみ・スタガーなし）
     const supabase = getSupabaseAdmin()
-
-    // ユーザー取得: タイムアウト・一時障害時は2回試行（リトライ1回）
-    // 理由: 3回試行（20秒×3 + 2秒×2 = 64秒）はmaxDuration(60秒)を超えてwaitUntilが強制終了される
-    //       shard7: 4.2秒待機 + 20秒×2 + 2秒 = 46.2秒 < 60秒 ✅
-    let allUsers: { id: string }[] | null = null
-    let lastErrMsg = ''
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const { data, error } = await supabase
-        .from('users')
-        .select('id')
-        .or('push_sub.not.is.null,ntfy_topic.neq.,discord_webhook.neq.')
-      if (!error && data) { allUsers = data; break }
-      lastErrMsg = error?.message ?? String(error)
-      console.warn(`[cron/shard${shard}] ユーザー取得失敗 attempt${attempt + 1}/2: ${lastErrMsg}`)
-      if (attempt < 1) await new Promise(r => setTimeout(r, 3_000))
+    const { data, error } = await supabase
+      .from('users')
+      .select('id')
+      .or('push_sub.not.is.null,ntfy_topic.neq.,discord_webhook.neq.')
+    if (error || !data) {
+      const msg = error?.message ?? 'ユーザー取得失敗'
+      console.error(`[cron/shard${shard}] ${msg}`)
+      return NextResponse.json({ error: msg }, { status: 500 })
     }
-    if (!allUsers) {
-      console.error(`[cron/shard${shard}] ユーザー取得エラー（2回試行後）:`, lastErrMsg)
-      await alertAdmin(`[shard${shard}] ユーザー取得失敗: ${lastErrMsg}`)
-      return
-    }
-    if (!allUsers.length) return
-
-    const users = allUsers.filter(u => getUserShard(u.id, TOTAL_SHARDS) === shard)
-    console.log(`[cron/shard${shard}] 担当ユーザー数: ${users.length}/${allUsers.length}`)
-
+    const users = data.filter(u => getUserShard(u.id, TOTAL_SHARDS) === shard)
+    console.log(`[cron/shard${shard}] 担当ユーザー数: ${users.length}/${data.length}`)
     await processUsers(users, shard, cronSecret)
     await pingHealthcheck(shard)
-
   } catch (e) {
     const msg = String(e)
     console.error(`[cron/shard${shard}] エラー:`, msg)
     await alertAdmin(`[shard${shard}] 予期しないエラー: ${msg}`)
+    return NextResponse.json({ ok: false, error: msg }, { status: 500 })
   }
+
+  return NextResponse.json({ ok: true, shard, totalShards: TOTAL_SHARDS })
 }
 
 async function processUsers(

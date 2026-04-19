@@ -2,22 +2,20 @@ name: ヤフオクwatch 自動チェック
 
 on:
   schedule:
-    - cron: '0 * * * *'   # 1時間ごと
+    - cron: '*/30 * * * *'   # 30分ごと（公開リポジトリ: 無料無制限 / 非公開: 2,000分/月）
   workflow_dispatch:           # 手動実行ボタン
 
 jobs:
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true  # Node.js 20 deprecation対応（2026-06-02移行前に対応）
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: '20'
           cache: 'npm'
 
       - name: Install dependencies
@@ -34,14 +32,14 @@ jobs:
               --max-time 10)
             echo "試行 $i: HTTP $STATUS"
             if [ "$STATUS" = "200" ] || [ "$STATUS" = "400" ] || [ "$STATUS" = "401" ]; then
-              echo "✅ Supabase 起動確認完了"
+              echo "Supabase 起動確認完了"
               sleep 2
               exit 0
             fi
-            echo "⏳ Supabase 起動待機中... 10秒後に再試行"
+            echo "Supabase 起動待機中... 10秒後に再試行"
             sleep 10
           done
-          echo "⚠️ Supabase が応答しませんでした。処理を継続します"
+          echo "Supabase が応答しませんでした。処理を継続します"
 
       - name: Run auction check
         run: npx tsx scripts/run-check.ts

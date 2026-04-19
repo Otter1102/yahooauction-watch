@@ -1,27 +1,18 @@
-// POST/GET /api/cron/coordinator — Supabase接続を1本に削減するコーディネーター
+// GET /api/cron/coordinator — Supabase接続を1本に削減するコーディネーター
 //
-// 【問題の根本原因】
-//   cron-job.org が shard0〜7 を同時に発火 → 8接続が Supabase に集中
-//   → 無料プランの共有インフラでキューが詰まる → 20秒超でタイムアウト
+// 【2026-04-19 waitUntil 完全廃止】
+//   理由: waitUntil() = Vercel Fluid Compute 課金（無料枠 4時間/月）
+//         同期処理に変更することで Fluid Compute 課金をゼロに
 //
-// 【解決策】
-//   このエンドポイントを cron-job.org の唯一のジョブにする。
-//   ユーザーリストを1回だけ Supabase から取得し、
-//   8シャードにユーザーIDを振り分けて /api/cron/check/[shard] を並列起動する。
-//   各シャードは Supabase を触らず渡された userIds だけを処理する。
+// 【実際の運用】
+//   通常: GitHub Actions が scripts/run-check.ts を直接実行（Vercel課金ゼロ）
+//   このエンドポイント: 手動テスト・緊急実行用。呼ばれても通常サーバーレス課金のみ。
 //
-// 【cron-job.org 設定変更手順】
-//   1. 旧 shard0〜7 の8ジョブを削除（または停止）
-//   2. 新しく1ジョブだけ追加:
-//        URL: https://yahooauction-watch.vercel.app/api/cron/coordinator?secret=xxx
-//        間隔: 毎10分
-//
-// 【時間計算】
-//   ユーザー取得: 20s×2 + 3s = 43s (worst case) < 60s ✅
-//   シャード起動: <1s (各シャードは即200返却してwaitUntilで非同期処理)
-//   合計: ~44s < 60s ✅
+// 【時間計算（同期処理）】
+//   Supabase取得: ~2s（通常）
+//   シャード処理: 100ユーザー÷8シャード=13人/シャード → 並列30s
+//   合計: ~32s < 60s制限 ✅
 import { NextRequest, NextResponse } from 'next/server'
-import { waitUntil } from '@vercel/functions'
 import { getSupabaseAdmin } from '@/lib/supabase'
 
 const APP_URL      = process.env.NEXT_PUBLIC_APP_URL ?? 'https://yahooauction-watch.vercel.app'
@@ -53,15 +44,24 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   const cronSecret = (process.env.CRON_SECRET ?? '').trim()
-  waitUntil(runCoordinator(cronSecret))
-  return NextResponse.json({ ok: true, started: true, mode: 'coordinator' })
+
+  // waitUntil 廃止: await で同期処理（通常サーバーレス課金 = GB-hours）
+  try {
+    await runCoordinator(cronSecret)
+  } catch (e) {
+    const msg = String(e)
+    console.error('[coordinator] エラー:', msg)
+    await alertAdmin(`[coordinator] 予期しないエラー: ${msg}`)
+    return NextResponse.json({ ok: false, error: msg }, { status: 500 })
+  }
+
+  return NextResponse.json({ ok: true, mode: 'coordinator' })
 }
 
 async function runCoordinator(cronSecret: string): Promise<void> {
   const supabase = getSupabaseAdmin()
 
   // ユーザーリストを1回だけ取得（Supabase接続 = 1本のみ）
-  // 競合なしなので通常は即時成功。2回試行で安全性確保
   let allUsers: { id: string }[] | null = null
   let lastErr = ''
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -92,22 +92,31 @@ async function runCoordinator(cronSecret: string): Promise<void> {
   }
   console.log(`[coordinator] 総ユーザー${allUsers.length}人 → ${TOTAL_SHARDS}シャードに配布:`, shardUsers.map(s => s.length))
 
-  // 全シャードを並列起動（各シャードは渡されたuserIdsを処理するのでSupabase不要）
-  // 各シャードは即200を返してwaitUntilで非同期処理するため、ここの待機は短い
+  // ユーザーが割り当てられたシャードのみ起動（空シャードはスキップ）
+  const activeShards = shardUsers
+    .map((ids, shard) => ({ ids, shard }))
+    .filter(({ ids }) => ids.length > 0)
+
+  if (activeShards.length === 0) {
+    console.log('[coordinator] 全シャードにユーザーなし → スキップ')
+    return
+  }
+
+  // シャードは同期処理（処理完了後に200を返す）→ 並列実行で最大~30s
   const results = await Promise.allSettled(
-    shardUsers.map((ids, shard) =>
+    activeShards.map(({ ids, shard }) =>
       fetch(`${APP_URL}/api/cron/check/${shard}`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json', 'x-cron-secret': cronSecret },
         body:    JSON.stringify({ userIds: ids }),
-        signal:  AbortSignal.timeout(10_000),
+        signal:  AbortSignal.timeout(50_000),
       })
     )
   )
 
   const failed = results.filter(r => r.status === 'rejected').length
   if (failed > 0) {
-    console.warn(`[coordinator] ${failed}/${TOTAL_SHARDS} シャードの起動失敗`)
+    console.warn(`[coordinator] ${failed}/${activeShards.length} シャードの起動失敗`)
   }
-  console.log(`[coordinator] 完了: ${TOTAL_SHARDS - failed}/${TOTAL_SHARDS} シャード起動`)
+  console.log(`[coordinator] 完了: ${activeShards.length - failed}/${activeShards.length} シャード起動（空シャード${TOTAL_SHARDS - activeShards.length}個スキップ）`)
 }
