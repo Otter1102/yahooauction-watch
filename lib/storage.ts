@@ -42,6 +42,7 @@ export async function updateUser(userId: string, updates: Partial<User>): Promis
   if (updates.discordWebhook      !== undefined) row.discord_webhook      = updates.discordWebhook
   if (updates.notificationChannel !== undefined) row.notification_channel = updates.notificationChannel
   if ('pushSub' in updates)                      row.push_sub             = updates.pushSub ?? null
+  if (updates.email               !== undefined) row.email                = updates.email || null
   await supabaseAdmin.from('users').update(row).eq('id', userId)
 }
 
@@ -65,6 +66,7 @@ function dbToUser(row: Record<string, unknown>): User {
     discordWebhook: (row.discord_webhook as string) ?? '',
     notificationChannel: (row.notification_channel as User['notificationChannel']) ?? 'webpush',
     pushSub: (row.push_sub as import('./types').PushSub) ?? null,
+    email: (row.email as string) ?? '',
   }
 }
 
