@@ -21,8 +21,8 @@
 |-----------|-----|------|
 | `TOTAL_SHARDS` | **8** | 200ユーザー ÷ 8 = 25ユーザー/シャード |
 | `CONCURRENCY` | **25** | 25ユーザーを1バッチで並列処理。絶対に下げない |
-| `USER_TIMEOUT_MS` | **50_000** | 30条件÷10並列=3バッチ×5s(FETCH_TIMEOUT)=15s << 50s。cronでsimpleCount除外が前提 |
-| `CONDITION_CONCURRENCY` | **10** | 1ユーザーあたり10条件並列。30条件÷10=3バッチ×5s=15s。絶対に下げない |
+| `USER_TIMEOUT_MS` | **30_000** | 30条件÷5並列=6バッチ×2s=12s + 通知 < 30s。余裕を持って60s以内 |
+| `CONDITION_CONCURRENCY` | **5** | 1ユーザーあたり5条件並列。30条件÷5=6バッチ×2s=12s |
 | `notified_items` TTL | **25時間** | 通知対象は「残り24h以内」→ 25h後には全終了済み |
 | cronで処理する条件数/ユーザー | **全件（上限なし）** | 並列バッチ処理で30条件も12秒以内に完了 |
 | 条件上限（有料プラン） | **30件** | 旧50件から変更（2026-04-10）。トライアルは5件 |
@@ -32,12 +32,8 @@
 計算式:
 ```
 シャードあたりユーザー数 = 200 ÷ TOTAL_SHARDS(8) = 25
-処理時間 = ceil(25 / CONCURRENCY(25)) × USER_TIMEOUT_MS(50s) = 1 × 50s < waitUntil(300s) ✅
-run-nowあたり時間 = ceil(30条件 / CONDITION_CONCURRENCY(10)) × FETCH_TIMEOUT(5s) = 3 × 5s = 15s << RUN_DEADLINE_MS(47s) ✅
-RUN_DEADLINE_MS(47s) = USER_TIMEOUT_MS(50s) - 3s バッファ（内部安全網。超えたら処理中断して必ずレスポンスを返す）
-（cronモードでは fetchAuctionRssSimple を呼ばないことが前提。呼ぶと1バッチ最悪10s×3=30s だが RUN_DEADLINE_MS があるので最悪でも47s で打ち切り）
-updateCondition は全条件まとめて Promise.all で並列実行（30条件×0.5s=15s → ~1s に短縮）
-sendWebPushToUser の push_sub は getUser 時にキャッシュ → 条件ループ内での DB 再取得なし
+処理時間 = ceil(25 / CONCURRENCY(25)) × USER_TIMEOUT_MS(30s) = 1 × 30s = 30s < 60s ✅
+run-nowあたり時間 = ceil(30条件 / CONDITION_CONCURRENCY(5)) × 2s = 6 × 2s = 12s < USER_TIMEOUT_MS(30s) ✅
 ```
 
 ### 自己修復システム（`resetStalledNotified`）
@@ -188,28 +184,32 @@ window.open(`/redirect/${auctionId}`, '_blank', 'noopener')
 ヤフオクのような検索結果が複数ページにわたるサービスでは、**1ページ取得だけでは候補の大半を見落とす**。
 cron/バッチ設計時は以下のパターンを必ず採用すること。
 
-### 基本戦略: 常に b=1 から2ページ同時取得（確認済み・動作中）
+### 基本戦略: b=1 から3ページ同時取得（最大150件）【2026-04-19 変更: 10→3】
 
 ```typescript
-// scraper 内で b=1(1〜50件) + b=51(51〜100件) の2ページを自動取得
-// startOffset=1 固定。ページローテーションは使わない（理由↓）
+// scraper 内で b=1〜b=101 の3ページを並列取得（FETCH_PAGES=3）
+// 【変更理由】Vercel Fluid Active CPU 無料枠(4時間/月)超過のため10→3に削減
+//   aucend=1 + sortBy=endTime ASC では終了間近の商品が1〜3ページ目に集中するため実用上問題なし
+//   見逃しがあっても次のcron（最大30分後）で補足できる
 const items = await fetchWithRetry(group.key)  // startOffset デフォルト=1
 ```
 
 ### ❌ 時間ベースのページローテーションは使わない（失敗済み）
 
 ```typescript
-// ❌ やってはいけない: 多くの検索条件は50〜100件しかなく b=101以降は空
-// → 空ページへのリトライ(×3回)が蓄積 → GitHub Actions タイムアウト → 通知全滅
-const runGroupIndex = Math.floor(Date.now() / (10 * 60 * 1000)) % 3
-const pageStartOffset = runGroupIndex * 100 + 1  // b=101, b=201 が空で詰まる
+// ❌ やってはいけない: ローテーションで b=201以降を指定すると重複管理が複雑になる
+// → GitHub Actions タイムアウトリスク
+const runGroupIndex = Math.floor(Date.now() / (60 * 60 * 1000)) % 5
+const pageStartOffset = runGroupIndex * 100 + 1
 ```
 
-### なぜ2ページ固定が正しいか
+### なぜ3ページで十分か
 
-- ヤフオクの「終了間近24時間・入札あり」フィルター済み結果は通常50〜150件
-- 2ページ（100件）取得で十分カバーできる
+- `aucend=1` + `sortBy=endTime ASC` → 終了が近い商品ほど上位表示
+- 1〜3ページ目（150件）で24時間以内に終了する大半をカバー
 - `notifiedIds` の重複排除で2回目以降は新着のみ通知される
+- 見逃しがあっても次のcron（30分後推奨）で補足可能
+- ⚠️ Vercel Fluid CPU 節約のため **10に戻さないこと**（コスト起因の設計変更）
 
 ### ⚠️ `abuynow=2` 自動適用禁止（2026-04-10 廃止）
 
@@ -244,10 +244,10 @@ for (const { userId, auctionId } of ended) {
 - 7日TTL（`cleanupOldNotified`）はあくまで安全網。主系はオークション終了検出で即削除する設計が正しい
 
 <!-- CC_CONTEXT_START -->
-<!-- cc:session:6ac01ee9-8322-4d4d-9748-6c6e9be68d48:2026-04-14 14:21 -->
-**最後の作業** (2026-04-14 14:21)
-- SPA Base じゃあ通知を知らせたら、SPA Base からは履歴を消すみたいにできないですかね。アプリ側で履歴を取っておいて、SPA Base の裏側はもう削除するみたいな。通知完了したら。 それだったら無限に収支できるよね。アプリ…
-- <task-notification> <task-id>bs7bjitbs</task-id> <tool-use-id>toolu_01F21U4nws2B1ARgSaT2ht5C</tool-…
-- <task-notification> <task-id>b3c1cqy6p</task-id> <tool-use-id>toolu_01TTD4FpSyPaT2Qdy6GsruKA</tool-…
-- 編集ファイル: cron.yml、vercel.json、page.tsx、TROUBLESHOOT.md、.gitignore、webpush.ts
+<!-- cc:session:98c0cb21-8366-4eef-b4e6-3d2ce16f8a39:2026-04-19 16:05 -->
+**最後の作業** (2026-04-19 16:05)
+- スパベースを実行しました。 また、左上の "otta" という管理名は変更できますか？プロジェクト名を同じように反映させたいのですが、変更方法を教えてください。
+- https://yahooauction-watch.vercel.app/ このアプリは今、いい感じに作れてるんですけど、アプリの最初にログインし、Yahoo!オークションにログインしていると思う…
+- 例えば、ヤフオクウォッチ本番アプリをダウンロードして検索条件などを登録した後、アプリを削除して再インストールした場合、削除した方の通知は不要なので削除しても問題ありません。またその際、データの保管も…
+- 編集ファイル: page.tsx、ConditionForm.tsx、manifest.json、manifest-trial.json、fingerprint.ts、route.ts
 <!-- CC_CONTEXT_END -->

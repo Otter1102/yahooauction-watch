@@ -1,30 +1,24 @@
-// GET /api/cron/check/[shard] — シャード番号をURLパスで指定する便利エンドポイント
+// POST /api/cron/check/[shard] — coordinator から呼ばれるシャードワーカー
+// GET  /api/cron/check/[shard] — フォールバック（直接呼び出し時）
 //
-// cron-job.org 設定（8シャード・200人対応）:
-//   job0: /api/cron/check/0?secret=xxx  毎10分 :00
-//   job1: /api/cron/check/1?secret=xxx  毎10分 :01
-//   job2: /api/cron/check/2?secret=xxx  毎10分 :02
-//   job3: /api/cron/check/3?secret=xxx  毎10分 :03
-//   job4: /api/cron/check/4?secret=xxx  毎10分 :04
-//   job5: /api/cron/check/5?secret=xxx  毎10分 :05
-//   job6: /api/cron/check/6?secret=xxx  毎10分 :06
-//   job7: /api/cron/check/7?secret=xxx  毎10分 :07
+// 【2026-04-19 waitUntil 廃止】
+//   理由: waitUntil() = Vercel Fluid Compute 課金（無料枠 4時間/月）
+//         同期処理に変更することで通常のサーバーレス（100 GB-hours/月無料）へ移行
 //
-// スケーリング計算:
-//   TOTAL_SHARDS=8: 200ユーザー ÷ 8 = 25ユーザー/シャード
-//   CONCURRENCY=25: 25ユーザーを1バッチで並列処理 → バッチ数=1
-//   USER_TIMEOUT_MS=30s: 1バッチ × 30s = 30s << Vercel 60s制限
-//   run-now側: CONDITION_CONCURRENCY=5 → 30条件 ÷ 5 = 6バッチ × 2s = 12s << 30s
+// 【スケーリング計算（100ユーザー対応）】
+//   TOTAL_SHARDS=8: 100ユーザー ÷ 8 = 13ユーザー/シャード
+//   CONCURRENCY=25: 13ユーザーが1バッチで並列処理 → 処理時間 ≒ 1ユーザー分
+//   USER_TIMEOUT_MS=30s: 1バッチ × 30s = 30s << Vercel 60s制限 ✅
+//   run-now側: CONDITION_CONCURRENCY=5 × FETCH_PAGES=3 → ~5-10s << 30s ✅
 import { NextRequest, NextResponse } from 'next/server'
-import { waitUntil } from '@vercel/functions'
 import { getSupabaseAdmin } from '@/lib/supabase'
-import { resetStalledNotified } from '@/lib/storage'
+import { cleanupOldNotified, cleanupOldHistory, resetStalledNotified } from '@/lib/storage'
 import { checkAuctionEnded } from '@/lib/scraper'
 
 const APP_URL         = process.env.NEXT_PUBLIC_APP_URL ?? 'https://yahooauction-watch.vercel.app'
-const CONCURRENCY     = 25   // 25ユーザーを1バッチで並列処理
-const USER_TIMEOUT_MS = 50_000  // 30条件÷5並列=6バッチ×8s(FETCH_TIMEOUT)=48s < 50s。cron simpleCount除外で実現
-const TOTAL_SHARDS    = 8   // 200ユーザー ÷ 8 = 25ユーザー/シャード
+const CONCURRENCY     = 25
+const USER_TIMEOUT_MS = 30_000
+const TOTAL_SHARDS    = 8
 
 function getUserShard(userId: string, totalShards: number): number {
   const hex = userId.replace(/-/g, '').slice(-4)
@@ -45,7 +39,6 @@ async function alertAdmin(message: string): Promise<void> {
 }
 
 async function pingHealthcheck(shard: number): Promise<void> {
-  // シャード0のみpingしてhealthchecks.ioの重複カウントを防ぐ
   if (shard !== 0) return
   const url = process.env.HEALTHCHECK_PING_URL
   if (!url) return
@@ -55,8 +48,8 @@ async function pingHealthcheck(shard: number): Promise<void> {
   } catch { /* ping失敗は無視 */ }
 }
 
-// ── POST: コーディネーター(/api/cron/coordinator)から呼ばれる ───────────────
-// 事前に振り分けられたuserIdsを受け取り、Supabase接続なしで処理する
+// ── POST: coordinator から呼ばれる（メインパス）───────────────────────────────
+// waitUntil 廃止: 同期処理で通常サーバーレス課金（GB-hours）に移行
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ shard: string }> }
@@ -74,32 +67,29 @@ export async function POST(
   }
 
   const { userIds } = await req.json() as { userIds: string[] }
-  const cronSecret  = envSecret
 
-  // Supabase不要: コーディネーターが既に取得・振り分け済み
-  waitUntil(runShardWithUsers(shard, userIds, cronSecret))
-  return NextResponse.json({ ok: true, started: true, shard, userCount: userIds.length })
-}
-
-async function runShardWithUsers(shard: number, userIds: string[], cronSecret: string): Promise<void> {
+  // waitUntil 廃止: await で同期処理（通常サーバーレス課金）
   try {
-    const users = userIds.map(id => ({ id }))
-    console.log(`[cron/shard${shard}] コーディネーターから${users.length}人受信`)
-    await processUsers(users, shard, cronSecret)
-    await pingHealthcheck(shard)
+    await runShardWithUsers(shard, userIds, envSecret)
   } catch (e) {
     const msg = String(e)
     console.error(`[cron/shard${shard}] エラー:`, msg)
     await alertAdmin(`[shard${shard}] 予期しないエラー: ${msg}`)
+    return NextResponse.json({ ok: false, error: msg }, { status: 500 })
   }
+
+  return NextResponse.json({ ok: true, shard, userCount: userIds.length })
 }
 
-// ── GET: cron-job.org の旧設定（shard0〜7 を直接呼ぶ）への対応 ──────────────
-//
-// 【問題】cron-job.org が shard0〜7 を同時発火 → 8接続がSupabaseに集中 → タイムアウト
-// 【解決】shard0 のみコーディネーターを起動し、shard1-7 は即座にno-op で返す。
-//         コーディネーターが全ユーザーを1接続で取得し、各シャードにPOSTで配布する。
-//         → Supabase接続は常に1本のみ（cron-job.org の設定変更なしで解決）
+async function runShardWithUsers(shard: number, userIds: string[], cronSecret: string): Promise<void> {
+  console.log(`[cron/shard${shard}] コーディネーターから${userIds.length}人受信`)
+  const users = userIds.map(id => ({ id }))
+  await processUsers(users, shard, cronSecret)
+  await pingHealthcheck(shard)
+}
+
+// ── GET: フォールバック（直接呼び出し・手動テスト用）──────────────────────────
+// waitUntil 廃止: 同期処理。100ユーザー以内であれば60s以内に完了する。
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ shard: string }> }
@@ -117,30 +107,32 @@ export async function GET(
     return NextResponse.json({ error: `shard は 0〜${TOTAL_SHARDS - 1} で指定` }, { status: 400 })
   }
 
-  // shard0 だけコーディネーターを起動して全シャードを処理する
-  // shard1-7 は即座にno-op（コーディネーターが担当するため）
-  if (shard === 0) {
-    const cronSecret = (process.env.CRON_SECRET ?? '').trim()
-    waitUntil(triggerCoordinator(cronSecret))
-    return NextResponse.json({ ok: true, shard: 0, mode: 'coordinator-triggered' })
-  }
+  const cronSecret = (process.env.CRON_SECRET ?? '').trim()
 
-  // shard1-7: no-op（コーディネーター経由で処理済み）
-  console.log(`[cron/shard${shard}] GET受信 → コーディネーター担当のためスキップ`)
-  return NextResponse.json({ ok: true, shard, mode: 'skipped-by-coordinator' })
-}
-
-async function triggerCoordinator(cronSecret: string): Promise<void> {
   try {
-    const res = await fetch(`${APP_URL}/api/cron/coordinator?secret=${encodeURIComponent(cronSecret)}`, {
-      signal: AbortSignal.timeout(55_000),
-    })
-    console.log(`[shard0/GET] コーディネーター起動: ${res.status}`)
+    // Supabase からユーザー取得（1回のみ・スタガーなし）
+    const supabase = getSupabaseAdmin()
+    const { data, error } = await supabase
+      .from('users')
+      .select('id')
+      .or('push_sub.not.is.null,ntfy_topic.neq.,discord_webhook.neq.')
+    if (error || !data) {
+      const msg = error?.message ?? 'ユーザー取得失敗'
+      console.error(`[cron/shard${shard}] ${msg}`)
+      return NextResponse.json({ error: msg }, { status: 500 })
+    }
+    const users = data.filter(u => getUserShard(u.id, TOTAL_SHARDS) === shard)
+    console.log(`[cron/shard${shard}] 担当ユーザー数: ${users.length}/${data.length}`)
+    await processUsers(users, shard, cronSecret)
+    await pingHealthcheck(shard)
   } catch (e) {
     const msg = String(e)
-    console.error('[shard0/GET] コーディネーター起動失敗:', msg)
-    await alertAdmin(`[shard0] コーディネーター起動失敗: ${msg}`)
+    console.error(`[cron/shard${shard}] エラー:`, msg)
+    await alertAdmin(`[shard${shard}] 予期しないエラー: ${msg}`)
+    return NextResponse.json({ ok: false, error: msg }, { status: 500 })
   }
+
+  return NextResponse.json({ ok: true, shard, totalShards: TOTAL_SHARDS })
 }
 
 async function processUsers(
@@ -187,9 +179,9 @@ async function processUsers(
   // クリーンアップはshard0のみ
   if (shard !== 0) return
 
-  // cleanupEndedAuctions が 25h ハードカットオフ＋終了確認を一括処理するため
-  // 旧 cleanupOldNotified / cleanupOldHistory は呼ばない（重複・矛盾）
-  await cleanupEndedAuctions()
+  await cleanupOldNotified()
+  await cleanupOldHistory(72)
+  await cleanupEndedAuctionsFromHistory()
 
   try {
     const stalled = await resetStalledNotified()
@@ -199,73 +191,43 @@ async function processUsers(
   }
 }
 
-/**
- * 終了オークション一括クリーンアップ（shard0 の毎cron実行）
- *
- * ① ハードカットオフ（25h超）: Yahoo確認なしで即削除（確実に終了済み）
- *    → notification_history と notified_items を並列削除
- * ② ソフトチェック（1分〜25h）: Yahoo確認し終了済みのみ削除
- *    → 50件/cron を 10並列でチェック → 両テーブルを並列削除
- *
- * 設計方針:
- *   - オークション終了・落札確定の瞬間にデータを消す（TTL待ちしない）
- *   - notified_items の残留が「新着が通知されない」バグの根本原因 → 即削除で防止
- *   - cleanupOldNotified / cleanupOldHistory は呼ばない（このロジックで包含済み）
- */
-async function cleanupEndedAuctions(): Promise<void> {
+async function cleanupEndedAuctionsFromHistory(): Promise<void> {
   const supabase = getSupabaseAdmin()
   const now = Date.now()
   const hardCutoff = new Date(now - 25 * 60 * 60 * 1000).toISOString()
+  await supabase.from('notification_history').delete().lt('notified_at', hardCutoff)
+  await supabase.from('notified_items').delete().lt('notified_at', hardCutoff)
 
-  // ① 25h超は無条件削除（並列）
-  await Promise.all([
-    supabase.from('notification_history').delete().lt('notified_at', hardCutoff),
-    supabase.from('notified_items').delete().lt('notified_at', hardCutoff),
-  ])
-
-  // ② 1分〜25h: Yahoo確認して終了済みのみ削除
   const softCutoff = new Date(now - 60 * 1000).toISOString()
   const { data: items } = await supabase
     .from('notification_history')
     .select('id, auction_id, user_id')
     .lt('notified_at', softCutoff)
     .gte('notified_at', hardCutoff)
-    .limit(50)  // 20→50: 1回のcronでより多くのアイテムを処理
+    .limit(20)
 
   if (!items?.length) return
 
-  const toDeleteHistIds: string[] = []
+  const toDeleteIds: string[] = []
   const toDeletePairs: Array<{ userId: string; auctionId: string }> = []
-
-  // 10並列でYahoo終了確認（旧5並列→倍速）
-  const CHECK_BATCH = 10
-  for (let i = 0; i < items.length; i += CHECK_BATCH) {
-    const chunk = items.slice(i, i + CHECK_BATCH)
+  const BATCH = 5
+  for (let i = 0; i < items.length; i += BATCH) {
+    const chunk = items.slice(i, i + BATCH)
     const results = await Promise.allSettled(
       chunk.map(item => checkAuctionEnded(item.auction_id as string))
     )
     results.forEach((r, idx) => {
       if (r.status === 'fulfilled' && r.value) {
-        toDeleteHistIds.push(chunk[idx].id as string)
-        toDeletePairs.push({
-          userId:    chunk[idx].user_id as string,
-          auctionId: chunk[idx].auction_id as string,
-        })
+        toDeleteIds.push(chunk[idx].id as string)
+        toDeletePairs.push({ userId: chunk[idx].user_id as string, auctionId: chunk[idx].auction_id as string })
       }
     })
   }
+  if (!toDeleteIds.length) return
 
-  if (!toDeleteHistIds.length) return
-
-  // notification_history と notified_items を並列削除
-  await Promise.all([
-    supabase.from('notification_history').delete().in('id', toDeleteHistIds),
-    // notified_items は (user_id, auction_id) の複合条件なので個別削除を並列実行
-    ...toDeletePairs.map(({ userId, auctionId }) =>
-      supabase.from('notified_items').delete()
-        .eq('user_id', userId).eq('auction_id', auctionId)
-    ),
-  ])
-
-  console.log(`[cron/shard0] 終了オークション ${toDeleteHistIds.length}件削除 / ${items.length}件チェック`)
+  await supabase.from('notification_history').delete().in('id', toDeleteIds)
+  for (const { userId, auctionId } of toDeletePairs) {
+    await supabase.from('notified_items').delete().eq('user_id', userId).eq('auction_id', auctionId)
+  }
+  console.log(`[cron/shard0] 終了オークション ${toDeleteIds.length}件を削除`)
 }
