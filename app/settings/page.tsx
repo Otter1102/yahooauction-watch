@@ -63,10 +63,6 @@ export default function SettingsPage() {
   const [isStandalone, setIsStandalone] = useState(true)
   const [isIOS, setIsIOS] = useState(false)
   const [showIosInstallGuide, setShowIosInstallGuide] = useState(false)
-  const [emailInput, setEmailInput] = useState('')
-  const [emailSaving, setEmailSaving] = useState(false)
-  const [emailSaved, setEmailSaved] = useState(false)
-
   // ── インストール状態検出 ─────────────────────────────────────────
   useEffect(() => {
     const standalone = ('standalone' in navigator && (navigator as any).standalone === true)
@@ -96,7 +92,6 @@ export default function SettingsPage() {
       .then(data => {
         setUser(data)
         setHasPushDB(data.hasPush === true)
-        setEmailInput(data.email ?? '')
       })
 
   }, [])
@@ -221,20 +216,6 @@ export default function SettingsPage() {
     if (!data.ok && data.debug) setTestDebug(data.debug)
     setTestState(data.ok ? 'ok' : 'fail')
     if (data.ok) setTimeout(() => setTestState('idle'), 5000)
-  }
-
-  // ── メールアドレス保存 ────────────────────────────────────────────
-  async function saveEmail() {
-    if (!userId) return
-    setEmailSaving(true)
-    const email = emailInput.trim()
-    await fetch('/api/settings', {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId, email }),
-    })
-    setEmailSaving(false)
-    setEmailSaved(true)
-    setTimeout(() => setEmailSaved(false), 3000)
   }
 
   if (!user) return (
@@ -386,43 +367,6 @@ export default function SettingsPage() {
               </button>
             </div>
           )}
-        </div>
-
-        {/* ━━━ メール通知 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-        <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', paddingLeft: 4, marginBottom: 6, letterSpacing: '0.8px', textTransform: 'uppercase' }}>メール通知</p>
-        <div style={{ background: 'var(--card)', borderRadius: 12, marginBottom: 24, overflow: 'hidden', boxShadow: 'var(--shadow-sm)', border: '1px solid var(--border)' }}>
-          <div style={{ padding: '16px 16px 12px' }}>
-            <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12, lineHeight: 1.6 }}>
-              新着商品が見つかったときにメールで通知します。Gmail など任意のアドレスを入力してください。
-            </p>
-            <input
-              type="text"
-              value={emailInput}
-              onChange={e => setEmailInput(e.target.value)}
-              placeholder="例: yourname@gmail.com"
-              style={{ marginBottom: 10 }}
-            />
-            <button
-              onClick={saveEmail}
-              disabled={emailSaving}
-              style={{
-                width: '100%', height: 44,
-                background: 'var(--grad-primary)', border: 'none',
-                borderRadius: 22, fontSize: 14, fontWeight: 700,
-                color: 'white', cursor: emailSaving ? 'wait' : 'pointer',
-                fontFamily: 'inherit', opacity: emailSaving ? 0.6 : 1,
-              }}>
-              {emailSaving ? '保存中...' : 'メールアドレスを保存'}
-            </button>
-            {emailSaved && (
-              <div style={{ marginTop: 10, padding: '10px 14px', background: 'rgba(52,199,89,0.08)', borderRadius: 8, fontSize: 13, color: '#1a7a3a', fontWeight: 600, border: '1px solid rgba(52,199,89,0.2)' }}>
-                ✓ 保存しました
-              </div>
-            )}
-            <p style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 10, lineHeight: 1.6 }}>
-              ※ 通知なしの場合はメール送信しません。削除するには空欄にして保存してください。
-            </p>
-          </div>
         </div>
 
       </div>

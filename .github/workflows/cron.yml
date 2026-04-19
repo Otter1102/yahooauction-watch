@@ -51,3 +51,4 @@ jobs:
           VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          GMAIL_NOTIFY_TO: ${{ secrets.GMAIL_NOTIFY_TO }}
