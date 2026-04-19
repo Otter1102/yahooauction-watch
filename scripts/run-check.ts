@@ -8,8 +8,8 @@
  */
 import { getAllEnabledConditions, getAllNotifiedIds, markNotified, addHistory, updateCondition, cleanupOldNotified, cleanupOldHistory, resetStalledNotified } from '../lib/storage'
 import { fetchAuctionRss, checkAuctionEnded } from '../lib/scraper'
-import { notifyUserSummary, notifyUserNoItems } from '../lib/notifier'
 import { sendWebPushSummary, sendWebPushNoItems } from '../lib/webpush'
+import { sendEmailSummary } from '../lib/emailer'
 import { getSupabaseAdmin } from '../lib/supabase'
 const supabaseAdmin = { from: (...args: Parameters<ReturnType<typeof getSupabaseAdmin>['from']>) => getSupabaseAdmin().from(...args) }
 import { User, SearchCondition, AuctionItem } from '../lib/types'
@@ -20,7 +20,7 @@ interface ConditionGroup { key: RssKey; conditions: SearchCondition[] }
 async function getAllUsers(userIds: string[]): Promise<Map<string, User>> {
   const { data } = await supabaseAdmin
     .from('users')
-    .select('id, ntfy_topic, discord_webhook, notification_channel, push_sub')
+    .select('id, ntfy_topic, discord_webhook, notification_channel, push_sub, email')
     .in('id', userIds)
   const map = new Map<string, User>()
   for (const row of data ?? []) {
@@ -28,8 +28,9 @@ async function getAllUsers(userIds: string[]): Promise<Map<string, User>> {
       id: row.id,
       ntfyTopic: row.ntfy_topic ?? '',
       discordWebhook: row.discord_webhook ?? '',
-      notificationChannel: row.notification_channel ?? 'ntfy',
+      notificationChannel: row.notification_channel ?? 'webpush',
       pushSub: row.push_sub ?? null,
+      email: row.email ?? '',
     })
   }
   return map
@@ -104,10 +105,10 @@ async function main() {
       .map(u => u.id)
   )
 
-  // 通知設定済みユーザーのみ処理（ntfy/discord または webpush）
+  // 通知設定済みユーザーのみ処理（webpush または email）
   const activeConditions = allConditions.filter(c => {
     const user = usersMap.get(c.userId)
-    return user && (user.ntfyTopic || user.discordWebhook || pushUserIds.has(c.userId))
+    return user && (pushUserIds.has(c.userId) || !!user.email)
   })
   console.log(`通知設定済みユーザーの条件: ${activeConditions.length}件`)
 
@@ -212,32 +213,29 @@ async function main() {
     }
   }
 
-  // ─── 通知（ユーザーごとに1回）───
-  // 新着あり → サマリー通知 / 新着なし → 「新着情報はありませんでした」通知
-  for (const userId of activeUserIds) {
-    const user = usersMap.get(userId)
-    if (!user) continue
+  // ─── 通知（ユーザーごとに1回・10並列で送信）───
+  // 新着あり → Web Push + メール / 新着なし → Web Push のみ（メールは送らない）
+  const NOTIFY_CONCURRENCY = 10
+  for (let i = 0; i < activeUserIds.length; i += NOTIFY_CONCURRENCY) {
+    const batch = activeUserIds.slice(i, i + NOTIFY_CONCURRENCY)
+    await Promise.all(batch.map(async (userId) => {
+      const user = usersMap.get(userId)
+      if (!user) return
 
-    const items = pendingByUser.get(userId)
-    if (items && items.length > 0) {
-      // 新着あり: サマリー通知
-      if (pushUserIds.has(userId)) {
-        await sendWebPushSummary(userId, items.length, items[0])
+      const items = pendingByUser.get(userId)
+      if (items && items.length > 0) {
+        // 新着あり: Web Push + メール（並列）
+        await Promise.all([
+          pushUserIds.has(userId) ? sendWebPushSummary(userId, items.length, items[0]) : Promise.resolve(),
+          user.email ? sendEmailSummary(user.email, items.length, items) : Promise.resolve(),
+        ])
+        console.log(`  📨 [${userId.slice(0,8)}] 新着${items.length}件 通知`)
+      } else {
+        // 新着なし: Web Push のみ（メール通知はしない）
+        if (pushUserIds.has(userId)) await sendWebPushNoItems(userId)
+        console.log(`  📭 [${userId.slice(0,8)}] 新着なし`)
       }
-      if (user.ntfyTopic || user.discordWebhook) {
-        await notifyUserSummary(items.length, user)
-      }
-      console.log(`  📨 [${userId.slice(0,8)}] 新着${items.length}件 通知`)
-    } else {
-      // 新着なし: 「取れませんでした」通知
-      if (pushUserIds.has(userId)) {
-        await sendWebPushNoItems(userId)
-      }
-      if (user.ntfyTopic || user.discordWebhook) {
-        await notifyUserNoItems(user)
-      }
-      console.log(`  📭 [${userId.slice(0,8)}] 新着なし通知`)
-    }
+    }))
   }
 
   // ─── 終了済みオークションを履歴から削除 ───
@@ -322,14 +320,14 @@ async function cleanupGhostUsers(): Promise<number> {
     // 幽霊ユーザー候補: push_sub なし かつ 14日以上前に作成
     const { data: candidates } = await supabaseAdmin
       .from('users')
-      .select('id, ntfy_topic, discord_webhook')
+      .select('id, email')
       .is('push_sub', null)
       .lt('created_at', cutoff)
     if (!candidates?.length) return 0
 
-    // JS側でntfy/discordも未設定を確認（null/空文字両方対応）
+    // JS側でメールも未設定を確認（null/空文字両方対応）
     const ghostIds = candidates
-      .filter(u => !u.ntfy_topic && !u.discord_webhook)
+      .filter(u => !u.email)
       .map(u => u.id as string)
     if (ghostIds.length === 0) return 0
 

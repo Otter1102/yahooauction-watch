@@ -10,6 +10,7 @@ export interface User {
   discordWebhook: string
   notificationChannel: 'webpush' | 'ntfy' | 'discord' | 'both'
   pushSub?: PushSub | null
+  email?: string
 }
 
 export interface SearchCondition {

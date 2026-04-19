@@ -1,42 +1,13 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { User } from '@/lib/types'
-
-// ビルド時に埋め込まれる定数（client側でも確実に参照可能）
-const TRIAL_MODE = process.env.NEXT_PUBLIC_TRIAL_MODE === 'true'
+import { getDeviceFingerprint, IS_TRIAL as TRIAL_MODE } from '@/lib/fingerprint'
 
 function getUserId() {
   if (typeof window === 'undefined') return ''
   let id = localStorage.getItem('yahoowatch_user_id')
   if (!id) { id = crypto.randomUUID(); localStorage.setItem('yahoowatch_user_id', id) }
   return id
-}
-
-/** モバイル（スマホ・タブレット）か デスクトップかを判定 */
-function getDeviceType(): 'mobile' | 'desktop' {
-  if (typeof window === 'undefined') return 'desktop'
-  return /Mobile|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ? 'mobile' : 'desktop'
-}
-
-/** デバイス固有のフィンガープリントを生成（再インストール後も同一値） */
-function getDeviceFingerprint(): string {
-  if (typeof window === 'undefined') return ''
-  const components = [
-    screen.width,
-    screen.height,
-    screen.colorDepth,
-    navigator.language,
-    navigator.hardwareConcurrency ?? 0,
-    Intl.DateTimeFormat().resolvedOptions().timeZone,
-    navigator.platform ?? '',
-  ].join('|')
-  let hash = 0
-  for (let i = 0; i < components.length; i++) {
-    const c = components.charCodeAt(i)
-    hash = ((hash << 5) - hash) + c
-    hash = hash & hash
-  }
-  return `fp_${Math.abs(hash).toString(36)}`
 }
 
 function urlBase64ToUint8Array(base64: string): ArrayBuffer {
@@ -66,18 +37,10 @@ async function tryAutoResubscribeSettings(
       applicationServerKey: urlBase64ToUint8Array(publicKey),
     })
     const j = sub.toJSON()
-    const subRes = await fetch('/api/push/subscribe', {
+    await fetch('/api/push/subscribe', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId, endpoint: j.endpoint, p256dh: j.keys?.p256dh, auth: j.keys?.auth, deviceFingerprint: getDeviceFingerprint(), deviceType: getDeviceType() }),
+      body: JSON.stringify({ userId, endpoint: j.endpoint, p256dh: j.keys?.p256dh, auth: j.keys?.auth, deviceFingerprint: getDeviceFingerprint(), isTrial: TRIAL_MODE }),
     })
-    // 再インストール後に既存ユーザーと統合された場合、canonicalUserId を受け取る
-    const subJson = await subRes.json().catch(() => ({}))
-    if (subJson.canonicalUserId && subJson.canonicalUserId !== userId) {
-      localStorage.setItem('yahoowatch_user_id', subJson.canonicalUserId)
-      console.log('[push] 既存ユーザーに統合 → ページリロード')
-      window.location.reload()
-      return true
-    }
     await fetch('/api/settings', {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId, notificationChannel: 'webpush' }),
@@ -97,10 +60,12 @@ export default function SettingsPage() {
   const [pushState, setPushState] = useState<PushState>('loading')
   const [pushLoading, setPushLoading] = useState(false)
   const [hasPushDB, setHasPushDB] = useState(false)   // DB側にpush_subが存在するか
-  const [yahooConnected, setYahooConnected] = useState(false)
   const [isStandalone, setIsStandalone] = useState(true)
   const [isIOS, setIsIOS] = useState(false)
   const [showIosInstallGuide, setShowIosInstallGuide] = useState(false)
+  const [emailInput, setEmailInput] = useState('')
+  const [emailSaving, setEmailSaving] = useState(false)
+  const [emailSaved, setEmailSaved] = useState(false)
 
   // ── インストール状態検出 ─────────────────────────────────────────
   useEffect(() => {
@@ -131,25 +96,9 @@ export default function SettingsPage() {
       .then(data => {
         setUser(data)
         setHasPushDB(data.hasPush === true)
+        setEmailInput(data.email ?? '')
       })
 
-    if (localStorage.getItem('yahoowatch_yahoo_connected') === '1') {
-      setYahooConnected(true)
-    }
-  }, [])
-
-  // ── Yahoo: アプリから戻ったとき自動連携 ─────────────────────────
-  useEffect(() => {
-    const onVisible = () => {
-      if (document.visibilityState === 'visible' &&
-          localStorage.getItem('yahoowatch_yahoo_connecting') === '1') {
-        localStorage.removeItem('yahoowatch_yahoo_connecting')
-        localStorage.setItem('yahoowatch_yahoo_connected', '1')
-        setYahooConnected(true)
-      }
-    }
-    document.addEventListener('visibilitychange', onVisible)
-    return () => document.removeEventListener('visibilitychange', onVisible)
   }, [])
 
   // ── Push: ブラウザのSW購読状態を確認 ────────────────────────────
@@ -187,18 +136,12 @@ export default function SettingsPage() {
       }
       setPushState('subscribed')
       // DBと自動同期（別タブ・再インストール・SW更新後のズレを解消）
-      // canonicalUserId が返ってきた場合はlocalStorageを更新してリロード
       const j = sub.toJSON()
       fetch('/api/push/subscribe', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: getUserId(), endpoint: j.endpoint, p256dh: j.keys?.p256dh, auth: j.keys?.auth, deviceFingerprint: getDeviceFingerprint(), deviceType: getDeviceType() }),
+        body: JSON.stringify({ userId: getUserId(), endpoint: j.endpoint, p256dh: j.keys?.p256dh, auth: j.keys?.auth, deviceFingerprint: getDeviceFingerprint(), isTrial: TRIAL_MODE }),
       }).then(r => r.json()).then(d => {
-        if (d.canonicalUserId && d.canonicalUserId !== getUserId()) {
-          localStorage.setItem('yahoowatch_user_id', d.canonicalUserId)
-          window.location.reload()
-        } else if (d.ok) {
-          console.log('[push] 購読をDBと同期しました')
-        }
+        if (d.ok) console.log('[push] 購読をDBと同期しました')
       }).catch(() => {})
     }).catch(() => setPushState('idle'))
   }, [])
@@ -221,19 +164,12 @@ export default function SettingsPage() {
       const j = sub.toJSON()
       const saveRes = await fetch('/api/push/subscribe', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, endpoint: j.endpoint, p256dh: j.keys?.p256dh, auth: j.keys?.auth, deviceFingerprint: getDeviceFingerprint(), deviceType: getDeviceType() }),
+        body: JSON.stringify({ userId, endpoint: j.endpoint, p256dh: j.keys?.p256dh, auth: j.keys?.auth, deviceFingerprint: getDeviceFingerprint(), isTrial: TRIAL_MODE }),
       })
       if (!saveRes.ok) {
         const e = await saveRes.json().catch(() => ({}))
         alert(`保存失敗: ${e.error ?? saveRes.status}`)
         setPushLoading(false); return
-      }
-      // 再インストール後に既存ユーザーと統合された場合
-      const saveJson = await saveRes.json().catch(() => ({}))
-      if (saveJson.canonicalUserId && saveJson.canonicalUserId !== userId) {
-        localStorage.setItem('yahoowatch_user_id', saveJson.canonicalUserId)
-        window.location.reload()
-        return
       }
       if (user && user.notificationChannel !== 'webpush') {
         const updated = { ...user, notificationChannel: 'webpush' as const }
@@ -287,11 +223,18 @@ export default function SettingsPage() {
     if (data.ok) setTimeout(() => setTestState('idle'), 5000)
   }
 
-  // ── Yahoo Safari連携（SafariでYahooにログインしてもらう）──────────
-  function openYahooLogin() {
-    localStorage.setItem('yahoowatch_yahoo_connecting', '1')
-    // Safariで開く（_blank = iOS PWAからSafariを起動）
-    window.open('https://auctions.yahoo.co.jp/', '_blank', 'noopener')
+  // ── メールアドレス保存 ────────────────────────────────────────────
+  async function saveEmail() {
+    if (!userId) return
+    setEmailSaving(true)
+    const email = emailInput.trim()
+    await fetch('/api/settings', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, email }),
+    })
+    setEmailSaving(false)
+    setEmailSaved(true)
+    setTimeout(() => setEmailSaved(false), 3000)
   }
 
   if (!user) return (
@@ -445,46 +388,42 @@ export default function SettingsPage() {
           )}
         </div>
 
-        {/* ━━━ Yahoo連携（トライアル時は非表示） ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-        {!TRIAL_MODE && (
-          <>
-            <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', paddingLeft: 4, marginBottom: 6, letterSpacing: '0.8px', textTransform: 'uppercase' }}>ヤフオク連携</p>
-            <div style={{ background: 'var(--card)', borderRadius: 12, marginBottom: 24, overflow: 'hidden', boxShadow: 'var(--shadow-sm)', border: '1px solid var(--border)' }}>
-              <div style={{ padding: '14px 16px 12px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 12 }}>
-                <div style={{ width: 44, height: 44, borderRadius: 12, flexShrink: 0, background: 'linear-gradient(135deg, #7B0099 0%, #ff0033 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <span style={{ color: 'white', fontWeight: 900, fontSize: 20, fontFamily: 'Georgia, serif' }}>Y!</span>
-                </div>
-                <div>
-                  <p style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)', margin: '0 0 1px' }}>Yahoo!オークション ログイン連携</p>
-                  <p style={{ fontSize: 11, color: 'var(--text-tertiary)', margin: 0 }}>一度ログインで、商品ページを即表示</p>
-                </div>
+        {/* ━━━ メール通知 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+        <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', paddingLeft: 4, marginBottom: 6, letterSpacing: '0.8px', textTransform: 'uppercase' }}>メール通知</p>
+        <div style={{ background: 'var(--card)', borderRadius: 12, marginBottom: 24, overflow: 'hidden', boxShadow: 'var(--shadow-sm)', border: '1px solid var(--border)' }}>
+          <div style={{ padding: '16px 16px 12px' }}>
+            <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12, lineHeight: 1.6 }}>
+              新着商品が見つかったときにメールで通知します。Gmail など任意のアドレスを入力してください。
+            </p>
+            <input
+              type="text"
+              value={emailInput}
+              onChange={e => setEmailInput(e.target.value)}
+              placeholder="例: yourname@gmail.com"
+              style={{ marginBottom: 10 }}
+            />
+            <button
+              onClick={saveEmail}
+              disabled={emailSaving}
+              style={{
+                width: '100%', height: 44,
+                background: 'var(--grad-primary)', border: 'none',
+                borderRadius: 22, fontSize: 14, fontWeight: 700,
+                color: 'white', cursor: emailSaving ? 'wait' : 'pointer',
+                fontFamily: 'inherit', opacity: emailSaving ? 0.6 : 1,
+              }}>
+              {emailSaving ? '保存中...' : 'メールアドレスを保存'}
+            </button>
+            {emailSaved && (
+              <div style={{ marginTop: 10, padding: '10px 14px', background: 'rgba(52,199,89,0.08)', borderRadius: 8, fontSize: 13, color: '#1a7a3a', fontWeight: 600, border: '1px solid rgba(52,199,89,0.2)' }}>
+                ✓ 保存しました
               </div>
-              <div style={{ padding: '12px 16px 14px' }}>
-                {yahooConnected ? (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'rgba(52,199,89,0.08)', border: '1px solid rgba(52,199,89,0.25)', borderRadius: 12, padding: '12px 16px' }}>
-                    <span style={{ fontSize: 18 }}>✅</span>
-                    <div>
-                      <p style={{ fontWeight: 700, fontSize: 13, color: '#1a7a3a', margin: 0 }}>Yahoo!オークション 連携済み</p>
-                      <p style={{ fontSize: 11, color: 'var(--text-tertiary)', margin: '2px 0 0' }}>商品ページがログイン済みで開きます</p>
-                    </div>
-                  </div>
-                ) : (
-                  <>
-                    <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.75, marginBottom: 12 }}>
-                      Safariでヤフオクにログインしておくと、通知タップ・履歴タップで<strong>即ログイン状態のページ</strong>が開きます。
-                    </p>
-                    <button onClick={openYahooLogin}
-                      style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, height: 46, borderRadius: 23, border: 'none', background: 'linear-gradient(135deg, #7B0099 0%, #ff0033 100%)', color: 'white', fontWeight: 700, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 2px 10px rgba(255,0,51,0.28)' }}>
-                      <span style={{ fontFamily: 'Georgia, serif', fontWeight: 900, fontSize: 15 }}>Y!</span>
-                      Safariでヤフオクを開く
-                    </button>
-                    <p style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 8, textAlign: 'center' }}>ログイン後は戻るだけで設定完了</p>
-                  </>
-                )}
-              </div>
-            </div>
-          </>
-        )}
+            )}
+            <p style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 10, lineHeight: 1.6 }}>
+              ※ 通知なしの場合はメール送信しません。削除するには空欄にして保存してください。
+            </p>
+          </div>
+        </div>
 
       </div>
     </div>
