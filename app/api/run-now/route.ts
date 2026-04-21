@@ -3,7 +3,7 @@ import { getConditions, getNotifiedIds, markNotified, addHistory, updateConditio
 import { getSupabaseAdmin } from '@/lib/supabase'
 import { fetchAuctionRssWithMeta, fetchAuctionRssSimple } from '@/lib/scraper'
 import { notifyUserSummary } from '@/lib/notifier'
-import { sendWebPushSummary } from '@/lib/webpush'
+import { sendWebPushSummary, sendWebPushNoItems } from '@/lib/webpush'
 import { checkRateLimit } from '@/lib/rateLimiter'
 import { User, SearchCondition, AuctionItem } from '@/lib/types'
 
@@ -165,6 +165,7 @@ export async function POST(req: NextRequest) {
             auctionId: item.auctionId, title: item.title, price: item.price,
             url: item.url, imageUrl: item.imageUrl ?? '',
             notifiedAt: new Date().toISOString(), remaining: item.remaining ?? null,
+            endAt: item.endtimeMs ? new Date(item.endtimeMs).toISOString() : null,
           })
           allFreshForSummary.push({ item, cond })
           condNotified++
@@ -190,7 +191,7 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    // ── サマリー通知（新着ありの時のみ・1回まとめて送信）──
+    // ── サマリー通知（新着あり or cron時の新着なし通知）──
     if (allFreshForSummary.length > 0) {
       const topItem = allFreshForSummary[0].item
       // Web Push サマリー
@@ -208,6 +209,14 @@ export async function POST(req: NextRequest) {
         } catch (e: any) {
           console.warn('[run-now] ntfy/Discordサマリー送信失敗 (継続):', e?.message)
         }
+      }
+    } else if (isCronCall && hasPush) {
+      // 新着なし通知（cron経由のみ・手動実行はスキップ）
+      // 理由: 1時間に1回、新着がなくてもウォッチが正常動作していることをユーザーに通知する
+      try {
+        await sendWebPushNoItems(userId, getSupabaseAdmin())
+      } catch (e: any) {
+        console.warn('[run-now] 新着なしPush送信失敗 (継続):', e?.message)
       }
     }
 

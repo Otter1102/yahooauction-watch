@@ -184,15 +184,28 @@ window.open(`/redirect/${auctionId}`, '_blank', 'noopener')
 ヤフオクのような検索結果が複数ページにわたるサービスでは、**1ページ取得だけでは候補の大半を見落とす**。
 cron/バッチ設計時は以下のパターンを必ず採用すること。
 
-### 基本戦略: b=1 から3ページ同時取得（最大150件）【2026-04-19 変更: 10→3】
+### ページ数戦略【2026-04-20 更新】
+
+| 実行環境 | 定数 | ページ数 | 最大取得件数 | 理由 |
+|---------|------|---------|------------|------|
+| **Vercel** (`run-now/route.ts`) | `FETCH_PAGES=3` | 3ページ | 150件 | Fluid CPU コスト削減 |
+| **GitHub Actions** (`run-check.ts`) | `GH_FETCH_PAGES=10` | 10ページ | 500件 | コスト制限なし・広範囲カバー |
 
 ```typescript
-// scraper 内で b=1〜b=101 の3ページを並列取得（FETCH_PAGES=3）
-// 【変更理由】Vercel Fluid Active CPU 無料枠(4時間/月)超過のため10→3に削減
-//   aucend=1 + sortBy=endTime ASC では終了間近の商品が1〜3ページ目に集中するため実用上問題なし
-//   見逃しがあっても次のcron（最大30分後）で補足できる
-const items = await fetchWithRetry(group.key)  // startOffset デフォルト=1
+// Vercel: FETCH_PAGES=3 を使用（fetchAuctionRssWithMeta が自動適用）
+// GitHub Actions: GH_FETCH_PAGES=10 を明示指定
+const GH_FETCH_PAGES = 10
+const items = await fetchAuctionRss(key, startOffset, GH_FETCH_PAGES)  // 最大500件
 ```
+
+**なぜGitHub Actionsで10ページが必要か**:
+- 人気キーワードでは24時間以内終了の商品が500件以上あることも多い
+- 3ページ（150件）では残り8〜24時間の商品（4ページ目以降）が一切取得されない
+- `aucend=1 + sortBy=endTime ASC` では最も早く終わる商品が上位 → 4ページ目以降は8h〜24h先に終わる商品
+- GitHub Actions は Vercel Fluid のような CPU 課金がないため 10 ページ取得が可能
+
+**Vercel (`FETCH_PAGES=3`) を変更しないこと**:
+⚠️ Vercel Fluid Active CPU 無料枠(4時間/月)超過のため維持。**10に戻さないこと**。
 
 ### ❌ 時間ベースのページローテーションは使わない（失敗済み）
 
@@ -202,14 +215,6 @@ const items = await fetchWithRetry(group.key)  // startOffset デフォルト=1
 const runGroupIndex = Math.floor(Date.now() / (60 * 60 * 1000)) % 5
 const pageStartOffset = runGroupIndex * 100 + 1
 ```
-
-### なぜ3ページで十分か
-
-- `aucend=1` + `sortBy=endTime ASC` → 終了が近い商品ほど上位表示
-- 1〜3ページ目（150件）で24時間以内に終了する大半をカバー
-- `notifiedIds` の重複排除で2回目以降は新着のみ通知される
-- 見逃しがあっても次のcron（30分後推奨）で補足可能
-- ⚠️ Vercel Fluid CPU 節約のため **10に戻さないこと**（コスト起因の設計変更）
 
 ### ⚠️ `abuynow=2` 自動適用禁止（2026-04-10 廃止）
 

@@ -21,17 +21,19 @@ type RssKey = Pick<
   'sellerType' | 'itemCondition' | 'sortBy' | 'sortOrder' | 'buyItNow'
 >
 
-// iPhone Safari UA（ヤフオクのモバイル版HTMLを取得するため）
+// Chrome Desktop UA（2026-04-21 iPhone UA → Chrome UA に変更）
+// 理由: Yahoo が iPhone Safari UA をブロックし「ページが表示できません」を返すようになった。
+//       Chrome Desktop UA では正常にデスクトップ版 HTML が取得できることを確認済み。
 const UA =
-  'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) ' +
-  'AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1'
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ' +
+  '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
 
 const FETCH_TIMEOUT = 15_000
 
 // Yahooリクエスト共通ヘッダー（bot検知回避）
 const YAHOO_HEADERS: Record<string, string> = {
   'User-Agent':                UA,
-  'Accept':                    'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+  'Accept':                    'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
   'Accept-Language':           'ja,ja-JP;q=0.9,en;q=0.8',
   'Accept-Encoding':           'gzip, deflate, br',
   'Referer':                   'https://auctions.yahoo.co.jp/',
@@ -196,14 +198,18 @@ function parseItem(html: string, idPos: number, startPriceMap: Map<string, numbe
   // ── 入札件数 ──────────────────────────────────────────────────
   // 検出優先順位（確実な順）:
   //   ① isShoppingItem=true → 固定価格商品 = 入札不可 → bids=0 確定
-  //   ② class="Item__bid" テキスト解析（現行Yahoo HTML 2026-04-11〜）
-  //      <div class="Item__bid"><span class="Item__label">入札</span>
-  //      <span class="Item__text">5</span>  ← 数字 or "-"（0件）
-  //   ③ data-auction-bids 属性（旧HTML構造フォールバック）
-  //   ④ startPrice vs currentPrice 比較（旧フォールバック）
+  //   ② class="Product__bidWrap" テキスト解析（デスクトップ版 Chrome HTML 2026-04-21〜）
+  //      <div class="Product__bidWrap">
+  //        <dt class="Product__label"><img alt="入札"></dt>
+  //        <dd class="Product__bid">5</dd>   ← 数字（0件は "0"）
+  //      </div>
+  //      ※ IDから約7400文字先 → ウィンドウ(9500文字)内に収まる
+  //   ③ class="Item__bid" テキスト解析（旧モバイル版 HTML フォールバック）
+  //   ④ data-auction-bids 属性（旧HTML構造フォールバック）
+  //   ⑤ startPrice vs currentPrice 比較（旧フォールバック）
   //      price > startPrice → 入札あり確定 → bids=1（実件数不明のため最低値をセット）
   //      price == startPrice → 入札なし → bids=0
-  //   ⑤ どれも取得できない場合: bids=null（本当に不明）
+  //   ⑥ どれも取得できない場合: bids=null（本当に不明）
   //
   // フィルター側では:
   //   bids=0     → minBids>0 なら除外（入札なし確定）
@@ -215,23 +221,35 @@ function parseItem(html: string, idPos: number, startPriceMap: Map<string, numbe
     // ① ショッピング商品: 入札不可なので必ず0
     bids = 0
   } else {
-    // ② class="Item__bid" テキスト解析（現行Yahoo HTML）
-    const bidSectionIdx = chunk.indexOf('class="Item__bid"')
-    if (bidSectionIdx !== -1) {
-      const bidSection = chunk.slice(bidSectionIdx, bidSectionIdx + 500)
-      const bidTextM = bidSection.match(/class="Item__text"[^>]*>(\d+|-)<\/span>/)
+    // ② class="Product__bidWrap" テキスト解析（デスクトップ版 Chrome HTML）
+    const bidWrapIdx = chunk.indexOf('class="Product__bidWrap"')
+    if (bidWrapIdx !== -1) {
+      const bidSection = chunk.slice(bidWrapIdx, bidWrapIdx + 300)
+      const bidTextM = bidSection.match(/class="Product__bid"[^>]*>(\d+)<\/dd>/)
       if (bidTextM) {
-        bids = bidTextM[1] === '-' ? 0 : parseInt(bidTextM[1], 10)
+        bids = parseInt(bidTextM[1], 10)
       }
     }
 
     if (bids === null) {
-      // ③ data-auction-bids 属性（旧HTML構造フォールバック）
+      // ③ class="Item__bid" テキスト解析（旧モバイル版 HTML フォールバック）
+      const bidSectionIdx = chunk.indexOf('class="Item__bid"')
+      if (bidSectionIdx !== -1) {
+        const bidSection = chunk.slice(bidSectionIdx, bidSectionIdx + 500)
+        const bidTextM = bidSection.match(/class="Item__text"[^>]*>(\d+|-)<\/span>/)
+        if (bidTextM) {
+          bids = bidTextM[1] === '-' ? 0 : parseInt(bidTextM[1], 10)
+        }
+      }
+    }
+
+    if (bids === null) {
+      // ④ data-auction-bids 属性（旧HTML構造フォールバック）
       const bidsAttrM = chunk.match(/data-auction-bids=["'](\d+)["']/)
       if (bidsAttrM) {
         bids = parseInt(bidsAttrM[1], 10)
       } else {
-        // ④ startPrice vs currentPrice 比較（フォールバック）
+        // ⑤ startPrice vs currentPrice 比較（フォールバック）
         const startPrice = startPriceMap.get(auctionId)
         if (startPrice !== undefined && priceInt !== null) {
           // price > startPrice → 入札あり確定（件数不明のため 1 = 最低値をセット）
@@ -315,8 +333,9 @@ async function fetchPage(url: string): Promise<{
 const FETCH_PAGES = 3
 
 /**
- * Vercel API Routes 用: 10ページ同時取得 + メタデータ付き
- * b=1〜b=451 の10ページを並列取得（最大500件）
+ * Vercel API Routes 用: FETCH_PAGES（3ページ）+ メタデータ付き
+ * b=1〜b=101 の3ページを並列取得（最大150件）
+ * ⚠️ Vercel Fluid CPU コスト削減のため 10→3 ページに削減済み（2026-04-19）
  */
 export async function fetchAuctionRssWithMeta(key: RssKey): Promise<{
   items:      AuctionItem[]
@@ -376,10 +395,11 @@ export async function fetchAuctionRssSimple(
 
 /**
  * GitHub Actions スクリプト用: AuctionItem[] を直接返す
- * FETCH_PAGES（3ページ）並列取得 → 最大150件
+ * maxPages を指定可能（デフォルト=FETCH_PAGES=3）
+ * GitHub Actions では maxPages=10 等を指定してコスト制限なしで広範囲を取得できる
  */
-export async function fetchAuctionRss(key: RssKey, startOffset = 1): Promise<AuctionItem[]> {
-  const urls = Array.from({ length: FETCH_PAGES }, (_, i) => buildSearchUrl(key, startOffset + i * 50))
+export async function fetchAuctionRss(key: RssKey, startOffset = 1, maxPages = FETCH_PAGES): Promise<AuctionItem[]> {
+  const urls = Array.from({ length: maxPages }, (_, i) => buildSearchUrl(key, startOffset + i * 50))
   const pages = await Promise.all(urls.map(url => fetchPage(url)))
 
   const seen  = new Set<string>()

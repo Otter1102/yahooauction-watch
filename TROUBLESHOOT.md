@@ -1,3 +1,15 @@
+## 2026-04-21 — Yahoo が iPhone UA をブロック → 商品が0件取得になる → Chrome Desktop UA に変更
+
+| 項目 | 内容 |
+|------|------|
+| **症状** | 全検索条件で取得件数0件、通知が来なくなった |
+| **原因** | Yahoo Auctions が iPhone Safari UA (`iPhone; CPU iPhone OS 17_4`) をブロックするようになり、`ページが表示できません` エラーページを返すようになった。HTTP ステータスは 200 だがアイテムが0件になる。Chrome Desktop UA では正常に取得できることを確認 |
+| **対策** | `lib/scraper.ts` の UA を iPhone Safari → Chrome Desktop (`Chrome/124.0.0.0`) に変更。合わせて入札数パーサーをデスクトップ HTML 構造 (`class="Product__bidWrap"` + `class="Product__bid"`) に更新。旧モバイル版 `class="Item__bid"` はフォールバックとして残す |
+| **検証結果** | Chrome UA で「コーチ」検索 → 1ページ53件取得、全53件の入札数を正確に取得確認 |
+| **再発防止** | Yahoo が UA を変更した際は `curl -A "[UA]" "https://auctions.yahoo.co.jp/search/search?p=コーチ..."` で確認。0件ならUAブロックを疑う。デスクトップ HTML では入札数は `class="Product__bid"` に含まれる |
+
+---
+
 ## 2026-04-12 — TimeoutError 再発（shard2/4/5/6/7）+ 白画面 → スタガー増加・エラーハンドリング強化
 
 | 項目 | 内容 |
