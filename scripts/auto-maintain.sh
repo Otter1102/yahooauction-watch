@@ -118,75 +118,23 @@ REMAINING_COUNT=$(echo "$REMAINING_ISSUES" | python3 -c 'import json,sys; print(
 
 if [ "$REMAINING_COUNT" -gt 0 ]; then
   log ""
-  log "▶ [Agent2] Ollama LLM 診断 実行中... (残存問題: $REMAINING_COUNT 件)"
+  log "▶ [Agent2+3] auto-fix.py 実行中... (残存問題: $REMAINING_COUNT 件)"
+  log "  Ollama診断 → 信頼度>=80%なら自動修正、低ければClaude CLIフォールバック"
 
-  OLLAMA_PROMPT="あなたはYahoo Auction Watcherアプリの保守エンジニアです。
-以下の健全性レポートを読み、根本原因と修正方針を日本語で答えてください。
-修正に必要なファイルパスとコード変更の方向性を具体的に教えてください。
+  # health-check の JSON を auto-fix.py に渡す（Discordへの最終通知も内部で行う）
+  cat "$HEALTH_REPORT" | DISCORD_ADMIN_WEBHOOK="$DISCORD_WEBHOOK" \
+    python3 "$APP_DIR/scripts/auto-fix.py" 2>>"$LOG_FILE" | tee -a "$LOG_FILE"
 
-【健全性レポート】
-$REPORT_TEXT
-
-【残存問題】
-$REMAINING_ISSUES
-
-【アプリ概要】
-- Next.js + Supabase + GitHub Actions + Web Push通知
-- 主要ファイル: scripts/run-check.ts, lib/webpush.ts, lib/storage.ts
-- GitHub: https://github.com/Otter1102/yahooauction-watch
-
-修正方針を端的に答えてください:"
-
-  echo "$OLLAMA_PROMPT" | ollama run qwen2.5:7b --nowordwrap 2>/dev/null > "$OLLAMA_DIAGNOSIS" || \
-    echo "Ollama診断失敗 — モデルが応答しませんでした" > "$OLLAMA_DIAGNOSIS"
-
-  OLLAMA_RESULT=$(cat "$OLLAMA_DIAGNOSIS")
-  log ""
-  log "Agent2 (Ollama) 診断結果:"
-  log "$OLLAMA_RESULT"
-
-  # ──────────────────────────────────────────────────────────
-  # Agent 3: Claude Code LLM 修正
-  # ──────────────────────────────────────────────────────────
-  log ""
-  log "▶ [Agent3] Claude Code LLM 修正 実行中..."
-
-  CLAUDE_PROMPT="Yahoo Auction Watcherアプリに問題が検出されました。
-以下の診断結果を元に、コードを修正してGitHubにプッシュしてください。
-
-【健全性レポート】
-$REPORT_TEXT
-
-【Ollama診断】
-$OLLAMA_RESULT
-
-【作業ディレクトリ】
-$APP_DIR
-
-【手順】
-1. 問題のあるファイルを確認する
-2. 修正を適用する
-3. ローカルでスクリプトをテスト実行して動作確認する
-4. /tmp/yaw-fix リポジトリにプッシュする:
-   cd /tmp/yaw-fix && git clone https://github.com/Otter1102/yahooauction-watch.git . 2>/dev/null || git pull
-   (該当ファイルをコピーして修正)
-   git add . && git commit -m 'fix: 自動メンテナンスによる修正' && git push origin main"
-
-  claude --print \
-    --allowedTools "Bash,Read,Edit,Write,Glob,Grep" \
-    -p "$CLAUDE_PROMPT" 2>>"$LOG_FILE" | tee -a "$LOG_FILE" || log "⚠️ Claude修正 失敗または警告あり"
-
-  log ""
-  log "Agent3 (Claude) 修正完了"
+  log "auto-fix.py 完了"
+  # auto-fix.py 内で Discord 通知済みのため、ここでは送らない
+  exit 0
 fi
 
 # ──────────────────────────────────────────────────────────
-# 最終レポート → Discord
+# 既知パターンのみ修正した場合の Discord 通知
 # ──────────────────────────────────────────────────────────
-FINAL_MSG="🚨 問題検出・自動修正実行
+FINAL_MSG="🔧 自動修正実行
 $REPORT_TEXT
-
-$([ -f "$OLLAMA_DIAGNOSIS" ] && echo "【Ollama診断】$(head -5 $OLLAMA_DIAGNOSIS)" || echo "")
 
 ログ: $LOG_FILE"
 
