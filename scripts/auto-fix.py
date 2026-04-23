@@ -282,6 +282,12 @@ def main():
     if applied:
         log("git push 中...")
         commit_msg = f"fix: 自動修正 — {diagnosis[:60]}"
+        # まず変更があるか確認
+        diff_out, _, _ = run("git diff --cached --name-only && git status --short", cwd=CLONE_DIR)
+        if not diff_out.strip():
+            log("変更なし — push スキップ")
+            notify_discord(f"ℹ️ 自動修正を試みましたが変更なし\n診断: {diagnosis}", color=3447003)
+            return
         out, err, rc = run(
             f'git add -A && git commit -m {json.dumps(commit_msg)} && git push origin main',
             cwd=CLONE_DIR,
