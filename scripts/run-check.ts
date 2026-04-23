@@ -55,9 +55,13 @@ function groupConditions(conditions: SearchCondition[]): ConditionGroup[] {
   return Array.from(map.values())
 }
 
+// GitHub Actions は Vercel の CPU コスト制限がないため 10 ページ取得（最大 500 件）
+// Vercel route.ts は FETCH_PAGES=3 のまま維持（コスト削減のため）
+const GH_FETCH_PAGES = 10
+
 async function fetchWithRetry(key: RssKey, retries = 2, startOffset = 1): Promise<AuctionItem[]> {
   for (let i = 0; i <= retries; i++) {
-    const items = await fetchAuctionRss(key, startOffset)
+    const items = await fetchAuctionRss(key, startOffset, GH_FETCH_PAGES)
     if (items.length > 0 || i === retries) return items
     await new Promise(r => setTimeout(r, 2000))
   }
@@ -97,16 +101,18 @@ async function main() {
   const usersMap = await getAllUsers(uniqueUserIds)
   console.log(`対象ユーザー: ${uniqueUserIds.length}人`)
 
-  // push_sub 設定済みユーザーID
+  // push_sub 設定済みユーザーID（通知送信判定に使用）
   const pushUserIds = new Set(
     [...usersMap.values()]
       .filter(u => (u as any).pushSub?.endpoint)
       .map(u => u.id)
   )
 
-  // 通知設定済みユーザーのみ処理（webpush 設定済み）
-  const activeConditions = allConditions.filter(c => pushUserIds.has(c.userId))
-  console.log(`通知設定済みユーザーの条件: ${activeConditions.length}件`)
+  // 全有効条件を処理（push_sub なしのユーザーも履歴記録・フェッチは行う）
+  // 理由: push_sub が期限切れで null になっても条件チェック・履歴記録は継続すべき
+  //       通知送信ステップのみ push_sub の有無で制御する
+  const activeConditions = allConditions
+  console.log(`処理対象条件: ${activeConditions.length}件（うち通知可能ユーザー: ${pushUserIds.size}人）`)
 
   // 通知済みIDを全ユーザー分まとめて1クエリで取得
   // 100ユーザー時でもDBアクセスは1回のみ（スケーラブル設計）
@@ -123,8 +129,9 @@ async function main() {
   const pendingByUser = new Map<string, AuctionItem[]>()
 
   // 並列でRSSフェッチ（10並列）
-  // startOffset=1: スクレイパー内で FETCH_PAGES=3 ページを自動取得（b=1,51,101 = 最大150件）
-  // 【2026-04-19 変更】 Vercel CPU コスト削減のため10→3ページに削減
+  // GitHub Actions: GH_FETCH_PAGES=10 ページ取得（b=1〜451 = 最大500件）
+  // → Vercel route は CPU コスト制限で FETCH_PAGES=3 のままだが、GitHub Actions は制限なし
+  // → 人気キーワードで4ページ目以降の商品（残り8〜24h）も確実に取得できる
   const CONCURRENCY = 10
   for (let i = 0; i < groups.length; i += CONCURRENCY) {
     const batch = groups.slice(i, i + CONCURRENCY)
@@ -178,6 +185,7 @@ async function main() {
             imageUrl: item.imageUrl ?? '',
             notifiedAt: new Date().toISOString(),
             remaining: item.remaining ?? null,
+            endAt: item.endtimeMs ? new Date(item.endtimeMs).toISOString() : null,
           })
           // サマリー通知用に収集（同一実行内で同一商品の重複を除く）
           if (!pendingByUser.has(cond.userId)) pendingByUser.set(cond.userId, [])
@@ -209,11 +217,13 @@ async function main() {
     }
   }
 
-  // ─── 通知（ユーザーごとに1回・10並列で送信）───
+  // ─── 通知（push_sub 保持ユーザーのみ・10並列で送信）───
   // 新着あり → Web Push サマリー / 新着なし → Web Push「新着情報なし」
+  // push_sub なし（期限切れ・未登録）ユーザーはスキップ（内部でも空振りになるだけだが DB 問い合わせを節約）
+  const pushActiveUserIds = activeUserIds.filter(id => pushUserIds.has(id))
   const NOTIFY_CONCURRENCY = 10
-  for (let i = 0; i < activeUserIds.length; i += NOTIFY_CONCURRENCY) {
-    const batch = activeUserIds.slice(i, i + NOTIFY_CONCURRENCY)
+  for (let i = 0; i < pushActiveUserIds.length; i += NOTIFY_CONCURRENCY) {
+    const batch = pushActiveUserIds.slice(i, i + NOTIFY_CONCURRENCY)
     await Promise.all(batch.map(async (userId) => {
       const items = pendingByUser.get(userId)
       if (items && items.length > 0) {
@@ -226,14 +236,13 @@ async function main() {
     }))
   }
 
-  // ─── 終了済みオークションを履歴から削除 ───
-  await cleanupEndedAuctions()
-
-  // ─── 時間ベースのフォールバッククリーンアップ ───
-  // notification_history: 72時間後（ステータス確認できなかった場合の安全網）
-  // notified_items: 25時間後（オークション終了後のIDを安全に削除）
-  await cleanupOldHistory(72)
+  // ─── 時間ベースクリーンアップ ───
+  // end_at あり: 終了12時間後に削除 / end_at なし(旧データ): 通知36時間後に削除
+  await cleanupOldHistory()
   await cleanupOldNotified()
+
+  // ─── end_at なし旧レコードのYahoo確認クリーンアップ（安全網）───
+  await cleanupEndedAuctions()
 
   // ─── 自己修復: 48時間通知なし + 20件溜まりユーザーをリセット ───
   const stalledUsers = await resetStalledNotified()
@@ -250,16 +259,18 @@ async function main() {
   console.log(`\n=== 完了: 合計${totalNotified}件通知 ===\n`)
 }
 
-/** 終了したオークションの通知履歴を削除する（1run あたり最大20件チェック） */
+/** end_at なし旧レコードを Yahoo 確認して削除する安全網（1run あたり最大20件） */
 async function cleanupEndedAuctions(): Promise<void> {
-  // 通知から30分以上経過したものを対象（直後の誤削除を防ぐ）
+  // end_at が設定済みのレコードは cleanupOldHistory() で処理済み。
+  // end_at がない旧レコードのみYahoo確認して終了済みなら即削除。
   const cutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString()
 
   const { data: items } = await supabaseAdmin
     .from('notification_history')
     .select('id, auction_id, user_id')
+    .is('end_at', null)
     .lt('notified_at', cutoff)
-    .limit(20)  // 1run あたり上限 → レート制限対策（24h設計で回転が速いため増量）
+    .limit(20)
 
   if (!items?.length) return
 

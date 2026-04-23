@@ -175,7 +175,7 @@ async function processUsers(
 
   await cleanupOldNotified()
   console.log('[cron] cleanupOldNotified 完了')
-  await cleanupOldHistory(72)
+  await cleanupOldHistory()
   console.log('[cron] cleanupOldHistory 完了')
   await cleanupEndedAuctionsFromHistory()
   console.log('[cron] cleanupEndedAuctions 完了')

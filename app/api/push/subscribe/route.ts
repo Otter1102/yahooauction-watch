@@ -7,7 +7,7 @@ export const runtime = 'nodejs'
 const IS_TRIAL = process.env.NEXT_PUBLIC_TRIAL_MODE === 'true'
 
 export async function POST(req: NextRequest) {
-  const { userId, endpoint, p256dh, auth } = await req.json().catch(() => ({}))
+  const { userId, endpoint, p256dh, auth, deviceFingerprint, isTrial } = await req.json().catch(() => ({}))
   if (!userId || !endpoint || !p256dh || !auth) {
     return NextResponse.json({ error: 'Missing fields' }, { status: 400 })
   }
@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
 
   const supabase = getSupabaseAdmin()
 
-  // トライアルアプリ: push endpoint が期限切れトライアルセッションに紐づく場合は拒否
+  // トライアルアプリ: 期限切れセッションは拒否
   if (IS_TRIAL) {
     const { data: session } = await supabase
       .from('trial_sessions')
@@ -28,20 +28,52 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // upsert: レース条件なし・1往復で完結（旧: read→insert/update 3往復）
+  // ── デバイスフィンガープリント重複排除 ──────────────────────────────
+  // 同一デバイスに複数の購読が生まれないよう制御する。
+  // ① 本番ユーザーがいれば、トライアルの購読は保存しない（本番優先）
+  // ② 再インストール後の旧購読は即クリア（同デバイスの古いユーザーを無効化）
+  if (deviceFingerprint) {
+    const { data: sameDeviceUsers } = await supabase
+      .from('users')
+      .select('id, is_trial')
+      .eq('device_fingerprint', deviceFingerprint)
+      .neq('id', userId)
+
+    if (sameDeviceUsers && sameDeviceUsers.length > 0) {
+      // トライアルリクエスト: 本番ユーザーが同デバイスに存在するなら購読をスキップ
+      if (isTrial) {
+        const prodExists = sameDeviceUsers.some(u => !u.is_trial)
+        if (prodExists) {
+          console.log('[subscribe] trial skipped — production already active on this device')
+          return NextResponse.json({ ok: true, skipped: 'production_exists' })
+        }
+      }
+      // 旧ユーザーの push_sub をクリア（再インストール対応 / 本番が旧トライアルを上書き）
+      const oldIds = sameDeviceUsers.map(u => u.id)
+      await supabase.from('users').update({ push_sub: null }).in('id', oldIds)
+      console.log(`[subscribe] cleared push_sub for ${oldIds.length} old device(s) (fp: ${deviceFingerprint.slice(0, 10)})`)
+    }
+  }
+
+  // 購読を保存（device_fingerprint・is_trial も更新）
   const { error } = await supabase
     .from('users')
-    .upsert({ id: userId, push_sub: { endpoint, p256dh, auth } }, { onConflict: 'id' })
+    .upsert({
+      id: userId,
+      push_sub: { endpoint, p256dh, auth },
+      device_fingerprint: deviceFingerprint || null,
+      is_trial: isTrial ?? false,
+    }, { onConflict: 'id' })
 
   if (error) {
     console.error('[subscribe] upsert error:', error.message)
-    if (error.message.includes('push_sub') || error.message.includes('column')) {
+    if (error.message.includes('push_sub') || error.message.includes('column') || error.message.includes('is_trial')) {
       return NextResponse.json({ error: 'setup_required', message: error.message }, { status: 503 })
     }
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  console.log('[subscribe] upsert OK userId:', userId.slice(0, 8))
+  console.log('[subscribe] OK userId:', userId.slice(0, 8), '| trial:', isTrial ?? false)
   return NextResponse.json({ ok: true })
 }
 

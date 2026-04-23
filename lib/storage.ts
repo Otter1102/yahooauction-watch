@@ -216,12 +216,10 @@ export async function clearNotifiedHistory(userId: string): Promise<void> {
 }
 
 export async function cleanupOldNotified(): Promise<void> {
-  // 25時間以上古い重複防止レコードを削除
-  // 根拠: 通知対象は「残り24時間以内」のオークションのみ。
-  //       25時間後には全て終了済みのため、安全に削除できる。
-  //       終了済みオークションは cleanupEndedAuctions() でリアルタイム削除されるため、
-  //       このTTLはあくまで安全網。
-  const cutoff = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString()
+  // 36時間以上古い重複防止レコードを削除
+  // 根拠: 通知対象は「残り24時間以内」のオークション → 終了まで最大24h。
+  //       終了後12時間 = 最大 notified_at + 36h 後に安全に削除できる。
+  const cutoff = new Date(Date.now() - 36 * 60 * 60 * 1000).toISOString()
   await supabaseAdmin
     .from('notified_items')
     .delete()
@@ -270,13 +268,25 @@ export async function resetStalledNotified(): Promise<string[]> {
   return stalledUsers
 }
 
-export async function cleanupOldHistory(hours = 72): Promise<void> {
-  // 終了済みオークションの通知履歴を削除（デフォルト72時間＝3日後）
-  const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString()
+export async function cleanupOldHistory(): Promise<void> {
+  const now = Date.now()
+
+  // 1. end_at が設定済み: オークション終了から12時間後に削除
+  const cutoff12h = new Date(now - 12 * 60 * 60 * 1000).toISOString()
   await supabaseAdmin
     .from('notification_history')
     .delete()
-    .lt('notified_at', cutoff)
+    .not('end_at', 'is', null)
+    .lt('end_at', cutoff12h)
+
+  // 2. end_at なし（旧データ・取得失敗）: 通知から36時間後にフォールバック削除
+  //    根拠: 残り24h以内のオークション → 終了まで最大24h + 余裕12h = 36h
+  const cutoff36h = new Date(now - 36 * 60 * 60 * 1000).toISOString()
+  await supabaseAdmin
+    .from('notification_history')
+    .delete()
+    .is('end_at', null)
+    .lt('notified_at', cutoff36h)
 }
 
 // ==================== History ====================
@@ -293,6 +303,7 @@ export async function addHistory(record: Omit<NotificationRecord, 'id'>): Promis
     image_url: record.imageUrl ?? null,
     notified_at: record.notifiedAt,
     remaining: record.remaining ?? null,
+    end_at: record.endAt ?? null,
   })
 }
 

@@ -1,6 +1,6 @@
 {
-  "name": "ヤフオクwatch TRIAL",
-  "short_name": "watch🆓",
+  "name": "（トライアル）Yahoo!オークウォッチ",
+  "short_name": "（トライアル）Yahoo!オークウォッチ",
   "description": "ヤフオク自動検索・リアルタイム通知（30日無料トライアル）",
   "start_url": "/",
   "display": "standalone",

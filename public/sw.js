@@ -107,7 +107,7 @@ self.addEventListener('notificationclick', (event) => {
         await client.focus()
         // iOS PWA: suspended状態からの復帰に時間がかかるため少し待つ
         // （この待機なしだと postMessage が届く前にページが準備できず白画面になる）
-        await new Promise(r => setTimeout(r, 400))
+        await new Promise(r => setTimeout(r, 800))
         // postMessage でソフトナビゲーション（SWNavigationHandler.tsx が受け取る）
         client.postMessage({ type: 'NAVIGATE', url: '/history' })
         // Android/Chrome では navigate() で確実にURLを変更（iOS ではエラーになるが無視）

@@ -63,3 +63,20 @@ CREATE INDEX IF NOT EXISTS idx_notification_history_user_id ON notification_hist
 -- ============================================================
 ALTER TABLE users ADD COLUMN IF NOT EXISTS device_fingerprint TEXT;
 CREATE INDEX IF NOT EXISTS idx_users_device_fingerprint ON users(device_fingerprint);
+
+-- ============================================================
+-- Migration: is_trial（本番 vs トライアルの購読優先制御）
+-- 2026-04-19 追加 — Supabase SQL Editor で実行してください
+-- ============================================================
+ALTER TABLE users ADD COLUMN IF NOT EXISTS is_trial BOOLEAN DEFAULT false;
+-- 既存のトライアルユーザーは自動判別できないためDEFAULT false のままでOK
+-- （新規購読時にクライアントから isTrial フラグを送信して更新される）
+
+-- ============================================================
+-- Migration: end_at（オークション終了時刻）
+-- 2026-04-20 追加 — Supabase SQL Editor で実行してください
+-- ============================================================
+-- 終了12時間後に履歴削除するため、スクレイパーから取得した終了時刻を保存
+ALTER TABLE notification_history ADD COLUMN IF NOT EXISTS end_at TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS idx_notification_history_end_at ON notification_history(end_at)
+  WHERE end_at IS NOT NULL;

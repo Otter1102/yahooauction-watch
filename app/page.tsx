@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { SearchCondition } from '@/lib/types'
+import { getDeviceFingerprint, IS_TRIAL } from '@/lib/fingerprint'
 import ConditionCard from '@/components/ConditionCard'
 import ConditionForm from '@/components/ConditionForm'
 import OnboardingGuide from '@/components/OnboardingGuide'
@@ -37,7 +38,7 @@ async function tryAutoResubscribe(userId: string): Promise<boolean> {
     const j = sub.toJSON()
     await fetch('/api/push/subscribe', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId, endpoint: j.endpoint, p256dh: j.keys?.p256dh, auth: j.keys?.auth }),
+      body: JSON.stringify({ userId, endpoint: j.endpoint, p256dh: j.keys?.p256dh, auth: j.keys?.auth, deviceFingerprint: getDeviceFingerprint(), isTrial: IS_TRIAL }),
     })
     await fetch('/api/settings', {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },

@@ -1,6 +1,6 @@
 {
-  "name": "ヤフオクwatch",
-  "short_name": "ヤフオクwatch",
+  "name": "Yahoo!オークウォッチ",
+  "short_name": "Yahoo!オークウォッチ",
   "description": "ヤフオク自動検索・リアルタイム通知",
   "start_url": "/",
   "display": "standalone",

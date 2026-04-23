@@ -1,3 +1,15 @@
+## 2026-04-23 — GitHub Actions の activeConditions フィルターで push_sub 期限切れユーザーの条件が全スキップされる
+
+| 項目 | 内容 |
+|------|------|
+| **症状** | 全検索条件で新着0件・通知が一切来なくなる |
+| **原因** | `scripts/run-check.ts` の `activeConditions = allConditions.filter(c => pushUserIds.has(c.userId))` が、push_sub=null のユーザーを完全に除外していた。push_sub は `sendWebPushNoItems`（毎時送信）が 410 を返した際に自動で null にクリアされるため、iOS 更新・端末変更・PWA再インストール後に発生しやすい。cron-job.org 廃止後は GitHub Actions のみが自動実行されるため、このバグで通知が全停止する |
+| **対策** | `activeConditions = allConditions`（フィルター削除）に変更。全有効条件でフェッチ・履歴記録を実施し、通知送信ステップのみ `pushActiveUserIds`（push_sub 保持ユーザー）に絞るよう修正 |
+| **ユーザー対応** | push_sub が null になっている場合はアプリを開いて通知を再許可（PWA 設定ページから「通知を有効にする」をタップ）が必要 |
+| **再発防止** | GitHub Actions スクリプトで通知先チェックとフェッチ処理を分離する。push_sub がなくてもフェッチ・履歴記録は継続する設計を維持 |
+
+---
+
 ## 2026-04-21 — Yahoo が iPhone UA をブロック → 商品が0件取得になる → Chrome Desktop UA に変更
 
 | 項目 | 内容 |

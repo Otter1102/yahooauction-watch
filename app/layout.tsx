@@ -64,6 +64,8 @@ if('serviceWorker' in navigator){
     // 通知タップ → ソフトナビゲーション（白画面なし）
     // SWNavigationHandler.tsx が 'sw-navigate' を受け取り router.push() に変換
     if(e.data.type==='NAVIGATE'&&e.data.url){
+      // sessionStorage に保存（Reactマウント前に届いた場合のフォールバック）
+      try{sessionStorage.setItem('sw-pending-navigate',e.data.url);}catch{}
       window.dispatchEvent(new CustomEvent('sw-navigate',{detail:{url:e.data.url}}));
     }
     // 新デプロイ検出 → キャッシュを全削除してリロード

@@ -249,10 +249,10 @@ for (const { userId, auctionId } of ended) {
 - 7日TTL（`cleanupOldNotified`）はあくまで安全網。主系はオークション終了検出で即削除する設計が正しい
 
 <!-- CC_CONTEXT_START -->
-<!-- cc:session:98c0cb21-8366-4eef-b4e6-3d2ce16f8a39:2026-04-19 16:05 -->
-**最後の作業** (2026-04-19 16:05)
-- スパベースを実行しました。 また、左上の "otta" という管理名は変更できますか？プロジェクト名を同じように反映させたいのですが、変更方法を教えてください。
-- https://yahooauction-watch.vercel.app/ このアプリは今、いい感じに作れてるんですけど、アプリの最初にログインし、Yahoo!オークションにログインしていると思う…
-- 例えば、ヤフオクウォッチ本番アプリをダウンロードして検索条件などを登録した後、アプリを削除して再インストールした場合、削除した方の通知は不要なので削除しても問題ありません。またその際、データの保管も…
-- 編集ファイル: page.tsx、ConditionForm.tsx、manifest.json、manifest-trial.json、fingerprint.ts、route.ts
+<!-- cc:session:074b7525-4456-4d69-a8a8-0bc2e4c6d4fb:2026-04-23 16:39 -->
+**最後の作業** (2026-04-23 16:39)
+- 削除前: ? 件 [エラー] Invalid API key sawadaakira@Mac yahoo-auction-watcher % cd/Users/sawadaakira/Projects/MOTHERSHIP && git …
+- === notified_items 全ユーザーリセット === リセット前: ? 件 [エラー] Invalid API key sawadaakira@Mac yahoo-auction-wat…
+- なにしたらいいですか。
+- 編集ファイル: run-check.ts、TROUBLESHOOT.md、reset-notified.ts、yahoo-auction-reset.yml
 <!-- CC_CONTEXT_END -->

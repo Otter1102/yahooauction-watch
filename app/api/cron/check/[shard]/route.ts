@@ -180,7 +180,7 @@ async function processUsers(
   if (shard !== 0) return
 
   await cleanupOldNotified()
-  await cleanupOldHistory(72)
+  await cleanupOldHistory()
   await cleanupEndedAuctionsFromHistory()
 
   try {
@@ -192,18 +192,16 @@ async function processUsers(
 }
 
 async function cleanupEndedAuctionsFromHistory(): Promise<void> {
+  // end_at なし旧レコードのみYahoo確認して削除（安全網）
+  // end_at ありレコードは cleanupOldHistory() で処理済みのためここでは扱わない
   const supabase = getSupabaseAdmin()
-  const now = Date.now()
-  const hardCutoff = new Date(now - 25 * 60 * 60 * 1000).toISOString()
-  await supabase.from('notification_history').delete().lt('notified_at', hardCutoff)
-  await supabase.from('notified_items').delete().lt('notified_at', hardCutoff)
+  const softCutoff = new Date(Date.now() - 60 * 1000).toISOString()
 
-  const softCutoff = new Date(now - 60 * 1000).toISOString()
   const { data: items } = await supabase
     .from('notification_history')
     .select('id, auction_id, user_id')
+    .is('end_at', null)
     .lt('notified_at', softCutoff)
-    .gte('notified_at', hardCutoff)
     .limit(20)
 
   if (!items?.length) return
@@ -229,5 +227,5 @@ async function cleanupEndedAuctionsFromHistory(): Promise<void> {
   for (const { userId, auctionId } of toDeletePairs) {
     await supabase.from('notified_items').delete().eq('user_id', userId).eq('auction_id', auctionId)
   }
-  console.log(`[cron/shard0] 終了オークション ${toDeleteIds.length}件を削除`)
+  console.log(`[cron/shard0] 終了オークション(旧レコード) ${toDeleteIds.length}件を削除`)
 }

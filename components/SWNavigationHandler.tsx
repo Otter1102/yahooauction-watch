@@ -13,6 +13,17 @@ export default function SWNavigationHandler() {
   const router = useRouter()
 
   useEffect(() => {
+    // マウント時: postMessage が React より先に届いていた場合のフォールバック
+    // （iOS PWA でアプリがサスペンドから復帰する際に発生する白画面の修正）
+    try {
+      const pending = sessionStorage.getItem('sw-pending-navigate')
+      if (pending) {
+        sessionStorage.removeItem('sw-pending-navigate')
+        router.push(pending)
+        return
+      }
+    } catch {}
+
     const handler = (e: Event) => {
       const url = (e as CustomEvent<{ url: string }>).detail?.url
       if (url) router.push(url)

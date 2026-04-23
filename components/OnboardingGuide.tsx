@@ -1,7 +1,6 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
-
-const TRIAL_MODE = process.env.NEXT_PUBLIC_TRIAL_MODE === 'true'
+import { getDeviceFingerprint, IS_TRIAL as TRIAL_MODE } from '@/lib/fingerprint'
 
 function urlBase64ToUint8Array(base64: string): ArrayBuffer {
   const padding = '='.repeat((4 - (base64.length % 4)) % 4)
@@ -212,7 +211,7 @@ export default function OnboardingGuide({ userId, onComplete, onOpenConditionFor
       const j = sub.toJSON()
       await fetch('/api/push/subscribe', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, endpoint: j.endpoint, p256dh: j.keys?.p256dh, auth: j.keys?.auth }),
+        body: JSON.stringify({ userId, endpoint: j.endpoint, p256dh: j.keys?.p256dh, auth: j.keys?.auth, deviceFingerprint: getDeviceFingerprint(), isTrial: TRIAL_MODE }),
       })
       await fetch('/api/settings', {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
