@@ -104,7 +104,13 @@ async function main() {
 
   // ユーザー情報を一括取得
   const uniqueUserIds = [...new Set(allConditions.map(c => c.userId))]
-  const usersMap = await getAllUsers(uniqueUserIds)
+  let usersMap = new Map<string, User>()
+  try {
+    usersMap = await getAllUsers(uniqueUserIds)
+  } catch (err) {
+    console.error(`[DB] ユーザー情報取得失敗: ${err instanceof Error ? err.message : err}`)
+    // 取得失敗時は空マップで継続（各条件処理内の if (!user) continue で安全にスキップ）
+  }
   console.log(`対象ユーザー: ${uniqueUserIds.length}人`)
 
   // push_sub 設定済みユーザーID（通知送信判定に使用）
@@ -123,7 +129,13 @@ async function main() {
   // 通知済みIDを全ユーザー分まとめて1クエリで取得
   // 100ユーザー時でもDBアクセスは1回のみ（スケーラブル設計）
   const activeUserIds = [...new Set(activeConditions.map(c => c.userId))]
-  const notifiedIdsCache = await getAllNotifiedIds(activeUserIds)
+  let notifiedIdsCache: Awaited<ReturnType<typeof getAllNotifiedIds>> = new Map()
+  try {
+    notifiedIdsCache = await getAllNotifiedIds(activeUserIds)
+  } catch (err) {
+    console.error(`[DB] 通知済みID取得失敗: ${err instanceof Error ? err.message : err}`)
+    // 取得失敗時は空マップで継続（重複通知リスクはあるが処理は止めない）
+  }
   console.log(`通知済みIDキャッシュ取得完了: ${activeUserIds.length}ユーザー分（1クエリ）`)
 
   // キーワード+価格でグループ化（同じ検索は1回のみRSSフェッチ）
