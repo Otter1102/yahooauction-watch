@@ -20,15 +20,15 @@ interface ConditionGroup { key: RssKey; conditions: SearchCondition[] }
 async function getAllUsers(userIds: string[]): Promise<Map<string, User>> {
   const { data } = await supabaseAdmin
     .from('users')
-    .select('id, ntfy_topic, discord_webhook, notification_channel, push_sub')
+    .select('id, push_sub')
     .in('id', userIds)
   const map = new Map<string, User>()
   for (const row of data ?? []) {
     map.set(row.id, {
       id: row.id,
-      ntfyTopic: row.ntfy_topic ?? '',
-      discordWebhook: row.discord_webhook ?? '',
-      notificationChannel: row.notification_channel ?? 'webpush',
+      ntfyTopic: '',
+      discordWebhook: '',
+      notificationChannel: 'webpush',
       pushSub: row.push_sub ?? null,
     })
   }
