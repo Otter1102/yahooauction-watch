@@ -61,9 +61,15 @@ const GH_FETCH_PAGES = 10
 
 async function fetchWithRetry(key: RssKey, retries = 2, startOffset = 1): Promise<AuctionItem[]> {
   for (let i = 0; i <= retries; i++) {
-    const items = await fetchAuctionRss(key, startOffset, GH_FETCH_PAGES)
-    if (items.length > 0 || i === retries) return items
-    await new Promise(r => setTimeout(r, 2000))
+    try {
+      const items = await fetchAuctionRss(key, startOffset, GH_FETCH_PAGES)
+      if (items.length > 0 || i === retries) return items
+      await new Promise(r => setTimeout(r, 2000))
+    } catch (err) {
+      console.error(`  [fetch] "${key.keyword}" 取得エラー (試行${i + 1}/${retries + 1}): ${err instanceof Error ? err.message : err}`)
+      if (i === retries) return []
+      await new Promise(r => setTimeout(r, 2000))
+    }
   }
   return []
 }
@@ -136,7 +142,13 @@ async function main() {
   for (let i = 0; i < groups.length; i += CONCURRENCY) {
     const batch = groups.slice(i, i + CONCURRENCY)
     await Promise.all(batch.map(async (group) => {
-      const items = await fetchWithRetry(group.key)
+      let items: AuctionItem[] = []
+      try {
+        items = await fetchWithRetry(group.key)
+      } catch (err) {
+        console.error(`  [fetch] "${group.key.keyword}" 全リトライ失敗、スキップ: ${err instanceof Error ? err.message : err}`)
+        return
+      }
       console.log(`  🔍 [${group.key.keyword}] 取得: ${items.length}件`)
       if (items.length === 0) return
 
@@ -172,21 +184,26 @@ async function main() {
           if (notifiedIdsCache.get(cond.userId)?.has(item.auctionId)) continue
 
           // 履歴への記録と通知済みマーク（個別通知はせずサマリー用に収集）
-          await markNotified(cond.userId, item.auctionId)
-          notifiedIdsCache.get(cond.userId)?.add(item.auctionId)
-          await addHistory({
-            userId: cond.userId,
-            conditionId: cond.id,
-            conditionName: cond.name,
-            auctionId: item.auctionId,
-            title: item.title,
-            price: item.price,
-            url: item.url,
-            imageUrl: item.imageUrl ?? '',
-            notifiedAt: new Date().toISOString(),
-            remaining: item.remaining ?? null,
-            endAt: item.endtimeMs ? new Date(item.endtimeMs).toISOString() : null,
-          })
+          try {
+            await markNotified(cond.userId, item.auctionId)
+            notifiedIdsCache.get(cond.userId)?.add(item.auctionId)
+            await addHistory({
+              userId: cond.userId,
+              conditionId: cond.id,
+              conditionName: cond.name,
+              auctionId: item.auctionId,
+              title: item.title,
+              price: item.price,
+              url: item.url,
+              imageUrl: item.imageUrl ?? '',
+              notifiedAt: new Date().toISOString(),
+              remaining: item.remaining ?? null,
+              endAt: item.endtimeMs ? new Date(item.endtimeMs).toISOString() : null,
+            })
+          } catch (err) {
+            console.error(`  [DB] [${cond.name}] ${item.auctionId} 記録失敗: ${err instanceof Error ? err.message : err}`)
+            continue
+          }
           // サマリー通知用に収集（同一実行内で同一商品の重複を除く）
           if (!pendingByUser.has(cond.userId)) pendingByUser.set(cond.userId, [])
           const alreadyPending = pendingByUser.get(cond.userId)!
@@ -199,10 +216,14 @@ async function main() {
 
         // 変化があった時のみ更新（DB帯域節約: 変化なし=スキップで月間UPDATE数を大幅削減）
         if (conditionNotified > 0 || candidateItems.length !== (cond.lastFoundCount ?? -1)) {
-          await updateCondition(cond.id, {
-            lastCheckedAt: new Date().toISOString(),
-            lastFoundCount: candidateItems.length,
-          })
+          try {
+            await updateCondition(cond.id, {
+              lastCheckedAt: new Date().toISOString(),
+              lastFoundCount: candidateItems.length,
+            })
+          } catch (err) {
+            console.error(`  [DB] [${cond.name}] updateCondition 失敗: ${err instanceof Error ? err.message : err}`)
+          }
         }
 
         if (conditionNotified > 0) {
@@ -226,34 +247,52 @@ async function main() {
     const batch = pushActiveUserIds.slice(i, i + NOTIFY_CONCURRENCY)
     await Promise.all(batch.map(async (userId) => {
       const items = pendingByUser.get(userId)
-      if (items && items.length > 0) {
-        await sendWebPushSummary(userId, items.length, items[0])
-        console.log(`  📨 [${userId.slice(0,8)}] 新着${items.length}件 通知`)
-      } else {
-        await sendWebPushNoItems(userId)
-        console.log(`  📭 [${userId.slice(0,8)}] 新着なし通知`)
+      try {
+        if (items && items.length > 0) {
+          await sendWebPushSummary(userId, items.length, items[0])
+          console.log(`  📨 [${userId.slice(0,8)}] 新着${items.length}件 通知`)
+        } else {
+          await sendWebPushNoItems(userId)
+          console.log(`  📭 [${userId.slice(0,8)}] 新着なし通知`)
+        }
+      } catch (err) {
+        console.error(`  [push] [${userId.slice(0,8)}] 通知失敗: ${err instanceof Error ? err.message : err}`)
       }
     }))
   }
 
   // ─── 時間ベースクリーンアップ ───
   // end_at あり: 終了12時間後に削除 / end_at なし(旧データ): 通知36時間後に削除
-  await cleanupOldHistory()
-  await cleanupOldNotified()
+  try { await cleanupOldHistory() } catch (err) {
+    console.error(`[cleanup] cleanupOldHistory 失敗: ${err instanceof Error ? err.message : err}`)
+  }
+  try { await cleanupOldNotified() } catch (err) {
+    console.error(`[cleanup] cleanupOldNotified 失敗: ${err instanceof Error ? err.message : err}`)
+  }
 
   // ─── end_at なし旧レコードのYahoo確認クリーンアップ（安全網）───
-  await cleanupEndedAuctions()
+  try { await cleanupEndedAuctions() } catch (err) {
+    console.error(`[cleanup] cleanupEndedAuctions 失敗: ${err instanceof Error ? err.message : err}`)
+  }
 
   // ─── 自己修復: 48時間通知なし + 20件溜まりユーザーをリセット ───
-  const stalledUsers = await resetStalledNotified()
-  if (stalledUsers.length > 0) {
-    console.log(`[自己修復] ${stalledUsers.length}ユーザーの通知ログをリセット`)
+  try {
+    const stalledUsers = await resetStalledNotified()
+    if (stalledUsers.length > 0) {
+      console.log(`[自己修復] ${stalledUsers.length}ユーザーの通知ログをリセット`)
+    }
+  } catch (err) {
+    console.error(`[cleanup] resetStalledNotified 失敗: ${err instanceof Error ? err.message : err}`)
   }
 
   // ─── 幽霊ユーザー削除（通知設定なし + 14日以上経過）───
-  const ghostCount = await cleanupGhostUsers()
-  if (ghostCount > 0) {
-    console.log(`[幽霊ユーザー] ${ghostCount}件削除（通知設定なし+14日経過）`)
+  try {
+    const ghostCount = await cleanupGhostUsers()
+    if (ghostCount > 0) {
+      console.log(`[幽霊ユーザー] ${ghostCount}件削除（通知設定なし+14日経過）`)
+    }
+  } catch (err) {
+    console.error(`[cleanup] cleanupGhostUsers 失敗: ${err instanceof Error ? err.message : err}`)
   }
 
   console.log(`\n=== 完了: 合計${totalNotified}件通知 ===\n`)
