@@ -45,10 +45,8 @@ export default function ConditionCard({ condition, userId, onChange, onEdit, onD
   async function remove() {
     setDeleting(true)
     try {
-      const res = await fetch(`/api/conditions/${condition.id}`, {
+      const res = await fetch(`/api/conditions/${condition.id}?userId=${encodeURIComponent(userId)}`, {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId }),
       })
       if (res.ok) onChange()
     } catch {
