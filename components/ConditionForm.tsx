@@ -19,11 +19,14 @@ type FormState = {
   minBids: string
   itemCondition: SearchCondition['itemCondition']
   buyItNow: boolean | null
+  sortBy: SearchCondition['sortBy']
+  sortOrder: SearchCondition['sortOrder']
 }
 
 const DEFAULTS: FormState = {
   name: '', keyword: '', maxPrice: '', minPrice: '', minBids: '',
   itemCondition: 'all', buyItNow: null,
+  sortBy: 'endTime', sortOrder: 'asc',
 }
 
 function conditionToForm(c: SearchCondition): FormState {
@@ -35,6 +38,8 @@ function conditionToForm(c: SearchCondition): FormState {
     minBids: c.minBids > 0 ? String(c.minBids) : '',
     itemCondition: c.itemCondition,
     buyItNow: c.buyItNow,
+    sortBy: c.sortBy,
+    sortOrder: c.sortOrder,
   }
 }
 
@@ -49,7 +54,9 @@ export default function ConditionForm({ userId, condition, isDuplicate, existing
   const [showAdvanced, setShowAdvanced] = useState(isEdit && (
     condition!.itemCondition !== 'all' ||
     condition!.minBids > 0 ||
-    condition!.buyItNow !== null
+    condition!.buyItNow !== null ||
+    condition!.sortBy !== 'endTime' ||
+    condition!.sortOrder !== 'asc'
   ))
 
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) =>
@@ -85,8 +92,8 @@ export default function ConditionForm({ userId, condition, isDuplicate, existing
       maxBids: null,
       sellerType: 'all',
       itemCondition: form.itemCondition,
-      sortBy: 'endTime',
-      sortOrder: 'asc',
+      sortBy: form.sortBy,
+      sortOrder: form.sortOrder,
       buyItNow: form.buyItNow,
     }
     try {
@@ -269,7 +276,7 @@ export default function ConditionForm({ userId, condition, isDuplicate, existing
                 )}
 
                 {/* 商品状態 */}
-                <div style={{ ...fieldWrap, marginBottom: 0 }}>
+                <div style={fieldWrap}>
                   <label style={labelStyle}>商品状態</label>
                   <div style={segWrap}>
                     {([
@@ -285,6 +292,45 @@ export default function ConditionForm({ userId, condition, isDuplicate, existing
                         {o.label}
                       </button>
                     ))}
+                  </div>
+                </div>
+
+                {/* 並び順 */}
+                <div style={{ ...fieldWrap, marginBottom: 0 }}>
+                  <label style={labelStyle}>並び順</label>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {([
+                      { sortBy: 'endTime', sortOrder: 'asc',  label: '残り時間が短い順（終了間近）' },
+                      { sortBy: 'endTime', sortOrder: 'desc', label: '残り時間が長い順' },
+                      { sortBy: 'price',   sortOrder: 'asc',  label: '現在価格が低い順' },
+                      { sortBy: 'price',   sortOrder: 'desc', label: '現在価格が高い順' },
+                      { sortBy: 'bids',    sortOrder: 'desc', label: '入札件数が多い順' },
+                    ] as const)
+                      .filter(opt => !(opt.sortBy === 'bids' && form.buyItNow === true))
+                      .map(opt => {
+                        const active = form.sortBy === opt.sortBy && form.sortOrder === opt.sortOrder
+                        return (
+                          <button
+                            key={`${opt.sortBy}-${opt.sortOrder}`}
+                            type="button"
+                            onClick={() => { set('sortBy', opt.sortBy); set('sortOrder', opt.sortOrder) }}
+                            style={{
+                              width: '100%', padding: '10px 14px',
+                              borderRadius: 10,
+                              border: `1.5px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
+                              background: active ? 'rgba(0,153,226,0.06)' : 'var(--card)',
+                              color: active ? 'var(--accent)' : 'var(--text-primary)',
+                              fontWeight: active ? 700 : 400,
+                              fontSize: 13, cursor: 'pointer', textAlign: 'left',
+                              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                              transition: 'all 0.12s',
+                            }}
+                          >
+                            {opt.label}
+                            {active && <span style={{ fontSize: 13 }}>✓</span>}
+                          </button>
+                        )
+                      })}
                   </div>
                 </div>
 
