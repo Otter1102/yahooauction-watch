@@ -5,8 +5,8 @@
  * 用途: Yahoo がHTML構造を変更してスクレイパーが壊れた時に自動修復する
  * 実行: Mac mini の cron で30分ごとに実行
  *
- * crontab 設定例:
- *   */30 * * * * cd /Users/sawadaakira/Projects/MOTHERSHIP && npx tsx apps/yahoo-auction-watcher/scripts/scraper-heal.ts >> /tmp/scraper-heal.log 2>&1
+ * crontab 設定例 (0,30 = 毎時0分・30分):
+ *   0,30 * * * * cd /Users/sawadaakira/Projects/MOTHERSHIP && npx tsx apps/yahoo-auction-watcher/scripts/scraper-heal.ts >> /tmp/scraper-heal.log 2>&1
  *
  * 修復フロー:
  *   1. Yahoo 検索でテストスクレイプ（0件なら異常）
