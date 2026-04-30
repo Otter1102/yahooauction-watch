@@ -29,18 +29,15 @@ export async function POST(req: NextRequest) {
   }
 
   // ── デバイスフィンガープリント重複排除 ──────────────────────────────
-  // 同一デバイスに複数の購読が生まれないよう制御する。
-  // ① 本番ユーザーがいれば、トライアルの購読は保存しない（本番優先）
-  // ② 再インストール後の旧購読は即クリア（同デバイスの古いユーザーを無効化）
+  // カラムが存在しない場合はエラーを無視して続行
   if (deviceFingerprint) {
-    const { data: sameDeviceUsers } = await supabase
+    const { data: sameDeviceUsers, error: fpError } = await supabase
       .from('users')
       .select('id, is_trial')
       .eq('device_fingerprint', deviceFingerprint)
       .neq('id', userId)
 
-    if (sameDeviceUsers && sameDeviceUsers.length > 0) {
-      // トライアルリクエスト: 本番ユーザーが同デバイスに存在するなら購読をスキップ
+    if (!fpError && sameDeviceUsers && sameDeviceUsers.length > 0) {
       if (isTrial) {
         const prodExists = sameDeviceUsers.some(u => !u.is_trial)
         if (prodExists) {
@@ -48,14 +45,15 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ ok: true, skipped: 'production_exists' })
         }
       }
-      // 旧ユーザーの push_sub をクリア（再インストール対応 / 本番が旧トライアルを上書き）
       const oldIds = sameDeviceUsers.map(u => u.id)
       await supabase.from('users').update({ push_sub: null }).in('id', oldIds)
-      console.log(`[subscribe] cleared push_sub for ${oldIds.length} old device(s) (fp: ${deviceFingerprint.slice(0, 10)})`)
+      console.log(`[subscribe] cleared push_sub for ${oldIds.length} old device(s)`)
     }
   }
 
-  // 購読を保存（device_fingerprint・is_trial も更新）
+  // ── push_sub を保存（フォールバック付き） ───────────────────────────
+  // まず全カラムでupsert。device_fingerprint / is_trial カラムが未作成の場合は
+  // push_sub のみの最小upsertにフォールバックして確実に保存する。
   const { error } = await supabase
     .from('users')
     .upsert({
@@ -66,14 +64,32 @@ export async function POST(req: NextRequest) {
     }, { onConflict: 'id' })
 
   if (error) {
-    console.error('[subscribe] upsert error:', error.message)
-    if (error.message.includes('push_sub') || error.message.includes('column') || error.message.includes('is_trial')) {
-      return NextResponse.json({ error: 'setup_required', message: error.message }, { status: 503 })
+    const msg = error.message
+    console.error('[subscribe] upsert error:', msg)
+
+    // push_sub カラム自体がない場合は DB 設定が必須（フォールバック不可）
+    if (msg.toLowerCase().includes('push_sub')) {
+      return NextResponse.json({ error: 'setup_required', message: msg }, { status: 503 })
     }
-    return NextResponse.json({ error: error.message }, { status: 500 })
+
+    // device_fingerprint / is_trial カラムがない場合: push_sub のみで再試行
+    if (msg.includes('column') || msg.includes('device_fingerprint') || msg.includes('is_trial')) {
+      console.log('[subscribe] fallback: push_sub のみで再試行中...')
+      const { error: e2 } = await supabase
+        .from('users')
+        .upsert({ id: userId, push_sub: { endpoint, p256dh, auth } }, { onConflict: 'id' })
+      if (e2) {
+        console.error('[subscribe] fallback upsert error:', e2.message)
+        return NextResponse.json({ error: e2.message }, { status: 500 })
+      }
+      console.log('[subscribe] fallback OK userId:', userId.slice(0, 8))
+      return NextResponse.json({ ok: true })
+    }
+
+    return NextResponse.json({ error: msg }, { status: 500 })
   }
 
-  console.log('[subscribe] OK userId:', userId.slice(0, 8), '| trial:', isTrial ?? false)
+  console.log('[subscribe] OK userId:', userId.slice(0, 8))
   return NextResponse.json({ ok: true })
 }
 
