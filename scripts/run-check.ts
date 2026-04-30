@@ -8,7 +8,7 @@
  */
 import { getAllEnabledConditions, getAllNotifiedIds, markNotified, addHistory, updateCondition, cleanupOldNotified, cleanupOldHistory, resetStalledNotified } from '../lib/storage'
 import { fetchAuctionRss, checkAuctionEnded } from '../lib/scraper'
-import { sendWebPushSummary, sendWebPushNoItems } from '../lib/webpush'
+import { sendWebPushSummary } from '../lib/webpush'
 import { sendAdminErrorAlert } from '../lib/emailer'
 import { getSupabaseAdmin } from '../lib/supabase'
 const supabaseAdmin = { from: (...args: Parameters<ReturnType<typeof getSupabaseAdmin>['from']>) => getSupabaseAdmin().from(...args) }
@@ -217,9 +217,8 @@ async function main() {
     }
   }
 
-  // ─── 通知（push_sub 保持ユーザーのみ・10並列で送信）───
-  // 新着あり → Web Push サマリー / 新着なし → Web Push「新着情報なし」
-  // push_sub なし（期限切れ・未登録）ユーザーはスキップ（内部でも空振りになるだけだが DB 問い合わせを節約）
+  // ─── 通知（新着ありユーザーのみ・10並列で送信）───
+  // 新着あり → Web Push サマリー / 新着なし → 通知しない（毎時間の「なし」通知を廃止）
   const pushActiveUserIds = activeUserIds.filter(id => pushUserIds.has(id))
   const NOTIFY_CONCURRENCY = 10
   for (let i = 0; i < pushActiveUserIds.length; i += NOTIFY_CONCURRENCY) {
@@ -229,9 +228,6 @@ async function main() {
       if (items && items.length > 0) {
         await sendWebPushSummary(userId, items.length, items[0])
         console.log(`  📨 [${userId.slice(0,8)}] 新着${items.length}件 通知`)
-      } else {
-        await sendWebPushNoItems(userId)
-        console.log(`  📭 [${userId.slice(0,8)}] 新着なし通知`)
       }
     }))
   }

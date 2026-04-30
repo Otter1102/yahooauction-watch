@@ -119,10 +119,10 @@ async function main() {
   }
 
   // ──────────────────────────────────────────────
-  // 4. 直近24時間の通知履歴（最新1件を確認）
+  // 4. 直近48時間の通知履歴（最新1件を確認）
   // ──────────────────────────────────────────────
   try {
-    const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString()
+    const since = new Date(Date.now() - 48 * 3600 * 1000).toISOString()
     const { data: hist } = await sb
       .from('notification_history')
       .select('notified_at')
@@ -130,9 +130,10 @@ async function main() {
       .limit(1)
 
     const hasRecent = (hist?.length ?? 0) > 0
-    lines.push(`📬 直近24h通知履歴: ${hasRecent ? 'あり' : 'なし'}`)
+    lines.push(`📬 直近48h通知履歴: ${hasRecent ? 'あり' : 'なし'}`)
+    // 24h→48hに緩和: 条件に合う商品がない日もあるため、24hは偽陽性が多すぎた
     if (!hasRecent) {
-      issues.push('NO_NOTIFICATIONS_24H: 直近24時間で通知履歴が0件')
+      issues.push('NO_NOTIFICATIONS_48H: 直近48時間で通知履歴が0件（商品不一致の可能性あり）')
     }
   } catch (e: any) {
     lines.push(`⚠️ 通知履歴取得失敗 (タイムアウト等): スキップ`)

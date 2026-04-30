@@ -93,7 +93,6 @@ test.describe('/history — 通知タップ先ページ', () => {
     const isValidDest =
       url.includes('/history') ||
       url.includes('/login') ||
-      url.includes('/yahoo-callback') ||
       url.includes('/trial-expired') ||
       url.includes('/expired')
 

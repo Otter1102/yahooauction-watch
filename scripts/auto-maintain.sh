@@ -55,7 +55,7 @@ cd "$APP_DIR"
 log ""
 log "▶ [Agent1] スクリプト点検 実行中..."
 
-node --env-file=.env.local -r tsx/cjs scripts/health-check.ts > "$HEALTH_REPORT" 2>>"$LOG_FILE" || true
+node -r tsx/cjs scripts/health-check.ts > "$HEALTH_REPORT" 2>>"$LOG_FILE" || true
 
 HEALTHY=$(cat "$HEALTH_REPORT" | python3 -c 'import json,sys; print(json.load(sys.stdin)["healthy"])' 2>/dev/null || echo "False")
 ISSUES_COUNT=$(cat "$HEALTH_REPORT" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["issues"]))' 2>/dev/null || echo "99")
@@ -93,7 +93,7 @@ fi
 if echo "$FIXES_JSON" | grep -q "RUN_RESET"; then
   log ""
   log "🔧 自動修正: notified_items リセット"
-  node --env-file=.env.local -r tsx/cjs scripts/reset-notified.ts >> "$LOG_FILE" 2>&1 && log "✅ リセット 完了" && AUTO_FIXED=1
+  node -r tsx/cjs scripts/reset-notified.ts >> "$LOG_FILE" 2>&1 && log "✅ リセット 完了" && AUTO_FIXED=1
 fi
 
 # パターン3: ワークフロー停止中 → 手動起動

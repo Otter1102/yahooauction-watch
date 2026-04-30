@@ -54,6 +54,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="ja">
       <head>
+        {/* Supabase auth セッション強制クリア（メール/パスワードログイン廃止） */}
+        <script dangerouslySetInnerHTML={{ __html: `
+(function(){try{var k=Object.keys(localStorage);for(var i=0;i<k.length;i++){if(/^sb-.+-auth-token/.test(k[i])||k[i]==='supabase.auth.token'){localStorage.removeItem(k[i]);}}}catch(e){}})();
+`.trim() }} />
         {/* beforeinstallprompt キャプチャ + SW postMessage リスナー（Reactより先に実行） */}
         <script dangerouslySetInnerHTML={{ __html: `
 window.__pwaPrompt=null;

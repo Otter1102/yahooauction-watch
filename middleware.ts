@@ -2,11 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 
 // CSRFチェックをスキップするAPIプレフィックス
 // - cron: サーバー間通信（CRON_SECRET で別途認証）
-// - auth: ログイン処理（accessToken でSupabase検証済み）
 // - vapid-key / version: GETのみ・機密情報なし
 const CSRF_SKIP_PREFIXES = [
   '/api/cron/',
-  '/api/auth/',
   '/api/push/vapid-key',
   '/api/version',
 ]

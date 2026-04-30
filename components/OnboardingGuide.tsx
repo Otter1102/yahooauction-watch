@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { getDeviceFingerprint, IS_TRIAL as TRIAL_MODE } from '@/lib/fingerprint'
 
 function urlBase64ToUint8Array(base64: string): ArrayBuffer {
@@ -20,6 +20,12 @@ interface Props {
 type PushStatus = 'idle' | 'ios-required' | 'denied' | 'unsupported' | 'loading' | 'done'
 type Platform   = 'ios' | 'android' | 'other'
 
+const STEPS = [
+  { icon: '📱', badge: 'STEP 1 / 3', title: 'ホーム画面に追加' },
+  { icon: '🔔', badge: 'STEP 2 / 3', title: '通知を受け取る' },
+  { icon: '🔍', badge: 'STEP 3 / 3', title: '監視条件を設定する' },
+]
+
 export default function OnboardingGuide({ userId, onComplete, onOpenConditionForm }: Props) {
   const [step, setStep]             = useState(-1)  // -1=初期化中
   const [animKey, setAnimKey]       = useState(0)
@@ -29,15 +35,6 @@ export default function OnboardingGuide({ userId, onComplete, onOpenConditionFor
   // install step
   const [installing, setInstalling] = useState(false)
   const [installed, setInstalled]   = useState(false)
-
-  // yahoo step
-  const [yahooOpened, setYahooOpened] = useState(false)
-  const [yahooConnected, setYahooConnected] = useState(false)
-  const [showSuccessPopup, setShowSuccessPopup] = useState(false)
-  const yahooOpenedRef  = useRef(false)          // visibilitychange 用（closure 回避）
-  const yahooAdvancedRef = useRef(false)         // 二重 advance 防止
-  const yahooWinRef = useRef<Window | null>(null) // Safari タブ参照（自動クローズ用）
-  const yahooOpenedAtRef = useRef(0)             // 開いた時刻（ミリ秒）- 即時誤発火防止
 
   // ── 初期化 ───────────────────────────────────────────────────────
   useEffect(() => {
@@ -52,12 +49,9 @@ export default function OnboardingGuide({ userId, onComplete, onOpenConditionFor
     setPlatform(isIOS ? 'ios' : isAndroid ? 'android' : 'other')
 
     if (isStandalone) {
-      // PWA起動済み → installをスキップ
       setStep(1)
     } else if (isAndroid && (window as any).__pwaPrompt) {
-      // Androidでinstallプロンプト準備済み → 即座にインストールダイアログを表示
       setStep(0)
-      // 少し待ってから自動でトリガー
       setTimeout(() => triggerInstallAuto(), 600)
     } else {
       setStep(0)
@@ -96,77 +90,9 @@ export default function OnboardingGuide({ userId, onComplete, onOpenConditionFor
     setInstalling(false)
   }
 
-  // ── Yahoo連携 ────────────────────────────────────────────────────
-  function openYahooApp() {
-    const ua = navigator.userAgent
-    const isAndroid = /Android/i.test(ua)
-    yahooOpenedRef.current = true
-    yahooOpenedAtRef.current = Date.now()
-    setYahooOpened(true)
-    // 連携ボタンを押した時点でオンボーディング完了扱い（アプリ再起動後も設定画面に戻らない）
-    localStorage.setItem('yahoowatch_onboarded', '1')
-
-    if (isAndroid) {
-      // Android: ヤフオクブラウザを開く（未インストールならブラウザフォールバック）
-      window.location.href =
-        'intent://auctions.yahoo.co.jp/#Intent;scheme=https;package=jp.co.yahoo.android.yauction;S.browser_fallback_url=https%3A%2F%2Fauctions.yahoo.co.jp%2F;end'
-    } else {
-      // iOS: Yahooログイン後にコールバックページへリダイレクトさせる
-      // returl パラメータでログイン完了後の遷移先を指定 → 自動でアプリに戻る
-      const callbackUrl = window.location.origin + '/yahoo-callback'
-      const loginUrl = 'https://login.yahoo.co.jp/config/login?returl=' + encodeURIComponent(callbackUrl)
-      yahooWinRef.current = window.open(loginUrl, '_blank')
-    }
-
-    // visibilitychange: アプリに戻ったら自動進行（コールバックページ経由でも手動×閉じでも対応）
-  }
-
-  // ── 連携完了ポップアップを表示して2秒後にSTEP2へ ────────────────
-  function triggerYahooSuccess() {
-    setYahooConnected(true)
-    setShowSuccessPopup(true)
-    setTimeout(() => {
-      setShowSuccessPopup(false)
-      advance(2)
-    }, 2000)
-  }
-
-  // ── 手動「ログインした」ボタン ─────────────────────────────────
-  function handleYahooDone() {
-    if (yahooAdvancedRef.current) return
-    yahooAdvancedRef.current = true
-    try { yahooWinRef.current?.close() } catch {}
-    triggerYahooSuccess()
-  }
-
-  // ── アプリに戻ったら自動連携完了（visibilitychange / pageshow）──
-  // ※ focus イベントは使わない: ボタンタップ時にも発火して即時スキップしてしまう
-  // ※ Yahooを開いてから3秒以内は誤発火防止でガードする
-  useEffect(() => {
-    if (step !== 1) return
-    const GUARD_MS = 3000  // Safari が開く前の誤発火を防ぐ最低待機時間
-    const tryAdvance = () => {
-      if (!yahooOpenedRef.current) return
-      if (!yahooAdvancedRef.current && Date.now() - yahooOpenedAtRef.current >= GUARD_MS) {
-        yahooAdvancedRef.current = true
-        try { yahooWinRef.current?.close() } catch {}
-        triggerYahooSuccess()
-      }
-    }
-    const onVisibility = () => { if (document.visibilityState === 'visible') tryAdvance() }
-    const onPageshow   = (e: PageTransitionEvent) => { if (e.persisted) tryAdvance() }
-    document.addEventListener('visibilitychange', onVisibility)
-    window.addEventListener('pageshow', onPageshow)
-    return () => {
-      document.removeEventListener('visibilitychange', onVisibility)
-      window.removeEventListener('pageshow', onPageshow)
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step])
-
   // ── Push状態チェック ─────────────────────────────────────────────
   useEffect(() => {
-    if (step !== 2) return
+    if (step !== 1) return
     const isIOS        = /iPhone|iPad|iPod/.test(navigator.userAgent)
     const isStandalone = (navigator as any).standalone === true
                        || window.matchMedia('(display-mode: standalone)').matches
@@ -187,8 +113,8 @@ export default function OnboardingGuide({ userId, onComplete, onOpenConditionFor
 
   // ── Push許可完了 → 1.2秒後に自動遷移 ───────────────────────────
   useEffect(() => {
-    if (pushStatus !== 'done' || step !== 2) return
-    const t = setTimeout(() => advance(3), 1200)
+    if (pushStatus !== 'done' || step !== 1) return
+    const t = setTimeout(() => advance(2), 1200)
     return () => clearTimeout(t)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pushStatus, step])
@@ -226,27 +152,14 @@ export default function OnboardingGuide({ userId, onComplete, onOpenConditionFor
 
   // ── ステップ遷移 ─────────────────────────────────────────────────
   function advance(to?: number) {
-    let next = to ?? step + 1
-    // トライアルモード: ヤフオク連携（step 1）をスキップ
-    if (TRIAL_MODE && next === 1) next = 2
-    if (next > 3) { onComplete(); return }
+    const next = to ?? step + 1
+    if (next > 2) { onComplete(); return }
     setAnimKey(k => k + 1)
     setStep(next)
   }
 
   if (step === -1) return null
 
-  const STEPS = TRIAL_MODE ? [
-    { icon: '📱', badge: 'STEP 1 / 3', title: 'ホーム画面に追加' },
-    { icon: '🔑', badge: '',           title: '' },  // スキップ（advance で飛ばされる）
-    { icon: '🔔', badge: 'STEP 2 / 3', title: '通知を受け取る' },
-    { icon: '🔍', badge: 'STEP 3 / 3', title: '監視条件を設定する' },
-  ] : [
-    { icon: '📱', badge: 'STEP 1 / 4', title: 'ホーム画面に追加' },
-    { icon: '🔑', badge: 'STEP 2 / 4', title: 'ヤフオクと連携する' },
-    { icon: '🔔', badge: 'STEP 3 / 4', title: '通知を受け取る' },
-    { icon: '🔍', badge: 'STEP 4 / 4', title: '監視条件を設定する' },
-  ]
   const s = STEPS[step]
 
   return (
@@ -261,17 +174,14 @@ export default function OnboardingGuide({ userId, onComplete, onOpenConditionFor
 
       {/* ── Progress dots ─── */}
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-        {STEPS.filter((_, i) => !(TRIAL_MODE && i === 1)).map((_, idx) => {
-          const realIdx = TRIAL_MODE && idx >= 1 ? idx + 1 : idx
-          return (
-            <div key={idx} style={{
-              height: 8, borderRadius: 4,
-              width: realIdx === step ? 28 : 8,
-              background: realIdx < step ? '#34c759' : realIdx === step ? '#27b5d4' : 'rgba(255,255,255,0.18)',
-              transition: 'all 0.35s cubic-bezier(.4,0,.2,1)',
-            }} />
-          )
-        })}
+        {STEPS.map((_, idx) => (
+          <div key={idx} style={{
+            height: 8, borderRadius: 4,
+            width: idx === step ? 28 : 8,
+            background: idx < step ? '#34c759' : idx === step ? '#27b5d4' : 'rgba(255,255,255,0.18)',
+            transition: 'all 0.35s cubic-bezier(.4,0,.2,1)',
+          }} />
+        ))}
       </div>
 
       {/* ── Content ─── */}
@@ -376,94 +286,9 @@ export default function OnboardingGuide({ userId, onComplete, onOpenConditionFor
           </>
         )}
 
-        {/* ━━━ STEP 1: Yahoo連携（ブラウザログイン） ━━━━━━━━━━━━━━━ */}
+        {/* ━━━ STEP 1: 通知設定 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
         {step === 1 && (
           <>
-            {!yahooConnected ? (
-              <>
-                <p style={{ fontSize: 15, color: 'rgba(255,255,255,0.6)', lineHeight: 1.75, margin: 0 }}>
-                  {platform === 'ios'
-                    ? <>Safariで Yahoo にログインしてください。<br/><strong style={{ color: 'white' }}>ログイン後にこのアプリへ戻る</strong>と自動で次へ進みます。</>
-                    : <>ヤフオクアプリ or ブラウザでログインしてください。<br/><strong style={{ color: 'white' }}>確認後にこのアプリへ戻る</strong>と自動で次へ進みます。</>
-                  }
-                </p>
-
-                <div style={{
-                  width: '100%', background: 'rgba(255,255,255,0.07)',
-                  border: '1px solid rgba(255,255,255,0.14)', borderRadius: 20,
-                  overflow: 'hidden', backdropFilter: 'blur(16px)',
-                }}>
-                  {/* ヘッダー */}
-                  <div style={{ padding: '16px 18px', borderBottom: '1px solid rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', gap: 14 }}>
-                    <div style={{
-                      width: 48, height: 48, borderRadius: 14, flexShrink: 0,
-                      background: 'linear-gradient(135deg, #7B0099 0%, #FF0033 100%)',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      boxShadow: '0 4px 12px rgba(123,0,153,0.4)',
-                    }}>
-                      <span style={{ color: 'white', fontWeight: 900, fontSize: 20, fontFamily: 'Georgia, serif' }}>Y!</span>
-                    </div>
-                    <div style={{ textAlign: 'left' }}>
-                      <p style={{ color: 'white', fontWeight: 700, fontSize: 15, margin: '0 0 2px' }}>Yahoo!オークション</p>
-                      <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12, margin: 0 }}>
-                        {platform === 'android' ? 'アプリを直接起動します' : 'Safariでログイン（アプリ不要）'}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div style={{ padding: '16px 18px' }}>
-                    <button
-                      onClick={openYahooApp}
-                      style={{
-                        width: '100%', height: 52, borderRadius: 26, border: 'none',
-                        background: 'linear-gradient(135deg, #7B0099 0%, #ff0033 100%)',
-                        color: 'white', fontWeight: 700, fontSize: 15,
-                        cursor: 'pointer', fontFamily: 'inherit',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
-                        boxShadow: '0 4px 16px rgba(255,0,51,0.4)',
-                      }}
-                    >
-                      <span style={{ fontFamily: 'Georgia, serif', fontWeight: 900, fontSize: 18 }}>Y!</span>
-                      {platform === 'android' ? 'ヤフオクアプリで連携する' : 'Safari で Yahoo! を開く'}
-                    </button>
-
-                    {yahooOpened && !yahooConnected && (
-                      <div style={{ marginTop: 12 }}>
-                        <button
-                          onClick={handleYahooDone}
-                          style={{
-                            width: '100%', height: 48, borderRadius: 24,
-                            background: 'rgba(52,199,89,0.18)',
-                            border: '1px solid rgba(52,199,89,0.4)',
-                            color: '#34c759', fontWeight: 700, fontSize: 15,
-                            cursor: 'pointer', fontFamily: 'inherit',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                          }}>
-                          ✓ ログインした → 次へ進む
-                        </button>
-                        <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', textAlign: 'center', marginTop: 8, lineHeight: 1.5 }}>
-                          アプリへ戻ると自動で進みます
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </>
-            ) : (
-              <>
-                <p style={{ fontSize: 15, color: 'rgba(255,255,255,0.6)', lineHeight: 1.75, margin: 0 }}>
-                  連携完了！通知をタップすると<br/>ヤフオクページに直接移動します。
-                </p>
-                <SuccessBadge label="Yahoo!オークション 連携済み" />
-              </>
-            )}
-          </>
-        )}
-
-        {/* ━━━ STEP 2: 通知設定 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-        {step === 2 && (
-          <>
-            {/* 通知許可ボタンをコンテンツ上部に配置 */}
             {(pushStatus === 'idle' || pushStatus === 'loading') && (
               <button onClick={enablePush} disabled={pushStatus === 'loading'}
                 style={{
@@ -503,10 +328,9 @@ export default function OnboardingGuide({ userId, onComplete, onOpenConditionFor
           </>
         )}
 
-        {/* ━━━ STEP 3: 条件設定 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-        {step === 3 && (
+        {/* ━━━ STEP 2: 条件設定 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+        {step === 2 && (
           <>
-            {/* 条件追加ボタンをコンテンツ上部に配置 */}
             <button onClick={() => { onOpenConditionForm(); onComplete() }}
               style={{
                 width: '100%', height: 56, borderRadius: 28, border: 'none',
@@ -529,8 +353,7 @@ export default function OnboardingGuide({ userId, onComplete, onOpenConditionFor
       {/* ── Buttons ─── */}
       <div style={{ width: '100%', maxWidth: 380, display: 'flex', flexDirection: 'column', gap: 12 }}>
 
-        {/* 次へ / スキップ */}
-        {!(step === 2 && pushStatus === 'done') && (
+        {!(step === 1 && pushStatus === 'done') && (
           <button onClick={() => advance()}
             style={{
               height: 50, borderRadius: 25,
@@ -542,54 +365,11 @@ export default function OnboardingGuide({ userId, onComplete, onOpenConditionFor
             {step === 0
               ? installed ? '次のステップへ →' : (platform === 'ios' ? '追加した →' : 'スキップ →')
               : step === 1
-              ? yahooConnected ? '次のステップへ →' : 'スキップ →'
-              : step === 2
               ? '後で設定する →'
               : 'スキップして完了'}
           </button>
         )}
       </div>
-
-      {/* ── 連携完了ポップアップ ─── */}
-      {showSuccessPopup && (
-        <div style={{
-          position: 'absolute', inset: 0, zIndex: 200,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          background: 'rgba(0,0,0,0.55)',
-          animation: 'obFadeIn 0.25s ease',
-        }}>
-          <div style={{
-            background: 'white', borderRadius: 28, padding: '40px 44px',
-            textAlign: 'center', maxWidth: 280, width: '80%',
-            animation: 'obPopBounce 0.5s cubic-bezier(.17,.67,.33,1.27)',
-            boxShadow: '0 24px 64px rgba(0,0,0,0.35)',
-          }}>
-            {/* チェックマーク円 */}
-            <div style={{
-              width: 80, height: 80, borderRadius: '50%',
-              background: 'linear-gradient(135deg, #34c759 0%, #1a9e3f 100%)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              margin: '0 auto 20px',
-              animation: 'obCheckScale 0.55s cubic-bezier(.17,.67,.33,1.27) 0.15s both',
-              boxShadow: '0 8px 24px rgba(52,199,89,0.45)',
-            }}>
-              <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="20 6 9 17 4 12"/>
-              </svg>
-            </div>
-            <p style={{ fontSize: 22, fontWeight: 800, color: '#111', margin: '0 0 8px', letterSpacing: '-0.3px' }}>連携完了！</p>
-            <p style={{ fontSize: 14, color: '#888', margin: 0, lineHeight: 1.5 }}>次は通知を設定します</p>
-            {/* プログレスバー */}
-            <div style={{ marginTop: 20, height: 3, background: '#eee', borderRadius: 2, overflow: 'hidden' }}>
-              <div style={{
-                height: '100%', background: 'linear-gradient(90deg, #34c759, #1a9e3f)',
-                borderRadius: 2,
-                animation: 'obProgressBar 2s linear forwards',
-              }} />
-            </div>
-          </div>
-        </div>
-      )}
 
       <style>{`
         @keyframes obFadeSlide {
@@ -607,20 +387,6 @@ export default function OnboardingGuide({ userId, onComplete, onOpenConditionFor
         @keyframes obFadeIn {
           from { opacity: 0; }
           to   { opacity: 1; }
-        }
-        @keyframes obPopBounce {
-          from { opacity: 0; transform: scale(0.75); }
-          60%  { transform: scale(1.06); }
-          to   { opacity: 1; transform: scale(1); }
-        }
-        @keyframes obCheckScale {
-          from { transform: scale(0); }
-          60%  { transform: scale(1.2); }
-          to   { transform: scale(1); }
-        }
-        @keyframes obProgressBar {
-          from { width: 0%; }
-          to   { width: 100%; }
         }
         @keyframes obPulseBtn {
           0%,100% { box-shadow: 0 4px 20px rgba(39,181,212,0.35); }

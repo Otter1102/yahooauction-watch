@@ -115,10 +115,6 @@ export default function Dashboard() {
       if (cached) { setConditions(JSON.parse(cached)); setLoading(false) }
     } catch {}
 
-    // Yahoo連携済み or オンボーディング完了済みならホームへ（再表示しない）
-    if (localStorage.getItem('yahoowatch_yahoo_connected')) {
-      localStorage.setItem('yahoowatch_onboarded', '1')
-    }
     if (!localStorage.getItem('yahoowatch_onboarded')) {
       setShowOnboarding(true)
     }
@@ -146,14 +142,17 @@ export default function Dashboard() {
       const user = await settingsRes.value.json()
       setNotifyReady(!!(user.ntfyTopic || user.discordWebhook || user.notificationChannel === 'webpush'))
 
-      // DBにpush_subがあるのにブラウザの購読が切れていたら自動再購読を試みる
-      // 通知許可済みなら再購読可能（ユーザー操作不要）
-      // push_subがnullになるとcronのユーザー取得クエリから除外されて全通知が止まるため重要
+      // push_sub の状態を自動修復する（2パターン）
+      // 1. ブラウザのsubが切れた → DB有り: tryAutoResubscribeで再購読
+      // 2. DBのpush_subが失効削除された → ブラウザにsubが残っている: 再登録が必要
+      // ※ push_subがnullになるとcronのユーザー取得クエリから除外されて全通知が止まる
       if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
         try {
           const reg = await navigator.serviceWorker.getRegistration('/sw.js')
           const sub = reg ? await reg.pushManager.getSubscription() : null
-          const needsResubscribe = !sub && (user.hasPush || user.notificationChannel === 'webpush')
+          const wantsPush = user.hasPush || user.notificationChannel === 'webpush'
+          // ブラウザにsubがない or DBにpush_subがない(失効削除) のどちらでも再購読
+          const needsResubscribe = wantsPush && (!sub || !user.hasPush)
           if (needsResubscribe) {
             const recovered = await tryAutoResubscribe(id)
             if (!recovered) setPushLost(true)  // 再購読失敗時のみバナー表示

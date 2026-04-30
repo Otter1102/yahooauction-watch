@@ -3,7 +3,7 @@ import { getConditions, getNotifiedIds, markNotified, addHistory, updateConditio
 import { getSupabaseAdmin } from '@/lib/supabase'
 import { fetchAuctionRssWithMeta, fetchAuctionRssSimple } from '@/lib/scraper'
 import { notifyUserSummary } from '@/lib/notifier'
-import { sendWebPushSummary, sendWebPushNoItems } from '@/lib/webpush'
+import { sendWebPushSummary } from '@/lib/webpush'
 import { checkRateLimit } from '@/lib/rateLimiter'
 import { User, SearchCondition, AuctionItem } from '@/lib/types'
 
@@ -209,14 +209,6 @@ export async function POST(req: NextRequest) {
         } catch (e: any) {
           console.warn('[run-now] ntfy/Discordサマリー送信失敗 (継続):', e?.message)
         }
-      }
-    } else if (isCronCall && hasPush) {
-      // 新着なし通知（cron経由のみ・手動実行はスキップ）
-      // 理由: 1時間に1回、新着がなくてもウォッチが正常動作していることをユーザーに通知する
-      try {
-        await sendWebPushNoItems(userId, getSupabaseAdmin())
-      } catch (e: any) {
-        console.warn('[run-now] 新着なしPush送信失敗 (継続):', e?.message)
       }
     }
 

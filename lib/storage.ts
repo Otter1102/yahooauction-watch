@@ -269,24 +269,12 @@ export async function resetStalledNotified(): Promise<string[]> {
 }
 
 export async function cleanupOldHistory(): Promise<void> {
-  const now = Date.now()
-
-  // 1. end_at が設定済み: オークション終了から12時間後に削除
-  const cutoff12h = new Date(now - 12 * 60 * 60 * 1000).toISOString()
+  // 通知から7日後に削除（ユーザーが週末に履歴を確認できるよう延長）
+  const cutoff7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
   await supabaseAdmin
     .from('notification_history')
     .delete()
-    .not('end_at', 'is', null)
-    .lt('end_at', cutoff12h)
-
-  // 2. end_at なし（旧データ・取得失敗）: 通知から36時間後にフォールバック削除
-  //    根拠: 残り24h以内のオークション → 終了まで最大24h + 余裕12h = 36h
-  const cutoff36h = new Date(now - 36 * 60 * 60 * 1000).toISOString()
-  await supabaseAdmin
-    .from('notification_history')
-    .delete()
-    .is('end_at', null)
-    .lt('notified_at', cutoff36h)
+    .lt('notified_at', cutoff7d)
 }
 
 // ==================== History ====================
