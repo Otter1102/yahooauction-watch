@@ -411,7 +411,7 @@ export default function ConditionForm({ userId, condition, isDuplicate, existing
 
         {/* ── 固定フッター（送信ボタン） ── */}
         <div style={{
-          padding: '14px 20px calc(env(safe-area-inset-bottom, 0px) + 24px)',
+          padding: '14px 20px calc(var(--nav-height) + env(safe-area-inset-bottom, 0px))',
           borderTop: '1px solid var(--border)',
           flexShrink: 0,
           background: 'var(--card)',

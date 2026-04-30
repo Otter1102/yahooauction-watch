@@ -375,7 +375,7 @@ export default function Dashboard() {
         onClick={() => openForm()}
         style={{
           position: 'fixed',
-          bottom: 'calc(env(safe-area-inset-bottom, 0px) + 68px)',
+          bottom: 'calc(var(--nav-height) + env(safe-area-inset-bottom, 0px) + 10px)',
           right: 'max(16px, calc(50% - 240px + 16px))',
           width: 52, height: 52,
           background: 'var(--grad-primary)',
