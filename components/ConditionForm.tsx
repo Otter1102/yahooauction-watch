@@ -85,15 +85,6 @@ export default function ConditionForm({ userId, condition, isDuplicate, existing
   const [form, setForm] = useState<FormState>(initForm)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [showAdvanced, setShowAdvanced] = useState(isEdit && (
-    condition!.sellerType !== 'all' ||
-    condition!.itemCondition !== 'all' ||
-    condition!.minBids > 0 ||
-    condition!.maxBids !== null ||
-    condition!.buyItNow !== null ||
-    condition!.sortBy !== 'endTime' ||
-    condition!.sortOrder !== 'asc'
-  ))
 
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) =>
     setForm(f => ({ ...f, [k]: v }))
@@ -180,7 +171,7 @@ export default function ConditionForm({ userId, condition, isDuplicate, existing
           background: 'var(--card)',
           borderRadius: '20px 20px 0 0',
           zIndex: 200,
-          maxHeight: '88dvh',
+          maxHeight: '96dvh',
           display: 'flex',
           flexDirection: 'column',
           animation: 'slideUp 0.28s ease',
@@ -271,23 +262,8 @@ export default function ConditionForm({ userId, condition, isDuplicate, existing
               )
             })()}
 
-            {/* 詳細設定トグル */}
-            <button
-              type="button"
-              onClick={() => setShowAdvanced(v => !v)}
-              style={{
-                width: '100%', padding: '10px 14px', background: 'var(--bg)',
-                border: '1px solid var(--border)', borderRadius: 10,
-                fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              }}
-            >
-              <span>⚙️ 詳細フィルター</span>
-              <span style={{ fontSize: 11, transition: 'transform 0.2s', transform: showAdvanced ? 'rotate(180deg)' : 'none' }}>▼</span>
-            </button>
-
-            {showAdvanced && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: '4px 0' }}>
+            {/* 詳細フィルター（常時表示） */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: '4px 0' }}>
 
                 {/* 出品者種別 */}
                 <div>
@@ -420,8 +396,7 @@ export default function ConditionForm({ userId, condition, isDuplicate, existing
                   </div>
                 </div>
 
-              </div>
-            )}
+            </div>
 
             {error && (
               <div style={{ background: '#FFF0EE', border: '1px solid #FFCCC7', borderRadius: 10, padding: '10px 14px', fontSize: 13, color: 'var(--danger)' }}>
@@ -436,7 +411,7 @@ export default function ConditionForm({ userId, condition, isDuplicate, existing
 
         {/* ── 固定フッター（送信ボタン） ── */}
         <div style={{
-          padding: '12px 20px calc(env(safe-area-inset-bottom, 0px) + 16px)',
+          padding: '14px 20px calc(env(safe-area-inset-bottom, 0px) + 24px)',
           borderTop: '1px solid var(--border)',
           flexShrink: 0,
           background: 'var(--card)',
