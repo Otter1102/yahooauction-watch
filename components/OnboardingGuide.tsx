@@ -21,9 +21,9 @@ type PushStatus = 'idle' | 'ios-required' | 'denied' | 'unsupported' | 'loading'
 type Platform   = 'ios' | 'android' | 'other'
 
 const STEPS = [
-  { icon: '📱', badge: 'STEP 1 / 3', title: 'ホーム画面に追加' },
-  { icon: '🔔', badge: 'STEP 2 / 3', title: '通知を受け取る' },
-  { icon: '🔍', badge: 'STEP 3 / 3', title: '監視条件を設定する' },
+  { icon: '📱', title: 'ホーム画面に追加' },
+  { icon: '🔔', title: '通知を受け取る' },
+  { icon: '🔍', title: '監視条件を設定する' },
 ]
 
 export default function OnboardingGuide({ userId, onComplete, onOpenConditionForm }: Props) {
@@ -31,6 +31,7 @@ export default function OnboardingGuide({ userId, onComplete, onOpenConditionFor
   const [animKey, setAnimKey]       = useState(0)
   const [pushStatus, setPushStatus] = useState<PushStatus>('idle')
   const [platform, setPlatform]     = useState<Platform>('other')
+  const [isStandaloneMode, setIsStandaloneMode] = useState(false)
 
   // install step
   const [installing, setInstalling] = useState(false)
@@ -47,6 +48,7 @@ export default function OnboardingGuide({ userId, onComplete, onOpenConditionFor
       window.matchMedia('(display-mode: standalone)').matches
 
     setPlatform(isIOS ? 'ios' : isAndroid ? 'android' : 'other')
+    setIsStandaloneMode(isStandalone)
 
     if (isStandalone) {
       setStep(1)
@@ -135,10 +137,16 @@ export default function OnboardingGuide({ userId, onComplete, onOpenConditionFor
         applicationServerKey: urlBase64ToUint8Array(publicKey),
       })
       const j = sub.toJSON()
-      await fetch('/api/push/subscribe', {
+      const subRes = await fetch('/api/push/subscribe', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId, endpoint: j.endpoint, p256dh: j.keys?.p256dh, auth: j.keys?.auth, deviceFingerprint: getDeviceFingerprint(), isTrial: TRIAL_MODE }),
       })
+      if (!subRes.ok) {
+        const err = await subRes.json().catch(() => ({}))
+        console.error('[Onboarding] subscribe failed:', err)
+        setPushStatus('idle')
+        return
+      }
       await fetch('/api/settings', {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId, notificationChannel: 'webpush' }),
@@ -161,6 +169,11 @@ export default function OnboardingGuide({ userId, onComplete, onOpenConditionFor
   if (step === -1) return null
 
   const s = STEPS[step]
+  // PWA起動済み(standalone)は install step をスキップするので表示ステップ数が変わる
+  const totalSteps   = isStandaloneMode ? 2 : 3
+  const displayStep  = isStandaloneMode ? step     : step + 1  // 1-indexed
+  const adjustedDot  = isStandaloneMode ? step - 1 : step      // 0-indexed within visible dots
+  const badge        = `STEP ${displayStep} / ${totalSteps}`
 
   return (
     <div style={{
@@ -174,11 +187,11 @@ export default function OnboardingGuide({ userId, onComplete, onOpenConditionFor
 
       {/* ── Progress dots ─── */}
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-        {STEPS.map((_, idx) => (
+        {Array.from({ length: totalSteps }, (_, idx) => (
           <div key={idx} style={{
             height: 8, borderRadius: 4,
-            width: idx === step ? 28 : 8,
-            background: idx < step ? '#34c759' : idx === step ? '#27b5d4' : 'rgba(255,255,255,0.18)',
+            width: idx === adjustedDot ? 28 : 8,
+            background: idx < adjustedDot ? '#34c759' : idx === adjustedDot ? '#27b5d4' : 'rgba(255,255,255,0.18)',
             transition: 'all 0.35s cubic-bezier(.4,0,.2,1)',
           }} />
         ))}
@@ -204,7 +217,7 @@ export default function OnboardingGuide({ userId, onComplete, onOpenConditionFor
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: '2px', color: '#27b5d4', textTransform: 'uppercase' }}>
-            {s.badge}
+            {badge}
           </span>
           <h2 style={{ fontSize: 26, fontWeight: 700, color: 'white', lineHeight: 1.25, letterSpacing: '-0.4px', margin: 0 }}>
             {s.title}
