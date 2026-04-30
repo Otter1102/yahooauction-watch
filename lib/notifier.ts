@@ -1,26 +1,19 @@
-/**
- * 通知モジュール
- * ntfy.sh + Discord Webhook に対応
- */
 import { AuctionItem, User } from './types'
 
-// ==================== ntfy.sh ====================
+// ── 内部ヘルパー ─────────────────────────────────────────────────
 
-export async function sendNtfy(item: AuctionItem, topic: string): Promise<boolean> {
+async function postNtfy(
+  topic: string,
+  title: string,
+  body: string,
+  opts?: { click?: string; attach?: string },
+): Promise<boolean> {
   if (!topic) return false
-  const priceText = (item.price && item.price !== '価格不明') ? item.price : '現在価格なし（入札0）'
-  const body =
-    `💰 ${priceText}` +
-    (item.bids != null ? `  🔨 ${item.bids}件` : '') +
-    (item.remaining ? `  ⏰ ${item.remaining}` : '') +
-    `\n${item.url}`
+  const url = new URL(`https://ntfy.sh/${encodeURIComponent(topic)}`)
+  url.searchParams.set('title', title)
+  if (opts?.click)  url.searchParams.set('click',  opts.click)
+  if (opts?.attach) url.searchParams.set('attach', opts.attach)
   try {
-    // タイトルはクエリパラメータで渡す（HTTPヘッダーの非ASCII文字問題を回避）
-    const url = new URL(`https://ntfy.sh/${encodeURIComponent(topic)}`)
-    url.searchParams.set('title', item.title.slice(0, 60))
-    url.searchParams.set('click', item.url)
-    if (item.imageUrl) url.searchParams.set('attach', item.imageUrl)
-
     const res = await fetch(url.toString(), {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain; charset=utf-8' },
@@ -28,23 +21,45 @@ export async function sendNtfy(item: AuctionItem, topic: string): Promise<boolea
       signal: AbortSignal.timeout(10000),
     })
     return res.ok
-  } catch {
-    return false
-  }
+  } catch { return false }
 }
 
-// ==================== Discord ====================
-
-export async function sendDiscord(item: AuctionItem, webhookUrl: string): Promise<boolean> {
+async function postDiscord(webhookUrl: string, embed: object): Promise<boolean> {
   if (!webhookUrl) return false
-  // Discord webhook URL のみ許可（SSRF対策）
   try {
     const host = new URL(webhookUrl).hostname
     if (host !== 'discord.com' && host !== 'discordapp.com') return false
   } catch { return false }
-  const embed = {
+  try {
+    const res = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'ヤフオクwatch', embeds: [embed] }),
+      signal: AbortSignal.timeout(10000),
+    })
+    return res.status === 204
+  } catch { return false }
+}
+
+// ── 個別商品通知 ─────────────────────────────────────────────────
+
+export async function sendNtfy(item: AuctionItem, topic: string): Promise<boolean> {
+  const priceText = (item.price && item.price !== '価格不明') ? item.price : '現在価格なし（入札0）'
+  const body =
+    `💰 ${priceText}` +
+    (item.bids != null ? `  🔨 ${item.bids}件` : '') +
+    (item.remaining ? `  ⏰ ${item.remaining}` : '') +
+    `\n${item.url}`
+  return postNtfy(topic, item.title.slice(0, 60), body, {
+    click:  item.url,
+    attach: item.imageUrl || undefined,
+  })
+}
+
+export async function sendDiscord(item: AuctionItem, webhookUrl: string): Promise<boolean> {
+  return postDiscord(webhookUrl, {
     title: `🔔 ${item.title.slice(0, 256)}`,
-    url: item.url,
+    url:   item.url,
     color: 0xff6600,
     fields: [
       { name: '💰 現在価格', value: `**${item.price}**`, inline: true },
@@ -57,161 +72,48 @@ export async function sendDiscord(item: AuctionItem, webhookUrl: string): Promis
     ],
     footer: { text: `ID: ${item.auctionId}` },
     ...(item.imageUrl ? { thumbnail: { url: item.imageUrl } } : {}),
-  }
-  try {
-    const res = await fetch(webhookUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: 'ヤフオクwatch', embeds: [embed] }),
-      signal: AbortSignal.timeout(10000),
-    })
-    return res.status === 204
-  } catch {
-    return false
-  }
+  })
 }
-
-// ==================== 統合送信 ====================
 
 export async function notifyUser(item: AuctionItem, user: User): Promise<boolean> {
   const ch = user.notificationChannel
   const results = await Promise.all([
-    (ch === 'ntfy' || ch === 'both') ? sendNtfy(item, user.ntfyTopic) : Promise.resolve(false),
-    (ch === 'discord' || ch === 'both') ? sendDiscord(item, user.discordWebhook) : Promise.resolve(false),
+    (ch === 'ntfy'    || ch === 'both') ? sendNtfy(item, user.ntfyTopic)          : false,
+    (ch === 'discord' || ch === 'both') ? sendDiscord(item, user.discordWebhook)  : false,
   ])
   return results.some(Boolean)
 }
 
-// ==================== サマリー通知（1時間に1回まとめて） ====================
-
-async function sendNtfySummary(count: number, topic: string): Promise<boolean> {
-  if (!topic) return false
-  const title = `ヤフオクwatch 新着${count}件`
-  const body = `${count}件の新着商品が見つかりました → アプリで確認`
-  try {
-    const url = new URL(`https://ntfy.sh/${encodeURIComponent(topic)}`)
-    url.searchParams.set('title', title)
-    const res = await fetch(url.toString(), {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
-      body,
-      signal: AbortSignal.timeout(10000),
-    })
-    return res.ok
-  } catch { return false }
-}
-
-async function sendDiscordSummary(count: number, webhookUrl: string): Promise<boolean> {
-  if (!webhookUrl) return false
-  try {
-    const host = new URL(webhookUrl).hostname
-    if (host !== 'discord.com' && host !== 'discordapp.com') return false
-  } catch { return false }
-  try {
-    const res = await fetch(webhookUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        username: 'ヤフオクwatch',
-        embeds: [{
-          title: `🔔 新着 ${count} 件`,
-          description: `${count}件の新着商品が見つかりました。アプリの通知履歴をご確認ください。`,
-          color: 0xff6600,
-        }],
-      }),
-      signal: AbortSignal.timeout(10000),
-    })
-    return res.status === 204
-  } catch { return false }
-}
+// ── サマリー通知（複数件まとめて） ──────────────────────────────
 
 export async function notifyUserSummary(count: number, user: User): Promise<boolean> {
-  // Discord は一旦無効化（ntfy のみ）
-  return sendNtfySummary(count, user.ntfyTopic)
+  return postNtfy(
+    user.ntfyTopic,
+    `ヤフオクwatch 新着${count}件`,
+    `${count}件の新着商品が見つかりました → アプリで確認`,
+  )
 }
 
-// ==================== 新着なし通知 ====================
+// ── テスト通知 ───────────────────────────────────────────────────
 
-async function sendNtfyNoItems(topic: string): Promise<boolean> {
-  if (!topic) return false
-  try {
-    const url = new URL(`https://ntfy.sh/${encodeURIComponent(topic)}`)
-    url.searchParams.set('title', 'ヤフオクwatch チェック完了')
-    const res = await fetch(url.toString(), {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
-      body: '新着情報はありませんでした',
-      signal: AbortSignal.timeout(10000),
-    })
-    return res.ok
-  } catch { return false }
+const TEST_ITEM: AuctionItem = {
+  auctionId: 'test',
+  title:     'テスト通知 — ヤフオクwatchが正常に動作しています',
+  price:     '¥1,000',
+  priceInt:  1000,
+  bids:      3,
+  isBuyItNow: false,
+  remaining: '残り2時間',
+  endtimeMs: null,
+  url:       'https://auctions.yahoo.co.jp/',
+  imageUrl:  '',
+  pubDate:   new Date().toISOString(),
 }
-
-async function sendDiscordNoItems(webhookUrl: string): Promise<boolean> {
-  if (!webhookUrl) return false
-  try {
-    const host = new URL(webhookUrl).hostname
-    if (host !== 'discord.com' && host !== 'discordapp.com') return false
-  } catch { return false }
-  try {
-    const res = await fetch(webhookUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        username: 'ヤフオクwatch',
-        embeds: [{
-          title: '🔍 チェック完了',
-          description: '新着情報はありませんでした',
-          color: 0x808080,
-        }],
-      }),
-      signal: AbortSignal.timeout(10000),
-    })
-    return res.status === 204
-  } catch { return false }
-}
-
-export async function notifyUserNoItems(user: User): Promise<boolean> {
-  // Discord は一旦無効化（ntfy のみ）
-  return sendNtfyNoItems(user.ntfyTopic)
-}
-
-// ==================== テスト通知 ====================
 
 export async function sendTestNtfy(topic: string): Promise<boolean> {
-  return sendNtfy(
-    {
-      auctionId: 'test',
-      title: 'テスト通知 — ヤフオクwatchが正常に動作しています',
-      price: '¥1,000',
-      priceInt: 1000,
-      bids: 3,
-      isBuyItNow: false,
-      remaining: '残り2時間',
-      endtimeMs: null,
-      url: 'https://auctions.yahoo.co.jp/',
-      imageUrl: '',
-      pubDate: new Date().toISOString(),
-    },
-    topic
-  )
+  return sendNtfy(TEST_ITEM, topic)
 }
 
 export async function sendTestDiscord(webhookUrl: string): Promise<boolean> {
-  return sendDiscord(
-    {
-      auctionId: 'test',
-      title: 'テスト通知 — ヤフオクwatchが正常に動作しています',
-      price: '¥1,000',
-      priceInt: 1000,
-      bids: 3,
-      isBuyItNow: false,
-      remaining: '残り2時間',
-      endtimeMs: null,
-      url: 'https://auctions.yahoo.co.jp/',
-      imageUrl: '',
-      pubDate: new Date().toISOString(),
-    },
-    webhookUrl
-  )
+  return sendDiscord(TEST_ITEM, webhookUrl)
 }

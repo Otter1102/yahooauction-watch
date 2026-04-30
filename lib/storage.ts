@@ -5,7 +5,7 @@
  */
 import { getSupabaseAdmin } from './supabase'
 const supabaseAdmin = { from: (...args: Parameters<ReturnType<typeof getSupabaseAdmin>['from']>) => getSupabaseAdmin().from(...args) }
-import { SearchCondition, User, NotificationRecord } from './types'
+import { SearchCondition, User, NotificationRecord, PushSub } from './types'
 
 // ==================== Users ====================
 
@@ -45,15 +45,15 @@ export async function updateUser(userId: string, updates: Partial<User>): Promis
   await supabaseAdmin.from('users').update(row).eq('id', userId)
 }
 
-export async function getUsersWithPush(userIds: string[]): Promise<Map<string, import('./types').PushSub>> {
+export async function getUsersWithPush(userIds: string[]): Promise<Map<string, PushSub>> {
   const { data } = await supabaseAdmin
     .from('users')
     .select('id, push_sub')
     .in('id', userIds)
     .not('push_sub', 'is', null)
-  const map = new Map<string, import('./types').PushSub>()
+  const map = new Map<string, PushSub>()
   for (const row of data ?? []) {
-    if (row.push_sub) map.set(row.id as string, row.push_sub as import('./types').PushSub)
+    if (row.push_sub) map.set(row.id as string, row.push_sub as PushSub)
   }
   return map
 }

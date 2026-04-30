@@ -147,7 +147,11 @@ export default function ConditionForm({ userId, condition, isDuplicate, existing
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ userId, ...payload }),
           })
-      if (!res.ok) throw new Error((await res.json()).error)
+      if (!res.ok) {
+        let msg = 'エラーが発生しました'
+        try { msg = (await res.json()).error ?? msg } catch {}
+        throw new Error(msg)
+      }
       onSave()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'エラーが発生しました')

@@ -51,6 +51,10 @@ export async function POST(req: NextRequest) {
     if (!Number.isFinite(minP) || minP < 0 || minP > 100_000_000) {
       return NextResponse.json({ error: '価格下限が不正です' }, { status: 400 })
     }
+    const maxBidsNum = maxBids !== undefined && maxBids !== null && maxBids !== '' ? Number(maxBids) : null
+    if (maxBidsNum !== null && (!Number.isFinite(maxBidsNum) || maxBidsNum < 1 || maxBidsNum > 10_000)) {
+      return NextResponse.json({ error: '入札上限は1〜10,000の範囲で指定してください' }, { status: 400 })
+    }
 
     // 全角括弧 → 半角括弧に自動変換（Yahoo OR検索は半角括弧が必要）
     const normalizedKeyword = String(keyword).replace(/（/g, '(').replace(/）/g, ')')
