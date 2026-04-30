@@ -131,14 +131,17 @@ export default function SettingsPage() {
         setPushState('idle'); return
       }
       setPushState('subscribed')
-      // DBと自動同期（別タブ・再インストール・SW更新後のズレを解消）
+      // DBと確実に同期（awaitしてhasPushDBを更新）
       const j = sub.toJSON()
-      fetch('/api/push/subscribe', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: getUserId(), endpoint: j.endpoint, p256dh: j.keys?.p256dh, auth: j.keys?.auth, deviceFingerprint: getDeviceFingerprint(), isTrial: TRIAL_MODE }),
-      }).then(r => r.json()).then(d => {
-        if (d.ok) console.log('[push] 購読をDBと同期しました')
-      }).catch(() => {})
+      try {
+        const syncRes = await fetch('/api/push/subscribe', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: getUserId(), endpoint: j.endpoint, p256dh: j.keys?.p256dh, auth: j.keys?.auth, deviceFingerprint: getDeviceFingerprint(), isTrial: TRIAL_MODE }),
+        })
+        const syncData = await syncRes.json()
+        if (syncData.ok) { setHasPushDB(true); console.log('[push] DBと同期完了') }
+        else console.warn('[push] DB同期失敗:', syncData)
+      } catch (e) { console.warn('[push] DB同期エラー:', e) }
     }).catch(() => setPushState('idle'))
   }, [])
 
@@ -211,7 +214,22 @@ export default function SettingsPage() {
     setTestDebug('')
     setTestExpired(false)
     try {
-      const res  = await fetch('/api/push/test', {
+      // テスト前にブラウザの購読をDBへ強制同期（auto-sync失敗の保険）
+      try {
+        const reg = await navigator.serviceWorker.getRegistration('/sw.js')
+        const sub = reg ? await reg.pushManager.getSubscription() : null
+        if (sub) {
+          const j = sub.toJSON()
+          const syncRes = await fetch('/api/push/subscribe', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId, endpoint: j.endpoint, p256dh: j.keys?.p256dh, auth: j.keys?.auth, deviceFingerprint: getDeviceFingerprint(), isTrial: TRIAL_MODE }),
+          })
+          const syncData = await syncRes.json()
+          if (syncData.ok) setHasPushDB(true)
+        }
+      } catch { /* 同期失敗は無視してテストを続行 */ }
+
+      const res = await fetch('/api/push/test', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId }),
       })
@@ -219,7 +237,6 @@ export default function SettingsPage() {
       if (!data.ok) {
         setTestDebug(data.debug ?? '不明なエラー')
         if (data.expired) {
-          // 購読期限切れ → ブラウザ側のsubも削除してidle状態に戻す
           setTestExpired(true)
           setHasPushDB(false)
           setPushState('idle')
@@ -233,7 +250,7 @@ export default function SettingsPage() {
       setTestState(data.ok ? 'ok' : 'fail')
       if (data.ok) setTimeout(() => setTestState('idle'), 5000)
     } catch {
-      setTestDebug('ネットワークエラー。接続を確認してください。')
+      setTestDebug('ネットワークエラー。Wi-Fi/通信を確認してください。')
       setTestState('fail')
     }
   }
@@ -324,26 +341,26 @@ export default function SettingsPage() {
                   </div>
                 )}
                 {testState === 'fail' && (
-                  <div style={{ marginTop: 10, padding: '12px 14px', background: 'rgba(246,104,138,0.07)', borderRadius: 8, border: '1px solid rgba(246,104,138,0.2)' }}>
-                    <p style={{ fontSize: 13, color: 'var(--danger)', fontWeight: 600, margin: 0 }}>
-                      {testExpired ? '🔄 通知の登録が切れています' : '⚠️ 通知を送信できませんでした'}
+                  <div style={{ marginTop: 10, padding: '14px 16px', background: 'rgba(246,104,138,0.07)', borderRadius: 10, border: '1px solid rgba(246,104,138,0.25)' }}>
+                    <p style={{ fontSize: 14, color: 'var(--danger)', fontWeight: 700, margin: '0 0 6px' }}>
+                      {testExpired ? '🔄 通知の登録が切れています' : '⚠️ 通知の送信に失敗しました'}
                     </p>
-                    <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4, lineHeight: 1.6 }}>
-                      {testDebug}
-                    </p>
-                    {testExpired && (
-                      <button
-                        onClick={() => { setTestState('idle'); setTestDebug('') }}
-                        style={{
-                          marginTop: 10, width: '100%', height: 40,
-                          background: 'var(--grad-primary)', border: 'none',
-                          borderRadius: 20, fontSize: 13, fontWeight: 700,
-                          color: 'white', cursor: 'pointer', fontFamily: 'inherit',
-                        }}
-                      >
-                        通知を再設定する
-                      </button>
+                    {testDebug && (
+                      <p style={{ fontSize: 12, color: 'var(--text-primary)', background: 'rgba(0,0,0,0.04)', borderRadius: 6, padding: '8px 10px', margin: '0 0 10px', lineHeight: 1.7, wordBreak: 'break-all', fontFamily: 'monospace' }}>
+                        {testDebug}
+                      </p>
                     )}
+                    <button
+                      onClick={() => { setTestState('idle'); setTestDebug(''); setTestExpired(false); setPushState('idle'); setHasPushDB(false) }}
+                      style={{
+                        width: '100%', height: 42,
+                        background: 'var(--grad-primary)', border: 'none',
+                        borderRadius: 21, fontSize: 13, fontWeight: 700,
+                        color: 'white', cursor: 'pointer', fontFamily: 'inherit',
+                      }}
+                    >
+                      🔄 通知を再設定する
+                    </button>
                   </div>
                 )}
               </div>
