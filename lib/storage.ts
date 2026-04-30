@@ -64,7 +64,7 @@ function dbToUser(row: Record<string, unknown>): User {
     ntfyTopic: (row.ntfy_topic as string) ?? '',
     discordWebhook: (row.discord_webhook as string) ?? '',
     notificationChannel: (row.notification_channel as User['notificationChannel']) ?? 'webpush',
-    pushSub: (row.push_sub as import('./types').PushSub) ?? null,
+    pushSub: (row.push_sub as PushSub) ?? null,
   }
 }
 

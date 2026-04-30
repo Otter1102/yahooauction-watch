@@ -57,6 +57,7 @@ export default function SettingsPage() {
   const [user, setUser]           = useState<User | null>(null)
   const [testState, setTestState] = useState<'idle' | 'loading' | 'ok' | 'fail'>('idle')
   const [testDebug, setTestDebug] = useState('')
+  const [testExpired, setTestExpired] = useState(false)
   const [pushState, setPushState] = useState<PushState>('loading')
   const [pushLoading, setPushLoading] = useState(false)
   const [hasPushDB, setHasPushDB] = useState(false)   // DB側にpush_subが存在するか
@@ -208,14 +209,33 @@ export default function SettingsPage() {
     if (!userId) return
     setTestState('loading')
     setTestDebug('')
-    const res  = await fetch('/api/push/test', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId }),
-    })
-    const data = await res.json()
-    if (!data.ok && data.debug) setTestDebug(data.debug)
-    setTestState(data.ok ? 'ok' : 'fail')
-    if (data.ok) setTimeout(() => setTestState('idle'), 5000)
+    setTestExpired(false)
+    try {
+      const res  = await fetch('/api/push/test', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId }),
+      })
+      const data = await res.json()
+      if (!data.ok) {
+        setTestDebug(data.debug ?? '不明なエラー')
+        if (data.expired) {
+          // 購読期限切れ → ブラウザ側のsubも削除してidle状態に戻す
+          setTestExpired(true)
+          setHasPushDB(false)
+          setPushState('idle')
+          try {
+            const reg = await navigator.serviceWorker.getRegistration('/sw.js')
+            const sub = reg ? await reg.pushManager.getSubscription() : null
+            if (sub) await sub.unsubscribe()
+          } catch {}
+        }
+      }
+      setTestState(data.ok ? 'ok' : 'fail')
+      if (data.ok) setTimeout(() => setTestState('idle'), 5000)
+    } catch {
+      setTestDebug('ネットワークエラー。接続を確認してください。')
+      setTestState('fail')
+    }
   }
 
   if (!user) return (
@@ -304,9 +324,26 @@ export default function SettingsPage() {
                   </div>
                 )}
                 {testState === 'fail' && (
-                  <div style={{ marginTop: 10, padding: '10px 14px', background: 'rgba(246,104,138,0.07)', borderRadius: 8, fontSize: 12, color: 'var(--danger)', fontWeight: 500, border: '1px solid rgba(246,104,138,0.2)' }}>
-                    届きませんでした
-                    {testDebug && <div style={{ marginTop: 4, fontSize: 11, fontWeight: 400, wordBreak: 'break-all', opacity: 0.8 }}>{testDebug}</div>}
+                  <div style={{ marginTop: 10, padding: '12px 14px', background: 'rgba(246,104,138,0.07)', borderRadius: 8, border: '1px solid rgba(246,104,138,0.2)' }}>
+                    <p style={{ fontSize: 13, color: 'var(--danger)', fontWeight: 600, margin: 0 }}>
+                      {testExpired ? '🔄 通知の登録が切れています' : '⚠️ 通知を送信できませんでした'}
+                    </p>
+                    <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4, lineHeight: 1.6 }}>
+                      {testDebug}
+                    </p>
+                    {testExpired && (
+                      <button
+                        onClick={() => { setTestState('idle'); setTestDebug('') }}
+                        style={{
+                          marginTop: 10, width: '100%', height: 40,
+                          background: 'var(--grad-primary)', border: 'none',
+                          borderRadius: 20, fontSize: 13, fontWeight: 700,
+                          color: 'white', cursor: 'pointer', fontFamily: 'inherit',
+                        }}
+                      >
+                        通知を再設定する
+                      </button>
+                    )}
                   </div>
                 )}
               </div>

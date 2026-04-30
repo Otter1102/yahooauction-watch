@@ -9,43 +9,34 @@ export async function POST(req: NextRequest) {
   const { userId } = await req.json().catch(() => ({}))
   if (!userId) return NextResponse.json({ error: 'Missing userId' }, { status: 400 })
 
-  // レート制限: 1分に3回まで（通知スパム防止）
   if (!checkRateLimit(`push-test:${userId}`, 3, 60_000)) {
     return NextResponse.json({ ok: false, debug: 'Too many requests' }, { status: 429 })
   }
 
-  // パディング `=` を除去（web-push は URL safe Base64 無パディング必須）
   const VAPID_PUBLIC_KEY  = (process.env.VAPID_PUBLIC_KEY  ?? '').replace(/=+$/, '').trim()
   const VAPID_PRIVATE_KEY = (process.env.VAPID_PRIVATE_KEY ?? '').replace(/=+$/, '').trim()
   const APP_URL           = process.env.NEXT_PUBLIC_APP_URL ?? 'https://yahooauction-watch.vercel.app'
 
-  // 1. VAPID チェック
   if (!VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY) {
-    console.error('[push/test] VAPID keys missing')
     return NextResponse.json({ ok: false, debug: 'VAPID keys not set' })
   }
 
-  // 2. users テーブルから push_sub 取得
-  const { data, error: dbError } = await getSupabaseAdmin()
+  const supabase = getSupabaseAdmin()
+  const { data, error: dbError } = await supabase
     .from('users')
     .select('push_sub')
     .eq('id', userId)
     .single()
 
   if (dbError) {
-    console.error('[push/test] DB error:', dbError.message)
     return NextResponse.json({ ok: false, debug: `DB error: ${dbError.message}` })
   }
 
   const sub = data?.push_sub as { endpoint: string; p256dh: string; auth: string } | null
   if (!sub?.endpoint) {
-    console.error('[push/test] No push_sub for userId:', userId)
-    return NextResponse.json({ ok: false, debug: 'No subscription found for this userId' })
+    return NextResponse.json({ ok: false, debug: 'No subscription found. 設定ページで通知を再設定してください。' })
   }
 
-  console.log('[push/test] Sending to endpoint:', sub.endpoint.slice(0, 60) + '...')
-
-  // 3. 送信
   try {
     webpush.setVapidDetails(`mailto:admin@${new URL(APP_URL).hostname}`, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY)
     await webpush.sendNotification(
@@ -56,14 +47,31 @@ export async function POST(req: NextRequest) {
         url:       '/',
         auctionId: 'test',
       }),
+      {
+        urgency: 'high',
+        TTL: 60,
+        headers: {
+          'apns-push-type': 'alert',
+          'apns-priority':  '10',
+        },
+      },
     )
-    console.log('[push/test] Sent OK')
     return NextResponse.json({ ok: true })
   } catch (err: any) {
-    console.error('[push/test] Send error:', err?.statusCode, err?.body ?? err?.message)
-    return NextResponse.json({
-      ok: false,
-      debug: `Push error: status=${err?.statusCode} body=${JSON.stringify(err?.body ?? err?.message)}`,
-    })
+    const status = err?.statusCode
+    const body   = JSON.stringify(err?.body ?? err?.message)
+    console.error('[push/test] Send error:', status, body)
+
+    // 410/404: 購読期限切れ → DBをクリアして再設定を促す
+    if (status === 410 || status === 404) {
+      await supabase.from('users').update({ push_sub: null }).eq('id', userId)
+      return NextResponse.json({
+        ok: false,
+        debug: '通知の登録が期限切れです。設定ページで「このブラウザで通知を受け取る」を再度タップしてください。',
+        expired: true,
+      })
+    }
+
+    return NextResponse.json({ ok: false, debug: `Push error: status=${status} body=${body}` })
   }
 }
