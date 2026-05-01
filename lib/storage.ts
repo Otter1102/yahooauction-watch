@@ -38,10 +38,7 @@ export async function getOrCreateUser(userId: string): Promise<User> {
 
 export async function updateUser(userId: string, updates: Partial<User>): Promise<void> {
   const row: Record<string, unknown> = {}
-  if (updates.ntfyTopic           !== undefined) row.ntfy_topic           = updates.ntfyTopic
-  if (updates.discordWebhook      !== undefined) row.discord_webhook      = updates.discordWebhook
-  if (updates.notificationChannel !== undefined) row.notification_channel = updates.notificationChannel
-  if ('pushSub' in updates)                      row.push_sub             = updates.pushSub ?? null
+  if ('pushSub' in updates) row.push_sub = updates.pushSub ?? null
   await supabaseAdmin.from('users').update(row).eq('id', userId)
 }
 
@@ -61,9 +58,9 @@ export async function getUsersWithPush(userIds: string[]): Promise<Map<string, P
 function dbToUser(row: Record<string, unknown>): User {
   return {
     id: row.id as string,
-    ntfyTopic: (row.ntfy_topic as string) ?? '',
-    discordWebhook: (row.discord_webhook as string) ?? '',
-    notificationChannel: (row.notification_channel as User['notificationChannel']) ?? 'webpush',
+    ntfyTopic: '',
+    discordWebhook: '',
+    notificationChannel: 'webpush',
     pushSub: (row.push_sub as PushSub) ?? null,
   }
 }

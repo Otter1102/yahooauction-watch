@@ -157,6 +157,21 @@ def claude_fix(report: str, issues: list[str]) -> bool:
 # メイン
 # ──────────────────────────────────────────────────────────────────────
 
+# コード修正では解決できない設定/シークレット系の問題
+# → Ollama/Claude ループに渡さず Discord アラートのみ
+CONFIG_ISSUES = [
+    "SUPABASE_CHECK_ERROR",   # GitHub Secrets の SUPABASE_SERVICE_KEY が無効
+    "SUPABASE_QUERY_ERROR",
+    "NO_NOTIFICATIONS_48H",   # SUPABASE_CHECK_ERROR の downstream 副作用
+    "GITHUB_CHECK_ERROR",     # gh 認証切れ
+]
+
+CONFIG_FIX_HINTS = {
+    "SUPABASE_CHECK_ERROR": "GitHub Secrets の SUPABASE_SERVICE_KEY を Supabase ダッシュボード (Settings → API → service_role) の最新キーで更新してください",
+    "GITHUB_CHECK_ERROR":   "GitHub CLI 認証が切れています。Mac mini で `gh auth login` を再実行してください",
+    "NO_NOTIFICATIONS_48H": "SUPABASE_CHECK_ERROR が原因の可能性があります。Supabase キーを確認してください",
+}
+
 def main():
     # stdin から health-check.ts の JSON レポートを受け取る
     raw = sys.stdin.read().strip()
@@ -174,6 +189,28 @@ def main():
 
     if not issues:
         log("問題なし — 終了")
+        return
+
+    # ── 設定/シークレット問題は Discord アラートのみ（コード修正不可）──
+    config_hits = [i for i in issues if any(c in i for c in CONFIG_ISSUES)]
+    if config_hits:
+        hints = []
+        for hit in config_hits:
+            for key, hint in CONFIG_FIX_HINTS.items():
+                if key in hit:
+                    hints.append(f"• {hint}")
+                    break
+        msg = "⚠️ **設定/シークレット問題を検出（コード自動修正では解決不可）**\n\n"
+        msg += "\n".join(f"❌ {i}" for i in config_hits)
+        if hints:
+            msg += "\n\n**対応手順:**\n" + "\n".join(hints)
+        notify_discord(msg, color=16744272)
+        log("設定問題検出 → Discord に通知済み（コード修正スキップ）")
+
+    # 設定問題を除いたコード修正可能な問題のみを後続処理に渡す
+    issues = [i for i in issues if not any(c in i for c in CONFIG_ISSUES)]
+    if not issues:
+        log("コード修正が必要な問題なし — 終了")
         return
 
     # ── リポジトリ準備 ────────────────────────────────────────────────

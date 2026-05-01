@@ -27,15 +27,15 @@ type FetchResult = {
 async function getUser(userId: string): Promise<User | null> {
   const { data } = await getSupabaseAdmin()
     .from('users')
-    .select('id, ntfy_topic, discord_webhook, notification_channel, push_sub')
+    .select('id, push_sub')
     .eq('id', userId)
     .single()
   if (!data) return null
   return {
     id: data.id,
-    ntfyTopic: data.ntfy_topic ?? '',
-    discordWebhook: data.discord_webhook ?? '',
-    notificationChannel: data.notification_channel ?? 'ntfy',
+    ntfyTopic: '',
+    discordWebhook: '',
+    notificationChannel: 'webpush',
     pushSub: data.push_sub ?? null,
   }
 }

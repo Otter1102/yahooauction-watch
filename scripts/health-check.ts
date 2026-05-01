@@ -99,6 +99,7 @@ async function main() {
     }
   } catch (e: any) {
     issues.push(`SUPABASE_CHECK_ERROR: ${e.message?.slice(0, 100)}`)
+    fixes.push('MANUAL: GitHub Secrets の SUPABASE_SERVICE_KEY を Supabase ダッシュボード (Settings → API → service_role) の最新キーで更新')
   }
 
   // ──────────────────────────────────────────────

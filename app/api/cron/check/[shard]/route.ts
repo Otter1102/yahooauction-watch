@@ -115,7 +115,7 @@ export async function GET(
     const { data, error } = await supabase
       .from('users')
       .select('id')
-      .or('push_sub.not.is.null,ntfy_topic.neq.,discord_webhook.neq.')
+      .not('push_sub', 'is', null)
     if (error || !data) {
       const msg = error?.message ?? 'ユーザー取得失敗'
       console.error(`[cron/shard${shard}] ${msg}`)

@@ -36,10 +36,12 @@ notify_discord() {
 }
 
 # ──────────────────────────────────────────────────────────
-# ロード: .env.local
+# ロード: .env.local （末尾 \n アーティファクトを除去してから source）
 # ──────────────────────────────────────────────────────────
 if [ -f "$APP_DIR/.env.local" ]; then
-  set -a; source "$APP_DIR/.env.local"; set +a
+  # Vercel CLI が生成した "VALUE\n" 末尾の \n を除去してから読み込む
+  CLEAN_ENV=$(sed 's/\\n"/"/g' "$APP_DIR/.env.local")
+  set -a; eval "$CLEAN_ENV" 2>/dev/null || true; set +a
 fi
 export DISCORD_WEBHOOK="${DISCORD_ADMIN_WEBHOOK:-}"
 
@@ -109,8 +111,10 @@ fi
 REMAINING_ISSUES=$(cat "$HEALTH_REPORT" | python3 -c '
 import json,sys
 data = json.load(sys.stdin)
-# 自動修正済みパターンを除外
-remaining = [i for i in data["issues"] if not any(skip in i for skip in ["WORKFLOW_DISABLED","NOTIFIED_ITEMS_OVERFLOW","RUN_STALE"])]
+# 自動修正済み or 設定系（コード修正不可）パターンを除外
+SKIP = ["WORKFLOW_DISABLED","NOTIFIED_ITEMS_OVERFLOW","RUN_STALE",
+        "SUPABASE_CHECK_ERROR","SUPABASE_QUERY_ERROR","NO_NOTIFICATIONS_48H","GITHUB_CHECK_ERROR"]
+remaining = [i for i in data["issues"] if not any(skip in i for skip in SKIP)]
 print(json.dumps(remaining))
 ' 2>/dev/null || echo "[]")
 

@@ -315,15 +315,12 @@ async function cleanupGhostUsers(): Promise<number> {
     // 幽霊ユーザー候補: push_sub なし かつ 14日以上前に作成
     const { data: candidates } = await supabaseAdmin
       .from('users')
-      .select('id, ntfy_topic, discord_webhook')
+      .select('id')
       .is('push_sub', null)
       .lt('created_at', cutoff)
     if (!candidates?.length) return 0
 
-    // JS側でntfy/discordも未設定を確認（null/空文字両方対応）
-    const ghostIds = candidates
-      .filter(u => !u.ntfy_topic && !u.discord_webhook)
-      .map(u => u.id as string)
+    const ghostIds = candidates.map(u => u.id as string)
     if (ghostIds.length === 0) return 0
 
     await supabaseAdmin.from('users').delete().in('id', ghostIds)

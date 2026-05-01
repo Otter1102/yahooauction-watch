@@ -68,7 +68,7 @@ async function runCoordinator(cronSecret: string): Promise<void> {
     const { data, error } = await supabase
       .from('users')
       .select('id')
-      .or('push_sub.not.is.null,ntfy_topic.neq.,discord_webhook.neq.')
+      .not('push_sub', 'is', null)
     if (!error && data) { allUsers = data; break }
     lastErr = error?.message ?? String(error)
     console.warn(`[coordinator] ユーザー取得失敗 attempt${attempt + 1}/2: ${lastErr}`)
