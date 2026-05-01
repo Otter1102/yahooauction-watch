@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
 
     // サーバーサイドcronからの内部呼び出しはレート制限をスキップ
     const isCronCall = !!process.env.CRON_SECRET &&
-      req.headers.get('x-cron-secret') === process.env.CRON_SECRET?.trim()
+      req.headers.get('x-cron-secret')?.trim() === process.env.CRON_SECRET.trim()
 
     // レート制限: 1分に3回まで（通知スパム防止）
     if (!isCronCall && !checkRateLimit(`run-now:${userId}`, 3, 60_000)) {
@@ -152,6 +152,7 @@ export async function POST(req: NextRequest) {
       })
       const filteredByFormat = afterBidsFilter.length - freshItems.length
       let condNotified = 0
+      let condRecordErrors = 0
 
       // ── manual/cron 共通: 新着をサマリー用に収集（通知は後で1回まとめて送信）──
       // markNotified は送信前に記録する（送信失敗でも次回重複防止）
@@ -171,8 +172,12 @@ export async function POST(req: NextRequest) {
           condNotified++
           totalNotified++
         } catch (e: any) {
+          condRecordErrors++
           console.warn('[run-now] 記録失敗 (継続):', e?.message)
         }
+      }
+      if (condRecordErrors > 0) {
+        console.error(`[run-now] 条件"${cond.name}" DB記録失敗 ${condRecordErrors}/${freshItems.length}件 — 重複通知の可能性あり`)
       }
 
       try {

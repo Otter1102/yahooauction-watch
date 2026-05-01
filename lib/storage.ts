@@ -237,24 +237,28 @@ export async function resetStalledNotified(): Promise<string[]> {
 
   const recentSet = new Set((recentUsers ?? []).map(r => r.user_id as string))
 
-  // 多数の notified_items を持つユーザーを取得（上位10件）
-  const { data: notifiedCounts } = await supabase
-    .rpc('get_notified_counts') // RPC不要: グループ集計はAPIでは難しいため別アプローチ
-
-  // シンプルな代替: notified_itemsから全件取得してカウント（上限500）
-  const { data: allNotified } = await supabase
-    .from('notified_items')
-    .select('user_id')
-    .limit(500)
+  // push_sub を持つ全ユーザーを取得し、各ユーザーの notified_items 件数を count で確認
+  // limit(500) では多数のユーザー/商品がいる場合にサイレントに見落とすため、
+  // ユーザーごとに count クエリを発行する方式に変更
+  const { data: pushUsers } = await supabase
+    .from('users')
+    .select('id')
+    .not('push_sub', 'is', null)
 
   const counts: Record<string, number> = {}
-  for (const r of allNotified ?? []) {
-    counts[r.user_id] = (counts[r.user_id] ?? 0) + 1
-  }
+  await Promise.all(
+    (pushUsers ?? []).map(async (u) => {
+      const { count } = await supabase
+        .from('notified_items')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', u.id)
+      if ((count ?? 0) >= 20) counts[u.id] = count!
+    })
+  )
 
   // 条件: 48時間通知なし かつ notified_items が20件以上 → ブロックされている可能性大
   const stalledUsers = Object.entries(counts)
-    .filter(([uid, cnt]) => cnt >= 20 && !recentSet.has(uid))
+    .filter(([uid]) => !recentSet.has(uid))
     .map(([uid]) => uid)
 
   for (const uid of stalledUsers) {
@@ -266,12 +270,23 @@ export async function resetStalledNotified(): Promise<string[]> {
 }
 
 export async function cleanupOldHistory(): Promise<void> {
-  // 通知から7日後に削除（ユーザーが週末に履歴を確認できるよう延長）
+  // 7日超えを 500件ずつページネーションして削除
+  // 一括削除は全件スキャンでタイムアウトするため、id指定のバッチ削除に変更
   const cutoff7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
-  await supabaseAdmin
-    .from('notification_history')
-    .delete()
-    .lt('notified_at', cutoff7d)
+  let deleted = 0
+  while (true) {
+    const { data } = await supabaseAdmin
+      .from('notification_history')
+      .select('id')
+      .lt('notified_at', cutoff7d)
+      .limit(500)
+    if (!data?.length) break
+    const ids = data.map(r => r.id as string)
+    await supabaseAdmin.from('notification_history').delete().in('id', ids)
+    deleted += ids.length
+    if (ids.length < 500) break
+  }
+  if (deleted > 0) console.log(`[cleanup] notification_history ${deleted}件削除`)
 }
 
 // ==================== History ====================
