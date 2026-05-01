@@ -3,7 +3,7 @@ import { getConditions, getNotifiedIds, markNotified, addHistory, updateConditio
 import { getSupabaseAdmin } from '@/lib/supabase'
 import { fetchAuctionRssWithMeta, fetchAuctionRssSimple } from '@/lib/scraper'
 import { notifyUserSummary } from '@/lib/notifier'
-import { sendWebPushSummary } from '@/lib/webpush'
+import { sendWebPushSummary, sendWebPushNoItems } from '@/lib/webpush'
 import { checkRateLimit } from '@/lib/rateLimiter'
 import { User, SearchCondition, AuctionItem } from '@/lib/types'
 
@@ -196,10 +196,9 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    // ── サマリー通知（新着あり or cron時の新着なし通知）──
+    // ── サマリー通知 ──
     if (allFreshForSummary.length > 0) {
       const topItem = allFreshForSummary[0].item
-      // Web Push サマリー
       if (hasPush) {
         try {
           await sendWebPushSummary(userId, allFreshForSummary.length, topItem, getSupabaseAdmin())
@@ -207,12 +206,20 @@ export async function POST(req: NextRequest) {
           console.warn('[run-now] サマリーPush送信失敗 (継続):', e?.message)
         }
       }
-      // ntfy / Discord サマリー
       if (user.ntfyTopic || user.discordWebhook) {
         try {
           await notifyUserSummary(allFreshForSummary.length, user)
         } catch (e: any) {
           console.warn('[run-now] ntfy/Discordサマリー送信失敗 (継続):', e?.message)
+        }
+      }
+    } else {
+      // 新着なし通知（動作確認用）
+      if (hasPush) {
+        try {
+          await sendWebPushNoItems(userId, getSupabaseAdmin())
+        } catch (e: any) {
+          console.warn('[run-now] 新着なしPush送信失敗 (継続):', e?.message)
         }
       }
     }
