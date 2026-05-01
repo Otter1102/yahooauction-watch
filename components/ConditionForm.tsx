@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { SearchCondition } from '@/lib/types'
 
 interface Props {
@@ -85,6 +85,8 @@ export default function ConditionForm({ userId, condition, isDuplicate, existing
   const [form, setForm] = useState<FormState>(initForm)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const backdropTouchStartY = useRef(0)
+  const backdropDragging = useRef(false)
 
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) =>
     setForm(f => ({ ...f, [k]: v }))
@@ -155,6 +157,19 @@ export default function ConditionForm({ userId, condition, isDuplicate, existing
     <>
       {/* ─── バックドロップ ─── */}
       <div
+        onTouchStart={(e) => {
+          backdropTouchStartY.current = e.touches[0].clientY
+          backdropDragging.current = false
+        }}
+        onTouchMove={(e) => {
+          if (Math.abs(e.touches[0].clientY - backdropTouchStartY.current) > 8) {
+            backdropDragging.current = true
+          }
+        }}
+        onTouchEnd={(e) => {
+          e.preventDefault()
+          if (!backdropDragging.current) onClose()
+        }}
         onClick={onClose}
         style={{
           position: 'fixed', inset: 0,
@@ -411,7 +426,7 @@ export default function ConditionForm({ userId, condition, isDuplicate, existing
 
         {/* ── 固定フッター（送信ボタン） ── */}
         <div style={{
-          padding: '14px 20px calc(var(--nav-height) + env(safe-area-inset-bottom, 0px))',
+          padding: '12px 20px calc(16px + env(safe-area-inset-bottom, 0px))',
           borderTop: '1px solid var(--border)',
           flexShrink: 0,
           background: 'var(--card)',

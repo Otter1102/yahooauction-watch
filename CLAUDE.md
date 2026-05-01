@@ -249,10 +249,10 @@ for (const { userId, auctionId } of ended) {
 - 7日TTL（`cleanupOldNotified`）はあくまで安全網。主系はオークション終了検出で即削除する設計が正しい
 
 <!-- CC_CONTEXT_START -->
-<!-- cc:session:0d72e62e-0ea3-4dbe-9f7b-8272e783e9eb:2026-04-30 17:30 -->
-**最後の作業** (2026-04-30 17:30)
-- もうアプリ内でヤフオクログインの入り口は消えたね？それならok
-- yahoo-auction-watcher このアプリやけど、現時点でヤフオクログインを排除してください。二重ログインになって不正になるので。
-- 今アプリダウンロードして使っている人も強制ログアウトさせてね、その上でどこからもログインできないように設計してね
-- 編集ファイル: page.tsx、multi-device.spec.ts、OnboardingGuide.tsx、layout.tsx、middleware.ts
+<!-- cc:session:19c00b95-4cd4-42b3-b220-1f499dcac11b:2026-05-01 01:01 -->
+**最後の作業** (2026-05-01 01:01)
+- 条件を追加するがまだ下で埋もれているしたのタブとかぶるタッチが固定で通知履歴とかのバーの上にピッタリ下部が触れるくらいきっちりさせて
+- 治ってないよ最初の感じにして条件設定
+- 条件を追加するのボタンが下すぎて押しづらい。あと詳細はなくていい初めから表示でいいよ
+- 編集ファイル: notifier.ts、storage.ts、route.ts、ConditionForm.tsx、scraper-heal.ts、MEMORY.md
 <!-- CC_CONTEXT_END -->
