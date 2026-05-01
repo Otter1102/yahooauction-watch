@@ -3,7 +3,7 @@ import { getConditions, getNotifiedIds, markNotified, addHistory, updateConditio
 import { getSupabaseAdmin } from '@/lib/supabase'
 import { fetchAuctionRssWithMeta, fetchAuctionRssSimple } from '@/lib/scraper'
 import { notifyUserSummary } from '@/lib/notifier'
-import { sendWebPushSummary, sendWebPushNoItems } from '@/lib/webpush'
+import { sendWebPushSummary } from '@/lib/webpush'
 import { checkRateLimit } from '@/lib/rateLimiter'
 import { User, SearchCondition, AuctionItem } from '@/lib/types'
 
@@ -211,15 +211,6 @@ export async function POST(req: NextRequest) {
           await notifyUserSummary(allFreshForSummary.length, user)
         } catch (e: any) {
           console.warn('[run-now] ntfy/Discordサマリー送信失敗 (継続):', e?.message)
-        }
-      }
-    } else {
-      // 新着なし通知（動作確認用）
-      if (hasPush) {
-        try {
-          await sendWebPushNoItems(userId, getSupabaseAdmin())
-        } catch (e: any) {
-          console.warn('[run-now] 新着なしPush送信失敗 (継続):', e?.message)
         }
       }
     }
