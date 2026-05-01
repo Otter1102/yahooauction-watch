@@ -275,7 +275,7 @@ export default function SettingsPage() {
       }}>
         <div style={{ maxWidth: 480, margin: '0 auto' }}>
           <h1 style={{ fontWeight: 700, fontSize: 20, letterSpacing: '-0.3px', background: 'var(--grad-primary)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>設定</h1>
-          <p style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>通知・連携の設定</p>
+          <p style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>通知の設定</p>
         </div>
       </div>
 

@@ -54,9 +54,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="ja">
       <head>
-        {/* Supabase auth セッション強制クリア（メール/パスワードログイン廃止） */}
+        {/* Yahoo連携・Supabase auth を強制クリア（既存インストール済みユーザー含む） */}
         <script dangerouslySetInnerHTML={{ __html: `
-(function(){try{var k=Object.keys(localStorage);for(var i=0;i<k.length;i++){if(/^sb-.+-auth-token/.test(k[i])||k[i]==='supabase.auth.token'){localStorage.removeItem(k[i]);}}}catch(e){}})();
+(function(){try{var YAHOO_KEYS=['yahoowatch_yahoo_connected','yahoowatch_yahoo_token','yahoowatch_yahoo_user','yahoowatch_oauth_state'];var k=Object.keys(localStorage);for(var i=0;i<k.length;i++){if(/^sb-.+-auth-token/.test(k[i])||k[i]==='supabase.auth.token'||YAHOO_KEYS.indexOf(k[i])>=0){localStorage.removeItem(k[i]);}}}catch(e){}})();
 `.trim() }} />
         {/* beforeinstallprompt キャプチャ + SW postMessage リスナー（Reactより先に実行） */}
         <script dangerouslySetInnerHTML={{ __html: `
