@@ -81,6 +81,7 @@ export default function Dashboard() {
   const [notifyReady, setNotifyReady] = useState(false)
   const [pushLost, setPushLost] = useState(false)
   const [duplicatingCondition, setDuplicatingCondition] = useState<SearchCondition | null>(null)
+  const [checking, setChecking] = useState(false)
 
   function completeOnboarding() {
     localStorage.setItem('yahoowatch_onboarded', '1')
@@ -185,6 +186,19 @@ export default function Dashboard() {
     }).catch(() => {})
   }
 
+  async function runNowManual() {
+    if (!userId || checking) return
+    setChecking(true)
+    try {
+      await fetch('/api/run-now', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, manual: true }),
+      })
+    } catch { /* ignore */ }
+    setChecking(false)
+  }
+
   useEffect(() => { init() }, [])
 
   const activeCount = conditions.filter(c => c.enabled).length
@@ -225,6 +239,20 @@ export default function Dashboard() {
                 </p>
               )}
             </div>
+            {notifyReady && activeCount > 0 && (
+              <button
+                onClick={runNowManual}
+                disabled={checking}
+                style={{
+                  background: 'none', border: 'none', padding: '6px 8px',
+                  cursor: checking ? 'wait' : 'pointer', borderRadius: 8,
+                  color: 'var(--accent)', fontSize: 13, fontWeight: 600,
+                  opacity: checking ? 0.5 : 1, fontFamily: 'inherit',
+                }}
+              >
+                {checking ? '確認中...' : '今すぐ確認'}
+              </button>
+            )}
           </div>
         </div>
 
