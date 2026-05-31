@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS trial_sessions (
   ip_hash  TEXT,                      -- SHA-256(IP + salt)
   cookie_id UUID UNIQUE,              -- httpOnly Cookie で二重照合
   created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
-  expires_at TIMESTAMPTZ NOT NULL     -- created_at + 30日
+  expires_at TIMESTAMPTZ NOT NULL     -- created_at + 5日
 );
 
 -- RLS: サービスロールのみアクセス可（クライアントから直接読み書き不可）

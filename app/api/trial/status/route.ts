@@ -3,7 +3,7 @@ import { getSupabaseAdmin } from '@/lib/supabase'
 import { randomUUID } from 'crypto'
 import { checkRateLimit } from '@/lib/rateLimiter'
 
-const TRIAL_DAYS = 30
+const TRIAL_DAYS = 5
 const FP_SALT   = process.env.FP_SALT ?? 'ytrial-default-salt-change-me'
 
 async function sha256hex(text: string): Promise<string> {
