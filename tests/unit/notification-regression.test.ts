@@ -68,9 +68,9 @@ describe('通知送信の回帰防止', () => {
     const workflow = readSource('.github/workflows/cron.yml')
 
     expect(runCheck).toContain('SEND_NO_ITEMS_PUSH')
-    expect(runCheck).toContain('await sendWebPushNoItems(userId)')
+    expect(runCheck).toContain('await sendWebPushCheckComplete(userId')
     expect(runNow).toContain('SEND_NO_ITEMS_PUSH')
-    expect(runNow).toContain('await sendWebPushNoItems(userId, getSupabaseAdmin())')
+    expect(runNow).toContain('await sendWebPushCheckComplete(userId')
     expect(workflow).toContain("SEND_NO_ITEMS_PUSH: 'true'")
   })
 })

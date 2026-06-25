@@ -171,11 +171,51 @@ export async function sendWebPushNoItems(
     body: '新着情報はありませんでした',
     url: APP_URL + '/history',
     imageUrl: null,
-    auctionId: null,
+    auctionId: `no-items-${Date.now()}`,
     auctionUrl: null,
   })
 
   console.log(`  📱 NoItemsPush [${userId.slice(0, 8)}] → ${result}`)
+
+  if (result === 'expired') {
+    await supabaseAdmin.from('users').update({ push_sub: null }).eq('id', userId)
+  }
+
+  return result === 'ok'
+}
+
+/** テスト期間用: 新着有無に関係なく検査完了を知らせるプッシュ */
+export async function sendWebPushCheckComplete(
+  userId: string,
+  summary: { freshCount: number; noItems: boolean },
+  supabaseAdmin = getSupabaseAdmin(),
+): Promise<boolean> {
+  const { data } = await supabaseAdmin
+    .from('users')
+    .select('push_sub')
+    .eq('id', userId)
+    .single()
+
+  const sub = data?.push_sub as PushSub | null
+  if (!sub?.endpoint) return false
+
+  const now = new Date()
+  const hh = String(now.getHours()).padStart(2, '0')
+  const mm = String(now.getMinutes()).padStart(2, '0')
+  const body = summary.noItems
+    ? `新着情報はありませんでした（${hh}:${mm}確認）`
+    : `新着${summary.freshCount}件を検出しました（${hh}:${mm}確認）`
+
+  const result = await sendToSub(sub, {
+    title: 'ヤフオクwatch チェック完了',
+    body,
+    url: APP_URL + '/history',
+    imageUrl: null,
+    auctionId: `check-complete-${now.getTime()}-${userId.slice(0, 8)}`,
+    auctionUrl: null,
+  })
+
+  console.log(`  📱 CheckCompletePush [${userId.slice(0, 8)}] → ${result}`)
 
   if (result === 'expired') {
     await supabaseAdmin.from('users').update({ push_sub: null }).eq('id', userId)

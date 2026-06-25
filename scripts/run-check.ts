@@ -8,7 +8,7 @@
  */
 import { getAllEnabledConditions, getAllNotifiedIds, markNotified, addHistory, updateCondition, cleanupOldNotified, cleanupOldHistory, resetStalledNotified, updateHistorySnapshot } from '../lib/storage'
 import { fetchAuctionRss, checkAuctionEnded } from '../lib/scraper'
-import { sendWebPushNoItems, sendWebPushSummary } from '../lib/webpush'
+import { sendWebPushCheckComplete, sendWebPushSummary } from '../lib/webpush'
 import { sendAdminErrorAlert } from '../lib/emailer'
 import { getSupabaseAdmin } from '../lib/supabase'
 const supabaseAdmin = { from: (...args: Parameters<ReturnType<typeof getSupabaseAdmin>['from']>) => getSupabaseAdmin().from(...args) }
@@ -231,10 +231,10 @@ async function main() {
 
   // ─── 通知（10並列で送信）───
   // 通常: 新着あり → Web Push サマリー / 新着なし → 通知しない。
-  // テスト期間のみ SEND_NO_ITEMS_PUSH=true で新着なし通知も送る。
+  // テスト期間のみ SEND_NO_ITEMS_PUSH=true で、全通知可能ユーザーへ検査完了通知も送る。
   const pushActiveUserIds = activeUserIds.filter(id => pushUserIds.has(id))
   const NOTIFY_CONCURRENCY = 10
-  let totalNoItemsNotified = 0
+  let totalCheckCompleteNotified = 0
   for (let i = 0; i < pushActiveUserIds.length; i += NOTIFY_CONCURRENCY) {
     const batch = pushActiveUserIds.slice(i, i + NOTIFY_CONCURRENCY)
     await Promise.all(batch.map(async (userId) => {
@@ -264,14 +264,16 @@ async function main() {
         if (recordErrors > 0) {
           console.error(`  ⚠️ [${userId.slice(0,8)}] 通知後記録失敗 ${recordErrors}/${items.length}件（未記録分は次回再試行）`)
         }
-      } else if (SEND_NO_ITEMS_PUSH) {
-        const delivered = await sendWebPushNoItems(userId)
-        if (delivered) {
-          totalNoItemsNotified++
-          console.log(`  📨 [${userId.slice(0,8)}] 新着なし通知`)
-        } else {
-          console.warn(`  ⚠️ [${userId.slice(0,8)}] 新着なしPush失敗`)
-        }
+      }
+
+      if (SEND_NO_ITEMS_PUSH) {
+        const freshCount = items?.length ?? 0
+        const delivered = await sendWebPushCheckComplete(userId, {
+          freshCount,
+          noItems: freshCount === 0,
+        })
+        if (delivered) totalCheckCompleteNotified++
+        else console.warn(`  ⚠️ [${userId.slice(0,8)}] チェック完了Push失敗`)
       }
     }))
   }
@@ -290,7 +292,7 @@ async function main() {
     console.log(`[幽霊ユーザー] ${ghostCount}件削除（通知設定なし+14日経過）`)
   }
 
-  console.log(`\n=== 完了: 合計${totalNotified}件通知 / 新着なし通知${totalNoItemsNotified}件 ===\n`)
+  console.log(`\n=== 完了: 合計${totalNotified}件通知 / チェック完了通知${totalCheckCompleteNotified}件 ===\n`)
 }
 
 /** end_at なし旧レコードを Yahoo 確認して削除する安全網（1run あたり最大20件） */
