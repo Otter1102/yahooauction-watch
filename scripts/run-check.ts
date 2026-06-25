@@ -17,6 +17,7 @@ import { User, SearchCondition, AuctionItem } from '../lib/types'
 type RssKey = Pick<SearchCondition, 'keyword' | 'maxPrice' | 'minPrice' | 'minBids' | 'sellerType' | 'itemCondition' | 'sortBy' | 'sortOrder' | 'buyItNow'>
 interface ConditionGroup { key: RssKey; conditions: SearchCondition[] }
 type PendingNotification = { item: AuctionItem; cond: SearchCondition }
+const CHECK_COMPLETE_MARKER_PREFIX = '__check_complete_'
 
 function toHistoryRecord(cond: SearchCondition, item: AuctionItem) {
   return {
@@ -84,6 +85,32 @@ async function fetchWithRetry(key: RssKey, retries = 2, startOffset = 1): Promis
     await new Promise(r => setTimeout(r, 2000))
   }
   return []
+}
+
+async function canSendCheckCompleteThisHour(userId: string): Promise<boolean> {
+  const cutoff = new Date(Date.now() - 50 * 60 * 1000).toISOString()
+  const { data, error } = await supabaseAdmin
+    .from('notified_items')
+    .select('auction_id')
+    .eq('user_id', userId)
+    .like('auction_id', `${CHECK_COMPLETE_MARKER_PREFIX}%`)
+    .gte('notified_at', cutoff)
+    .limit(1)
+  if (error) {
+    console.warn(`  ⚠️ [${userId.slice(0,8)}] チェック完了通知の重複確認失敗:`, error.message)
+    return true
+  }
+  return !data?.length
+}
+
+async function markCheckCompleteSent(userId: string): Promise<void> {
+  const marker = `${CHECK_COMPLETE_MARKER_PREFIX}${new Date().toISOString().slice(0, 13)}`
+  const { error } = await supabaseAdmin
+    .from('notified_items')
+    .upsert({ user_id: userId, auction_id: marker })
+  if (error) {
+    console.warn(`  ⚠️ [${userId.slice(0,8)}] チェック完了通知マーカー保存失敗:`, error.message)
+  }
 }
 
 async function main() {
@@ -277,6 +304,11 @@ async function main() {
       }
 
       if (SEND_NO_ITEMS_PUSH) {
+        const shouldSendCheckComplete = await canSendCheckCompleteThisHour(userId)
+        if (!shouldSendCheckComplete) {
+          console.log(`  ↪️ [${userId.slice(0,8)}] チェック完了Pushは50分以内に送信済みのためスキップ`)
+          return
+        }
         const freshCount = items?.length ?? 0
         const fetchFailedCount = failedFetchByUser.get(userId) ?? 0
         const delivered = await sendWebPushCheckComplete(userId, {
@@ -285,7 +317,10 @@ async function main() {
           failed: fetchFailedCount > 0,
           fetchFailedCount,
         })
-        if (delivered) totalCheckCompleteNotified++
+        if (delivered) {
+          await markCheckCompleteSent(userId)
+          totalCheckCompleteNotified++
+        }
         else console.warn(`  ⚠️ [${userId.slice(0,8)}] チェック完了Push失敗`)
       }
     }))
