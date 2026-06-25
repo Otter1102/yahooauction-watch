@@ -105,6 +105,7 @@ describe('通知送信の回帰防止', () => {
     const storage = readSource('lib/storage.ts')
     const runCheck = readSource('scripts/run-check.ts')
     const cronRoute = readSource('app/api/cron/check/route.ts')
+    const cronShardRoute = readSource('app/api/cron/check/[shard]/route.ts')
 
     expect(historyRoute).toContain('cleanupEndedHistoryForUser(userId)')
     expect(storage).toContain('cleanupEndedHistoryForUser')
@@ -112,5 +113,27 @@ describe('通知送信の回帰防止', () => {
     expect(runCheck).toContain('終了時刻超過オークション')
     expect(cronRoute).toContain('終了時刻超過オークション')
     expect(cronRoute).toContain(".lte('end_at', nowIso)")
+    expect(cronShardRoute).toContain('終了時刻超過オークション')
+    expect(cronShardRoute).toContain(".lte('end_at', nowIso)")
+  })
+
+  it('巡回成功時は件数変化がなくても最終チェック時刻を更新する', () => {
+    const runCheck = readSource('scripts/run-check.ts')
+    const runNow = readSource('app/api/run-now/route.ts')
+
+    expect(runCheck).toContain('巡回成功の証跡として必ず更新')
+    expect(runCheck).toContain('await updateCondition(cond.id, {')
+    expect(runCheck).not.toContain('変化があった時のみ更新')
+    expect(runNow).toContain('await updateCondition(cond.id, {')
+    expect(runNow).not.toContain('items.length !== (cond.lastFoundCount ?? -1)')
+  })
+
+  it('GitHub schedule抜け対策としてVercel Cronも毎時シャード実行する', () => {
+    const vercel = readSource('vercel.json')
+
+    expect(vercel).toContain('"crons"')
+    for (let shard = 0; shard < 8; shard++) {
+      expect(vercel).toContain(`/api/cron/check/${shard}`)
+    }
   })
 })

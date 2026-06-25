@@ -250,13 +250,11 @@ async function main() {
           }
         }
 
-        // 変化があった時のみ更新（DB帯域節約: 変化なし=スキップで月間UPDATE数を大幅削減）
-        if (conditionNotified > 0 || candidateItems.length !== (cond.lastFoundCount ?? -1)) {
-          await updateCondition(cond.id, {
-            lastCheckedAt: new Date().toISOString(),
-            lastFoundCount: candidateItems.length,
-          })
-        }
+        // 最終チェック時刻は、件数変化がなくても巡回成功の証跡として必ず更新する。
+        await updateCondition(cond.id, {
+          lastCheckedAt: new Date().toISOString(),
+          lastFoundCount: candidateItems.length,
+        })
 
         if (conditionNotified > 0) {
           console.log(`  ✅ [${cond.name}] ${conditionNotified}件新着`)

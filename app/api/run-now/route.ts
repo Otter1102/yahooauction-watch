@@ -270,16 +270,13 @@ export async function POST(req: NextRequest) {
     }
 
     for (const { cond, items } of fetchResults) {
-      const pending = pendingCountByCondition.get(cond.id) ?? 0
-      if (pending > 0 || items.length !== (cond.lastFoundCount ?? -1)) {
-        try {
-          await updateCondition(cond.id, {
-            lastCheckedAt: new Date().toISOString(),
-            lastFoundCount: items.length,
-          })
-        } catch (e: any) {
-          console.warn('[run-now] updateCondition失敗 (継続):', e?.message)
-        }
+      try {
+        await updateCondition(cond.id, {
+          lastCheckedAt: new Date().toISOString(),
+          lastFoundCount: items.length,
+        })
+      } catch (e: any) {
+        console.warn('[run-now] updateCondition失敗 (継続):', e?.message)
       }
     }
 
