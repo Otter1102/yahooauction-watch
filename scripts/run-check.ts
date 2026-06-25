@@ -73,10 +73,9 @@ function groupConditions(conditions: SearchCondition[]): ConditionGroup[] {
   return Array.from(map.values())
 }
 
-// GitHub Actions はVercelのCPUコスト制限がないため、Yahoo検索結果を深くページングする。
-// 120ページ = 最大6000件。途中でYahoo結果が尽きたらそこで停止する。
-// 実測: Coach/2万円以下/終了24h以内は90ページ(4200件)で終端。
-const GH_FETCH_PAGES = 120
+// 定期巡回は1時間以内に確実に終えるため、GitHub Actionsでは最大40ページに抑える。
+// 40ページ = 最大2000件/検索。条件作成・手動API側の深掘り上限は別途 scraper.ts で維持する。
+const GH_FETCH_PAGES = Math.max(1, Number.parseInt(process.env.GH_FETCH_PAGES ?? '40', 10) || 40)
 const SEND_NO_ITEMS_PUSH = process.env.SEND_NO_ITEMS_PUSH === 'true'
 const FORCE_CHECK_COMPLETE_PUSH = process.env.FORCE_CHECK_COMPLETE_PUSH === 'true'
 const CHECK_SHARD_TOTAL = Math.max(1, Number.parseInt(process.env.CHECK_SHARD_TOTAL ?? '1', 10) || 1)

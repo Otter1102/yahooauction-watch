@@ -80,7 +80,7 @@ describe('通知送信の回帰防止', () => {
     expect(workflow).toContain("cron: '7,22,37,52 * * * *'")
     expect(runCheck).toContain('canSendCheckCompleteThisHour')
     expect(runCheck).toContain('チェック完了Pushは50分以内に送信済み')
-    expect(runCheck).toContain('GH_FETCH_PAGES = 120')
+    expect(runCheck).toContain("process.env.GH_FETCH_PAGES ?? '40'")
     expect(runCheck).toContain('CHECK_SHARD_TOTAL')
     expect(runCheck).toContain('stringShard')
     expect(runCheck).toContain('検索グループ単位')
@@ -139,8 +139,10 @@ describe('通知送信の回帰防止', () => {
     expect(backupWorkflow).toContain('yahoo-auction-watch-check')
     expect(backupWorkflow).toContain("SEND_NO_ITEMS_PUSH: 'true'")
     expect(backupWorkflow).toContain('CHECK_SHARD_INDEX')
+    expect(backupWorkflow).toContain("GH_FETCH_PAGES: '40'")
     expect(workflow).toContain('shard: [0, 1, 2, 3]')
     expect(workflow).toContain('CHECK_SHARD_TOTAL')
+    expect(workflow).toContain("GH_FETCH_PAGES: '40'")
   })
 
   it('商品がなくても条件チェック履歴を残す', () => {

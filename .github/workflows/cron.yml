@@ -70,6 +70,7 @@ jobs:
           FORCE_CHECK_COMPLETE_PUSH: ${{ github.event.inputs.force_check_complete || 'false' }}
           CHECK_SHARD_INDEX: ${{ matrix.shard }}
           CHECK_SHARD_TOTAL: '4'
+          GH_FETCH_PAGES: '40'
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           GMAIL_NOTIFY_TO: ${{ secrets.GMAIL_NOTIFY_TO }}
