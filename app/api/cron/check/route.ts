@@ -193,19 +193,40 @@ async function processUsers(
 async function cleanupEndedAuctionsFromHistory(): Promise<void> {
   const supabase = getSupabaseAdmin()
   const now = Date.now()
+  const nowIso = new Date(now).toISOString()
 
-  // ハードカットオフ: 25時間超は Yahoo確認なしで即削除（確実に終了済み）
-  const hardCutoff = new Date(now - 25 * 60 * 60 * 1000).toISOString()
-  await supabase.from('notification_history').delete().lt('notified_at', hardCutoff)
-  await supabase.from('notified_items').delete().lt('notified_at', hardCutoff)
+  // end_at がある履歴は、終了時刻を過ぎた時点で即削除。
+  const { data: endedRows } = await supabase
+    .from('notification_history')
+    .select('id, auction_id, user_id')
+    .not('end_at', 'is', null)
+    .lte('end_at', nowIso)
+    .limit(1000)
 
-  const softCutoff = new Date(now - 60 * 1000).toISOString()
+  if (endedRows?.length) {
+    await supabase
+      .from('notification_history')
+      .delete()
+      .in('id', endedRows.map(row => row.id as string))
+
+    for (const row of endedRows) {
+      await supabase
+        .from('notified_items')
+        .delete()
+        .eq('user_id', row.user_id as string)
+        .eq('auction_id', row.auction_id as string)
+    }
+    console.log(`[cron] 終了時刻超過オークション ${endedRows.length}件を削除`)
+  }
+
+  // end_at がない旧履歴だけYahoo確認で削除する。
+  const softCutoff = new Date(now).toISOString()
   const { data: items } = await supabase
     .from('notification_history')
     .select('id, auction_id, user_id')
+    .is('end_at', null)
     .lt('notified_at', softCutoff)
-    .gte('notified_at', hardCutoff)
-    .limit(20)
+    .limit(100)
 
   if (!items?.length) return
 

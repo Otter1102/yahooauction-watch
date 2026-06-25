@@ -104,10 +104,13 @@ describe('通知送信の回帰防止', () => {
     const historyRoute = readSource('app/api/history/route.ts')
     const storage = readSource('lib/storage.ts')
     const runCheck = readSource('scripts/run-check.ts')
+    const cronRoute = readSource('app/api/cron/check/route.ts')
 
     expect(historyRoute).toContain('cleanupEndedHistoryForUser(userId)')
     expect(storage).toContain('cleanupEndedHistoryForUser')
     expect(storage).toContain(".lte('end_at', nowIso)")
     expect(runCheck).toContain('終了時刻超過オークション')
+    expect(cronRoute).toContain('終了時刻超過オークション')
+    expect(cronRoute).toContain(".lte('end_at', nowIso)")
   })
 })
