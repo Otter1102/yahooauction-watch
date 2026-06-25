@@ -6,6 +6,11 @@ on:
     # scripts/run-check.ts 側でチェック完了通知はユーザーごとに50分1回へ抑制する。
     - cron: '7,22,37,52 * * * *'
   workflow_dispatch:           # 手動実行ボタン
+    inputs:
+      force_check_complete:
+        description: 'チェック完了通知の50分抑制を解除して送る'
+        required: false
+        default: 'false'
 
 concurrency:
   group: yahoo-auction-watch-check
@@ -58,6 +63,7 @@ jobs:
           VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY }}
           VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
           SEND_NO_ITEMS_PUSH: 'true'
+          FORCE_CHECK_COMPLETE_PUSH: ${{ github.event.inputs.force_check_complete || 'false' }}
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           GMAIL_NOTIFY_TO: ${{ secrets.GMAIL_NOTIFY_TO }}

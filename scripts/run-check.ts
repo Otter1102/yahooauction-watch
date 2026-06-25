@@ -77,6 +77,7 @@ function groupConditions(conditions: SearchCondition[]): ConditionGroup[] {
 // Vercel route.ts は FETCH_PAGES=3 のまま維持（コスト削減のため）
 const GH_FETCH_PAGES = 10
 const SEND_NO_ITEMS_PUSH = process.env.SEND_NO_ITEMS_PUSH === 'true'
+const FORCE_CHECK_COMPLETE_PUSH = process.env.FORCE_CHECK_COMPLETE_PUSH === 'true'
 
 async function fetchWithRetry(key: RssKey, retries = 2, startOffset = 1): Promise<AuctionItem[]> {
   for (let i = 0; i <= retries; i++) {
@@ -304,10 +305,13 @@ async function main() {
       }
 
       if (SEND_NO_ITEMS_PUSH) {
-        const shouldSendCheckComplete = await canSendCheckCompleteThisHour(userId)
+        const shouldSendCheckComplete = FORCE_CHECK_COMPLETE_PUSH || await canSendCheckCompleteThisHour(userId)
         if (!shouldSendCheckComplete) {
           console.log(`  ↪️ [${userId.slice(0,8)}] チェック完了Pushは50分以内に送信済みのためスキップ`)
           return
+        }
+        if (FORCE_CHECK_COMPLETE_PUSH) {
+          console.log(`  🔁 [${userId.slice(0,8)}] 手動実行のためチェック完了Push抑制を解除`)
         }
         const freshCount = items?.length ?? 0
         const fetchFailedCount = failedFetchByUser.get(userId) ?? 0
