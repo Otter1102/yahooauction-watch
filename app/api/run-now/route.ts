@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getConditions, getNotifiedIds, markNotified, addHistory, updateCondition } from '@/lib/storage'
+import { getConditions, getNotifiedIds, markNotified, addHistory, updateCondition, updateHistorySnapshot } from '@/lib/storage'
 import { getSupabaseAdmin } from '@/lib/supabase'
 import { fetchAuctionRssWithMeta, fetchAuctionRssSimple } from '@/lib/scraper'
 import { notifyUserSummary } from '@/lib/notifier'
@@ -22,6 +22,22 @@ type FetchResult = {
   xmlPreview?: string
   simpleCount?: number
   priceWarning: boolean
+}
+
+function toHistoryRecord(userId: string, cond: SearchCondition, item: AuctionItem) {
+  return {
+    userId,
+    conditionId: cond.id,
+    conditionName: cond.name,
+    auctionId: item.auctionId,
+    title: item.title,
+    price: item.price,
+    url: item.url,
+    imageUrl: item.imageUrl ?? '',
+    notifiedAt: new Date().toISOString(),
+    remaining: item.remaining ?? null,
+    endAt: item.endtimeMs ? new Date(item.endtimeMs).toISOString() : null,
+  }
 }
 
 async function getUser(userId: string): Promise<User | null> {
@@ -73,6 +89,7 @@ export async function POST(req: NextRequest) {
     const notifiedIds = await getNotifiedIds(userId)
     let totalNotified = 0
     type ResultRow = {
+      conditionId: string
       name: string
       fetched: number
       rawCount: number
@@ -122,95 +139,124 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // ── Phase 2 + 3: 条件ごとにフィルター → サマリー通知 ──────────────────────────
-    // manual/cron 共通: 全件を履歴に記録し、最後にサマリーを1通だけ送信
-    // → 同じ商品を何度も通知しない（markNotified を送信前に記録）
+    // ── Phase 2: 条件ごとにフィルター → 通知対象を収集 ──────────────────────────
     const allFreshForSummary: { item: AuctionItem; cond: SearchCondition }[] = []
+    const pendingAuctionIds = new Set<string>()
+    const pendingCountByCondition = new Map<string, number>()
 
     for (const { cond, items, rawCount, rssUrl, httpStatus, xmlPreview, simpleCount, priceWarning } of fetchResults) {
       const minBids = cond.minBids ?? 0
       const maxBids = cond.maxBids ?? null
-      // 新規条件（lastCheckedAt=null）は初回プレビューのため notifiedIds チェックをスキップ
-      const isNewCondition = !cond.lastCheckedAt
-      const afterNotifiedFilter = items.filter(
-        (item: AuctionItem) => isNewCondition || !notifiedIds.has(item.auctionId)
-      )
-      const alreadyNotified = items.length - afterNotifiedFilter.length
-      const afterBidsFilter = afterNotifiedFilter.filter((item: AuctionItem) => {
+      const afterBidsFilter = items.filter((item: AuctionItem) => {
         if (minBids <= 0 && maxBids === null) return true
         if (item.bids === null) return minBids <= 0
         if (minBids > 0 && item.bids < minBids) return false
         if (maxBids !== null && item.bids >= maxBids) return false
         return true
       })
-      const filteredByBids = afterNotifiedFilter.length - afterBidsFilter.length
-      const freshItems = afterBidsFilter.filter((item: AuctionItem) => {
+      const filteredByBids = items.length - afterBidsFilter.length
+      const matchingItems = afterBidsFilter.filter((item: AuctionItem) => {
         if (minBids > 0 && cond.buyItNow === null && item.isBuyItNow === true) return false
         if (cond.buyItNow === null) return true
         if (cond.buyItNow === true) return item.isBuyItNow === true
         return item.isBuyItNow !== true
       })
-      const filteredByFormat = afterBidsFilter.length - freshItems.length
-      let condNotified = 0
+      const filteredByFormat = afterBidsFilter.length - matchingItems.length
+      const freshItems = matchingItems.filter((item: AuctionItem) => !notifiedIds.has(item.auctionId))
+      const alreadyNotified = matchingItems.length - freshItems.length
+      let condPending = 0
       let condRecordErrors = 0
 
-      // ── manual/cron 共通: 新着をサマリー用に収集（通知は後で1回まとめて送信）──
-      // markNotified は送信前に記録する（送信失敗でも次回重複防止）
-      for (const item of freshItems) {
-        if (notifiedIds.has(item.auctionId)) continue
+      // 通知済みの商品は再通知しないが、価格・残り時間・画像は履歴上で最新化する。
+      for (const item of matchingItems) {
+        if (!notifiedIds.has(item.auctionId)) continue
         try {
-          await markNotified(userId, item.auctionId)
-          notifiedIds.add(item.auctionId)
-          await addHistory({
-            userId, conditionId: cond.id, conditionName: cond.name,
-            auctionId: item.auctionId, title: item.title, price: item.price,
-            url: item.url, imageUrl: item.imageUrl ?? '',
-            notifiedAt: new Date().toISOString(), remaining: item.remaining ?? null,
-            endAt: item.endtimeMs ? new Date(item.endtimeMs).toISOString() : null,
-          })
-          allFreshForSummary.push({ item, cond })
-          condNotified++
-          totalNotified++
+          await updateHistorySnapshot(toHistoryRecord(userId, cond, item))
         } catch (e: any) {
           condRecordErrors++
-          console.warn('[run-now] 記録失敗 (継続):', e?.message)
+          console.warn('[run-now] 履歴更新失敗 (継続):', e?.message)
         }
       }
-      if (condRecordErrors > 0) {
-        console.error(`[run-now] 条件"${cond.name}" DB記録失敗 ${condRecordErrors}/${freshItems.length}件 — 重複通知の可能性あり`)
-      }
 
-      try {
-        await updateCondition(cond.id, {
-          lastCheckedAt: new Date().toISOString(),
-          lastFoundCount: items.length,
-        })
-      } catch (e: any) {
-        console.warn('[run-now] updateCondition失敗 (継続):', e?.message)
+      // 新規商品はPush送信が成功するまで notified_items に入れない。
+      // 先に通知済みにすると、Push失敗後も次回以降スキップされて通知が止まる。
+      for (const item of freshItems) {
+        if (pendingAuctionIds.has(item.auctionId)) continue
+        pendingAuctionIds.add(item.auctionId)
+        allFreshForSummary.push({ item, cond })
+        condPending++
+      }
+      if (condPending > 0) {
+        pendingCountByCondition.set(cond.id, condPending)
+      }
+      if (condRecordErrors > 0) {
+        console.error(`[run-now] 条件"${cond.name}" 履歴更新失敗 ${condRecordErrors}/${matchingItems.length}件`)
       }
 
       results.push({
+        conditionId: cond.id,
         name: cond.name, fetched: items.length, rawCount, alreadyNotified,
         filteredByBids, filteredByFormat, newItems: freshItems.length,
-        notified: condNotified, priceWarning, simpleCount, rssUrl, httpStatus, xmlPreview,
+        notified: 0, priceWarning, simpleCount, rssUrl, httpStatus, xmlPreview,
       })
     }
 
     // ── サマリー通知 ──
     if (allFreshForSummary.length > 0) {
       const topItem = allFreshForSummary[0].item
+      let delivered = false
       if (hasPush) {
         try {
-          await sendWebPushSummary(userId, allFreshForSummary.length, topItem, getSupabaseAdmin())
+          delivered = await sendWebPushSummary(userId, allFreshForSummary.length, topItem, getSupabaseAdmin())
         } catch (e: any) {
           console.warn('[run-now] サマリーPush送信失敗 (継続):', e?.message)
         }
       }
       if (user.ntfyTopic || user.discordWebhook) {
         try {
-          await notifyUserSummary(allFreshForSummary.length, user)
+          delivered = (await notifyUserSummary(allFreshForSummary.length, user)) || delivered
         } catch (e: any) {
           console.warn('[run-now] ntfy/Discordサマリー送信失敗 (継続):', e?.message)
+        }
+      }
+
+      if (delivered) {
+        const notifiedByCondition = new Map<string, number>()
+        let recordErrors = 0
+        for (const { item, cond } of allFreshForSummary) {
+          if (notifiedIds.has(item.auctionId)) continue
+          try {
+            await addHistory(toHistoryRecord(userId, cond, item))
+            await markNotified(userId, item.auctionId)
+            notifiedIds.add(item.auctionId)
+            notifiedByCondition.set(cond.id, (notifiedByCondition.get(cond.id) ?? 0) + 1)
+            totalNotified++
+          } catch (e: any) {
+            recordErrors++
+            console.warn('[run-now] 通知後記録失敗 (継続):', e?.message)
+          }
+        }
+        if (recordErrors > 0) {
+          console.error(`[run-now] 通知後記録失敗 ${recordErrors}/${allFreshForSummary.length}件`)
+        }
+        for (const row of results) {
+          row.notified = notifiedByCondition.get(row.conditionId) ?? 0
+        }
+      } else {
+        console.warn(`[run-now] 通知送信失敗: ${allFreshForSummary.length}件は notified_items に記録せず次回再試行`)
+      }
+    }
+
+    for (const { cond, items } of fetchResults) {
+      const pending = pendingCountByCondition.get(cond.id) ?? 0
+      if (pending > 0 || items.length !== (cond.lastFoundCount ?? -1)) {
+        try {
+          await updateCondition(cond.id, {
+            lastCheckedAt: new Date().toISOString(),
+            lastFoundCount: items.length,
+          })
+        } catch (e: any) {
+          console.warn('[run-now] updateCondition失敗 (継続):', e?.message)
         }
       }
     }

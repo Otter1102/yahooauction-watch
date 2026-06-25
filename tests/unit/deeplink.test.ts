@@ -52,12 +52,12 @@ describe('isValidAuctionId', () => {
 describe('URL生成', () => {
   it('yahuoku:// スキームを正しく生成', () => {
     expect(toYahuokuScheme(VALID_ID))
-      .toBe(`yahuoku://jp.yahoo.auctions.item/v1/auction?id=${VALID_ID}`)
+      .toBe(`yahuoku://item?id=${VALID_ID}`)
   })
 
   it('ブラウザ版URLを正しく生成', () => {
     expect(toAuctionBrowserUrl(VALID_ID))
-      .toBe(`https://auctions.yahoo.co.jp/auction/${VALID_ID}`)
+      .toBe(`https://page.auctions.yahoo.co.jp/jp/auction/${VALID_ID}#safari`)
   })
 })
 

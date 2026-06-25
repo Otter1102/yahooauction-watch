@@ -6,10 +6,10 @@ import webpush from 'web-push'
 export const runtime = 'nodejs'
 
 export async function POST(req: NextRequest) {
-  const { userId } = await req.json().catch(() => ({}))
+  const { userId, delayMs } = await req.json().catch(() => ({}))
   if (!userId) return NextResponse.json({ error: 'Missing userId' }, { status: 400 })
 
-  if (!checkRateLimit(`push-test:${userId}`, 3, 60_000)) {
+  if (!checkRateLimit(`push-test:${userId}`, 20, 60_000)) {
     return NextResponse.json({ ok: false, debug: 'Too many requests' }, { status: 429 })
   }
 
@@ -36,16 +36,30 @@ export async function POST(req: NextRequest) {
   if (!sub?.endpoint) {
     return NextResponse.json({ ok: false, debug: 'No subscription found. 設定ページで通知を再設定してください。' })
   }
+  const endpointHost = (() => {
+    try { return new URL(sub.endpoint).hostname } catch { return 'invalid-endpoint' }
+  })()
 
   try {
+    const safeDelayMs = Math.max(0, Math.min(Number(delayMs || 0), 5000))
+    if (safeDelayMs > 0) {
+      await new Promise(resolve => setTimeout(resolve, safeDelayMs))
+    }
+    const testId = `test-${Date.now()}`
+    const timeLabel = new Date().toLocaleTimeString('ja-JP', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      timeZone: 'Asia/Tokyo',
+    })
     webpush.setVapidDetails(`mailto:admin@${new URL(APP_URL).hostname}`, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY)
-    await webpush.sendNotification(
+    const sendResult = await webpush.sendNotification(
       { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
       JSON.stringify({
-        title:     'テスト通知 ✓',
+        title:     `テスト通知 ✓ ${timeLabel}`,
         body:      'ヤフオクwatchが正常に動作しています',
         url:       '/',
-        auctionId: 'test',
+        auctionId: testId,
       }),
       {
         urgency: 'high',
@@ -56,7 +70,21 @@ export async function POST(req: NextRequest) {
         },
       },
     )
-    return NextResponse.json({ ok: true })
+    const statusCode = sendResult?.statusCode ?? 0
+    console.log('[push/test] accepted:', {
+      statusCode,
+      endpointHost,
+      testId,
+      userId: userId.slice(0, 8),
+    })
+    return NextResponse.json({
+      ok: true,
+      accepted: statusCode >= 200 && statusCode < 300,
+      statusCode,
+      endpointHost,
+      testId,
+      debug: `Pushサービス受理: status=${statusCode || 'unknown'} host=${endpointHost} id=${testId}`,
+    })
   } catch (err: any) {
     const status = err?.statusCode
     const body   = JSON.stringify(err?.body ?? err?.message)
@@ -67,11 +95,16 @@ export async function POST(req: NextRequest) {
       await supabase.from('users').update({ push_sub: null }).eq('id', userId)
       return NextResponse.json({
         ok: false,
-        debug: '通知の登録が期限切れです。設定ページで「このブラウザで通知を受け取る」を再度タップしてください。',
+        debug: `通知の登録が期限切れです。endpoint=${endpointHost}`,
         expired: true,
       })
     }
 
-    return NextResponse.json({ ok: false, debug: `Push error: status=${status} body=${body}` })
+    return NextResponse.json({
+      ok: false,
+      debug: `Push error: status=${status} endpoint=${endpointHost} body=${body}`,
+      statusCode: status ?? null,
+      endpointHost,
+    })
   }
 }

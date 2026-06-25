@@ -145,6 +145,17 @@ export default function ConditionForm({ userId, condition, isDuplicate, existing
         try { msg = (await res.json()).error ?? msg } catch {}
         throw new Error(msg)
       }
+      const data = await res.json().catch(() => null)
+      if (data?.initialCheck) {
+        const check = data.initialCheck
+        if (check.ok && check.recorded > 0) {
+          window.alert(`取得完了しました。該当オークション${check.recorded}件を通知履歴に反映しました。`)
+        } else if (check.ok && check.recorded === 0) {
+          window.alert('条件を保存しました。現時点の該当オークションはありません。新しく条件に合う商品が出たら通知します。')
+        } else {
+          window.alert('条件は保存しましたが、初回取得に失敗しました。次回の自動チェックで再取得します。')
+        }
+      }
       onSave()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'エラーが発生しました')
@@ -186,7 +197,7 @@ export default function ConditionForm({ userId, condition, isDuplicate, existing
           background: 'var(--card)',
           borderRadius: '20px 20px 0 0',
           zIndex: 200,
-          maxHeight: '96dvh',
+          maxHeight: 'calc(100dvh - env(safe-area-inset-top, 0px) - 16px)',
           display: 'flex',
           flexDirection: 'column',
           animation: 'slideUp 0.28s ease',
@@ -225,7 +236,7 @@ export default function ConditionForm({ userId, condition, isDuplicate, existing
         </div>
 
         {/* ── スクロール可能なフォーム本体 ── */}
-        <div style={{ overflowY: 'auto', flex: 1, padding: '16px 20px 4px', WebkitOverflowScrolling: 'touch' } as React.CSSProperties}>
+        <div style={{ overflowY: 'auto', flex: 1, padding: '16px 20px calc(20px + env(safe-area-inset-bottom, 0px))', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain' } as React.CSSProperties}>
           <form id="condition-form" onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
 
             {/* 基本設定 */}
@@ -411,6 +422,28 @@ export default function ConditionForm({ userId, condition, isDuplicate, existing
                   </div>
                 </div>
 
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="btn-primary"
+                  style={{
+                    opacity: loading ? 0.6 : 1,
+                    minHeight: 52,
+                    fontSize: 15,
+                    lineHeight: 1.2,
+                    whiteSpace: 'normal',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    textAlign: 'center',
+                    marginTop: 2,
+                    marginBottom: 10,
+                    boxShadow: '0 8px 18px rgba(0,153,226,0.22)',
+                  }}
+                >
+                  {loading ? '保存中...' : isDuplicate ? '+ 複製して追加する' : isEdit ? '✓ 変更を保存する' : '+ 条件を追加する'}
+                </button>
+
             </div>
 
             {error && (
@@ -419,27 +452,9 @@ export default function ConditionForm({ userId, condition, isDuplicate, existing
               </div>
             )}
 
-            {/* フォームの末尾に余白（フッターに隠れないよう） */}
-            <div style={{ height: 4 }} />
+            {/* 親指で押しやすいよう、送信ボタン下に画面の約15%ぶん余白を作る */}
+            <div style={{ height: '15dvh', minHeight: 72, maxHeight: 140 }} />
           </form>
-        </div>
-
-        {/* ── 固定フッター（送信ボタン） ── */}
-        <div style={{
-          padding: '12px 20px calc(16px + env(safe-area-inset-bottom, 0px))',
-          borderTop: '1px solid var(--border)',
-          flexShrink: 0,
-          background: 'var(--card)',
-        }}>
-          <button
-            form="condition-form"
-            type="submit"
-            disabled={loading}
-            className="btn-primary"
-            style={{ opacity: loading ? 0.6 : 1 }}
-          >
-            {loading ? '保存中...' : isDuplicate ? '+ 複製して追加する' : isEdit ? '✓ 変更を保存する' : '+ 条件を追加する'}
-          </button>
         </div>
       </div>
 

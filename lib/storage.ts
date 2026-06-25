@@ -7,6 +7,10 @@ import { getSupabaseAdmin } from './supabase'
 const supabaseAdmin = { from: (...args: Parameters<ReturnType<typeof getSupabaseAdmin>['from']>) => getSupabaseAdmin().from(...args) }
 import { SearchCondition, User, NotificationRecord, PushSub } from './types'
 
+function throwOnError(error: { message?: string } | null | undefined, context: string): void {
+  if (error) throw new Error(`[Supabase] ${context}: ${error.message ?? String(error)}`)
+}
+
 // ==================== Users ====================
 
 export async function userExists(userId: string): Promise<boolean> {
@@ -179,16 +183,18 @@ export async function isNotified(userId: string, auctionId: string): Promise<boo
 }
 
 export async function markNotified(userId: string, auctionId: string): Promise<void> {
-  await supabaseAdmin
+  const { error } = await supabaseAdmin
     .from('notified_items')
     .upsert({ user_id: userId, auction_id: auctionId })
+  throwOnError(error, 'notified_items保存エラー')
 }
 
 export async function getNotifiedIds(userId: string): Promise<Set<string>> {
-  const { data } = await supabaseAdmin
+  const { data, error } = await supabaseAdmin
     .from('notified_items')
     .select('auction_id')
     .eq('user_id', userId)
+  throwOnError(error, 'notified_items取得エラー')
   return new Set((data ?? []).map(r => r.auction_id as string))
 }
 
@@ -196,10 +202,11 @@ export async function getNotifiedIds(userId: string): Promise<Set<string>> {
 // 100ユーザーでも getNotifiedIds を100回呼ぶ代わりに1回で済む
 export async function getAllNotifiedIds(userIds: string[]): Promise<Map<string, Set<string>>> {
   if (userIds.length === 0) return new Map()
-  const { data } = await supabaseAdmin
+  const { data, error } = await supabaseAdmin
     .from('notified_items')
     .select('user_id, auction_id')
     .in('user_id', userIds)
+  throwOnError(error, 'notified_items一括取得エラー')
   const map = new Map<string, Set<string>>()
   for (const userId of userIds) map.set(userId, new Set())
   for (const row of data ?? []) {
@@ -209,7 +216,8 @@ export async function getAllNotifiedIds(userIds: string[]): Promise<Map<string, 
 }
 
 export async function clearNotifiedHistory(userId: string): Promise<void> {
-  await supabaseAdmin.from('notified_items').delete().eq('user_id', userId)
+  const { error } = await supabaseAdmin.from('notified_items').delete().eq('user_id', userId)
+  throwOnError(error, 'notified_items削除エラー')
 }
 
 export async function cleanupOldNotified(): Promise<void> {
@@ -217,10 +225,11 @@ export async function cleanupOldNotified(): Promise<void> {
   // 根拠: 通知対象は「残り24時間以内」のオークション → 終了まで最大24h。
   //       終了後12時間 = 最大 notified_at + 36h 後に安全に削除できる。
   const cutoff = new Date(Date.now() - 36 * 60 * 60 * 1000).toISOString()
-  await supabaseAdmin
+  const { error } = await supabaseAdmin
     .from('notified_items')
     .delete()
     .lt('notified_at', cutoff)
+  throwOnError(error, '古いnotified_items削除エラー')
 }
 
 export async function resetStalledNotified(): Promise<string[]> {
@@ -230,28 +239,31 @@ export async function resetStalledNotified(): Promise<string[]> {
   const cutoff48h = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString()
 
   // 48時間以上通知がないユーザーを notification_history から取得
-  const { data: recentUsers } = await supabase
+  const { data: recentUsers, error: recentErr } = await supabase
     .from('notification_history')
     .select('user_id')
     .gte('notified_at', cutoff48h)
+  throwOnError(recentErr, '直近通知履歴取得エラー')
 
   const recentSet = new Set((recentUsers ?? []).map(r => r.user_id as string))
 
   // push_sub を持つ全ユーザーを取得し、各ユーザーの notified_items 件数を count で確認
   // limit(500) では多数のユーザー/商品がいる場合にサイレントに見落とすため、
   // ユーザーごとに count クエリを発行する方式に変更
-  const { data: pushUsers } = await supabase
+  const { data: pushUsers, error: pushErr } = await supabase
     .from('users')
     .select('id')
     .not('push_sub', 'is', null)
+  throwOnError(pushErr, 'push_subユーザー取得エラー')
 
   const counts: Record<string, number> = {}
   await Promise.all(
     (pushUsers ?? []).map(async (u) => {
-      const { count } = await supabase
+      const { count, error } = await supabase
         .from('notified_items')
         .select('*', { count: 'exact', head: true })
         .eq('user_id', u.id)
+      throwOnError(error, 'ユーザー別notified_items件数取得エラー')
       if ((count ?? 0) >= 20) counts[u.id] = count!
     })
   )
@@ -262,7 +274,8 @@ export async function resetStalledNotified(): Promise<string[]> {
     .map(([uid]) => uid)
 
   for (const uid of stalledUsers) {
-    await supabase.from('notified_items').delete().eq('user_id', uid)
+    const { error } = await supabase.from('notified_items').delete().eq('user_id', uid)
+    throwOnError(error, '停滞ユーザーnotified_itemsリセットエラー')
     console.log(`[自己修復] userId=${uid.slice(0,8)}... の notified_items をリセット (${counts[uid]}件削除)`)
   }
 
@@ -291,8 +304,10 @@ export async function cleanupOldHistory(): Promise<void> {
 
 // ==================== History ====================
 
-export async function addHistory(record: Omit<NotificationRecord, 'id'>): Promise<void> {
-  await supabaseAdmin.from('notification_history').insert({
+type HistoryInput = Omit<NotificationRecord, 'id'>
+
+function historyRow(record: HistoryInput, refreshNotifiedAt: boolean): Record<string, unknown> {
+  const row: Record<string, unknown> = {
     user_id: record.userId,
     condition_id: record.conditionId,
     condition_name: record.conditionName,
@@ -301,10 +316,55 @@ export async function addHistory(record: Omit<NotificationRecord, 'id'>): Promis
     price: record.price,
     url: record.url,
     image_url: record.imageUrl ?? null,
-    notified_at: record.notifiedAt,
     remaining: record.remaining ?? null,
     end_at: record.endAt ?? null,
-  })
+  }
+  if (refreshNotifiedAt) row.notified_at = record.notifiedAt
+  return row
+}
+
+async function upsertHistory(record: HistoryInput, refreshNotifiedAt: boolean): Promise<void> {
+  const { data: existing, error: selectErr } = await supabaseAdmin
+    .from('notification_history')
+    .select('id')
+    .eq('user_id', record.userId)
+    .eq('auction_id', record.auctionId)
+    .order('notified_at', { ascending: false })
+    .limit(20)
+  throwOnError(selectErr, 'notification_history取得エラー')
+
+  const rows = existing ?? []
+  if (rows.length > 0) {
+    const keepId = rows[0].id as string
+    const { error: updateErr } = await supabaseAdmin
+      .from('notification_history')
+      .update(historyRow(record, refreshNotifiedAt))
+      .eq('id', keepId)
+    throwOnError(updateErr, 'notification_history更新エラー')
+
+    const duplicateIds = rows.slice(1).map(r => r.id as string)
+    if (duplicateIds.length > 0) {
+      const { error: deleteErr } = await supabaseAdmin
+        .from('notification_history')
+        .delete()
+        .in('id', duplicateIds)
+      throwOnError(deleteErr, 'notification_history重複削除エラー')
+    }
+    return
+  }
+
+  const { error: insertErr } = await supabaseAdmin
+    .from('notification_history')
+    .insert(historyRow(record, true))
+  throwOnError(insertErr, 'notification_history保存エラー')
+}
+
+export async function addHistory(record: HistoryInput): Promise<void> {
+  await upsertHistory(record, true)
+}
+
+export async function updateHistorySnapshot(record: HistoryInput): Promise<void> {
+  await upsertHistory(record, false)
 }
 
 export async function getHistory(userId: string, limit = 200): Promise<NotificationRecord[]> {
@@ -314,7 +374,14 @@ export async function getHistory(userId: string, limit = 200): Promise<Notificat
     .eq('user_id', userId)
     .order('notified_at', { ascending: false })
     .limit(limit)
-  return (data ?? []).map(r => ({
+  const seen = new Set<string>()
+  return (data ?? []).filter(r => {
+    const auctionId = r.auction_id as string
+    if (!auctionId) return true
+    if (seen.has(auctionId)) return false
+    seen.add(auctionId)
+    return true
+  }).map(r => ({
     id: r.id as string,
     userId: r.user_id as string,
     conditionId: r.condition_id as string,
@@ -326,5 +393,6 @@ export async function getHistory(userId: string, limit = 200): Promise<Notificat
     imageUrl: (r.image_url as string) ?? '',
     notifiedAt: r.notified_at as string,
     remaining: (r.remaining as string) ?? null,
+    endAt: (r.end_at as string) ?? null,
   }))
 }

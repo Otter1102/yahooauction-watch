@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseAdmin } from '@/lib/supabase'
-import { updateCondition, deleteCondition } from '@/lib/storage'
+import { updateCondition, deleteCondition, getConditions } from '@/lib/storage'
 import { rateGuard } from '@/lib/apiGuard'
+import { runInitialConditionCheck } from '@/lib/initial-check'
 
 /** conditionId が userId のものか確認 */
 async function verifyOwnership(conditionId: string, userId: string): Promise<boolean> {
@@ -35,7 +36,11 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     }
 
     await updateCondition(params.id, updates)
-    return NextResponse.json({ ok: true })
+    const condition = (await getConditions(userId)).find(c => c.id === params.id)
+    const initialCheck = condition
+      ? await runInitialConditionCheck(userId, condition)
+      : { ok: false, matched: 0, recorded: 0, notified: false, debug: '更新後の条件取得に失敗しました' }
+    return NextResponse.json({ ok: true, initialCheck })
   } catch (e) {
     console.error('[PUT /api/conditions/[id]]', e)
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })

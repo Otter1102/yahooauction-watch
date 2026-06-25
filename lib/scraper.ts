@@ -46,7 +46,7 @@ const YAHOO_HEADERS: Record<string, string> = {
 // ============================================================
 
 /** Yahoo Auctions 検索URLを構築する */
-function buildSearchUrl(key: RssKey, offset: number): string {
+export function buildSearchUrl(key: RssKey, offset: number): string {
   // キーワード正規化:
   //   1. "miu miu"（スペース含む）→ "ミュウミュウ"
   //      理由: Yahoo検索でスペース区切りはOR区切り扱いになり "miu miu" → "miu" のみ検索
@@ -74,8 +74,11 @@ function buildSearchUrl(key: RssKey, offset: number): string {
   }
 
   // 出品者タイプ
-  if (key.sellerType === 'store')      params.seller  = '1'
-  else if (key.sellerType === 'individual') params.auctype = '1'
+  // 2026-06-24確認: Yahoo検索画面の現行リンクは
+  //   ストア: abatch=1 / 個人: abatch=2,3
+  // 旧 seller/auctype パラメータは検索結果に反映されない。
+  if (key.sellerType === 'store') params.abatch = '1'
+  else if (key.sellerType === 'individual') params.abatch = '2,3'
 
   // 商品状態
   if (key.itemCondition === 'new')  params.istatus = '1'

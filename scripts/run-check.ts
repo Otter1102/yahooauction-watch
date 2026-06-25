@@ -6,7 +6,7 @@
  * 実行: npx tsx scripts/run-check.ts
  * 環境変数: NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_KEY
  */
-import { getAllEnabledConditions, getAllNotifiedIds, markNotified, addHistory, updateCondition, cleanupOldNotified, cleanupOldHistory, resetStalledNotified } from '../lib/storage'
+import { getAllEnabledConditions, getAllNotifiedIds, markNotified, addHistory, updateCondition, cleanupOldNotified, cleanupOldHistory, resetStalledNotified, updateHistorySnapshot } from '../lib/storage'
 import { fetchAuctionRss, checkAuctionEnded } from '../lib/scraper'
 import { sendWebPushSummary } from '../lib/webpush'
 import { sendAdminErrorAlert } from '../lib/emailer'
@@ -16,6 +16,23 @@ import { User, SearchCondition, AuctionItem } from '../lib/types'
 
 type RssKey = Pick<SearchCondition, 'keyword' | 'maxPrice' | 'minPrice' | 'minBids' | 'sellerType' | 'itemCondition' | 'sortBy' | 'sortOrder' | 'buyItNow'>
 interface ConditionGroup { key: RssKey; conditions: SearchCondition[] }
+type PendingNotification = { item: AuctionItem; cond: SearchCondition }
+
+function toHistoryRecord(cond: SearchCondition, item: AuctionItem) {
+  return {
+    userId: cond.userId,
+    conditionId: cond.id,
+    conditionName: cond.name,
+    auctionId: item.auctionId,
+    title: item.title,
+    price: item.price,
+    url: item.url,
+    imageUrl: item.imageUrl ?? '',
+    notifiedAt: new Date().toISOString(),
+    remaining: item.remaining ?? null,
+    endAt: item.endtimeMs ? new Date(item.endtimeMs).toISOString() : null,
+  }
+}
 
 async function getAllUsers(userIds: string[]): Promise<Map<string, User>> {
   const { data } = await supabaseAdmin
@@ -114,6 +131,14 @@ async function main() {
   const activeConditions = allConditions
   console.log(`処理対象条件: ${activeConditions.length}件（うち通知可能ユーザー: ${pushUserIds.size}人）`)
 
+  // 自己修復は通知判定前に実行する。
+  // 通知送信後に実行すると、直前に通知したユーザーの notified_items を誤って消し、
+  // 次回以降の重複通知・判定乱れにつながる。
+  const stalledUsers = await resetStalledNotified()
+  if (stalledUsers.length > 0) {
+    console.log(`[自己修復] ${stalledUsers.length}ユーザーの通知ログをリセット`)
+  }
+
   // 通知済みIDを全ユーザー分まとめて1クエリで取得
   // 100ユーザー時でもDBアクセスは1回のみ（スケーラブル設計）
   const activeUserIds = [...new Set(activeConditions.map(c => c.userId))]
@@ -126,7 +151,7 @@ async function main() {
 
   let totalNotified = 0
   // ユーザーごとの新着アイテム収集（メインループ後にサマリー1回で通知）
-  const pendingByUser = new Map<string, AuctionItem[]>()
+  const pendingByUser = new Map<string, PendingNotification[]>()
 
   // 並列でRSSフェッチ（10並列）
   // GitHub Actions: GH_FETCH_PAGES=10 ページ取得（b=1〜451 = 最大500件）
@@ -169,32 +194,18 @@ async function main() {
         let conditionNotified = 0
         for (const item of candidateItems) {
           // 通知済みチェック: 送信直前にキャッシュを参照（並列グループ間の重複防止）
-          if (notifiedIdsCache.get(cond.userId)?.has(item.auctionId)) continue
+          if (notifiedIdsCache.get(cond.userId)?.has(item.auctionId)) {
+            await updateHistorySnapshot(toHistoryRecord(cond, item))
+            continue
+          }
 
-          // 履歴への記録と通知済みマーク（個別通知はせずサマリー用に収集）
-          await markNotified(cond.userId, item.auctionId)
-          notifiedIdsCache.get(cond.userId)?.add(item.auctionId)
-          await addHistory({
-            userId: cond.userId,
-            conditionId: cond.id,
-            conditionName: cond.name,
-            auctionId: item.auctionId,
-            title: item.title,
-            price: item.price,
-            url: item.url,
-            imageUrl: item.imageUrl ?? '',
-            notifiedAt: new Date().toISOString(),
-            remaining: item.remaining ?? null,
-            endAt: item.endtimeMs ? new Date(item.endtimeMs).toISOString() : null,
-          })
           // サマリー通知用に収集（同一実行内で同一商品の重複を除く）
           if (!pendingByUser.has(cond.userId)) pendingByUser.set(cond.userId, [])
           const alreadyPending = pendingByUser.get(cond.userId)!
-          if (!alreadyPending.some(a => a.auctionId === item.auctionId)) {
-            alreadyPending.push(item)
+          if (!alreadyPending.some(a => a.item.auctionId === item.auctionId)) {
+            alreadyPending.push({ item, cond })
+            conditionNotified++
           }
-          conditionNotified++
-          totalNotified++
         }
 
         // 変化があった時のみ更新（DB帯域節約: 変化なし=スキップで月間UPDATE数を大幅削減）
@@ -226,8 +237,21 @@ async function main() {
     await Promise.all(batch.map(async (userId) => {
       const items = pendingByUser.get(userId)
       if (items && items.length > 0) {
-        await sendWebPushSummary(userId, items.length, items[0])
-        console.log(`  📨 [${userId.slice(0,8)}] 新着${items.length}件 通知`)
+        const delivered = await sendWebPushSummary(userId, items.length, items[0].item)
+        if (!delivered) {
+          console.warn(`  ⚠️ [${userId.slice(0,8)}] Push失敗: ${items.length}件は通知済みにせず次回再試行`)
+          return
+        }
+        let marked = 0
+        for (const { item, cond } of items) {
+          if (notifiedIdsCache.get(userId)?.has(item.auctionId)) continue
+          await addHistory(toHistoryRecord(cond, item))
+          await markNotified(userId, item.auctionId)
+          notifiedIdsCache.get(userId)?.add(item.auctionId)
+          marked++
+        }
+        totalNotified += marked
+        console.log(`  📨 [${userId.slice(0,8)}] 新着${marked}件 通知`)
       }
     }))
   }
@@ -239,12 +263,6 @@ async function main() {
 
   // ─── end_at なし旧レコードのYahoo確認クリーンアップ（安全網）───
   await cleanupEndedAuctions()
-
-  // ─── 自己修復: 48時間通知なし + 20件溜まりユーザーをリセット ───
-  const stalledUsers = await resetStalledNotified()
-  if (stalledUsers.length > 0) {
-    console.log(`[自己修復] ${stalledUsers.length}ユーザーの通知ログをリセット`)
-  }
 
   // ─── 幽霊ユーザー削除（通知設定なし + 14日以上経過）───
   const ghostCount = await cleanupGhostUsers()

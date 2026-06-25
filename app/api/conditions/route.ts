@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getConditions, createCondition } from '@/lib/storage'
 import { getIp, rateGuard } from '@/lib/apiGuard'
+import { runInitialConditionCheck } from '@/lib/initial-check'
 
 export async function GET(req: NextRequest) {
   try {
@@ -73,7 +74,8 @@ export async function POST(req: NextRequest) {
       buyItNow: buyItNow === null || buyItNow === undefined ? null : Boolean(buyItNow),
       enabled: true,
     })
-    return NextResponse.json(condition, { status: 201 })
+    const initialCheck = await runInitialConditionCheck(userId, condition)
+    return NextResponse.json({ ...condition, initialCheck }, { status: 201 })
   } catch (e) {
     console.error('[POST /api/conditions]', e)
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })

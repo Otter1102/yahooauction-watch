@@ -3,8 +3,8 @@ import { getSupabaseAdmin } from './supabase'
 import type { AuctionItem, PushSub } from './types'
 
 // VAPID鍵は URL safe Base64（パディング `=` なし）が必須
-const VAPID_PUBLIC_KEY  = (process.env.VAPID_PUBLIC_KEY  ?? '').replace(/=+$/, '')
-const VAPID_PRIVATE_KEY = (process.env.VAPID_PRIVATE_KEY ?? '').replace(/=+$/, '')
+const VAPID_PUBLIC_KEY  = (process.env.VAPID_PUBLIC_KEY  ?? '').trim().replace(/=+$/, '')
+const VAPID_PRIVATE_KEY = (process.env.VAPID_PRIVATE_KEY ?? '').trim().replace(/=+$/, '')
 const APP_URL           = process.env.NEXT_PUBLIC_APP_URL ?? 'https://yahooauction-watch.vercel.app'
 
 export function getVapidPublicKey(): string {
@@ -106,6 +106,44 @@ export async function sendWebPushSummary(
   })
 
   console.log(`  📱 SummaryPush [${userId.slice(0, 8)}] ${count}件 → ${result}`)
+
+  if (result === 'expired') {
+    await supabaseAdmin.from('users').update({ push_sub: null }).eq('id', userId)
+  }
+
+  return result === 'ok'
+}
+
+/** 条件追加直後の初回取得完了プッシュ */
+export async function sendWebPushInitialFetch(
+  userId: string,
+  count: number,
+  conditionName: string,
+  topItem: AuctionItem,
+  supabaseAdmin = getSupabaseAdmin(),
+): Promise<boolean> {
+  const { data } = await supabaseAdmin
+    .from('users')
+    .select('push_sub')
+    .eq('id', userId)
+    .single()
+
+  const sub = data?.push_sub as PushSub | null
+  if (!sub?.endpoint) return false
+
+  const title = `ヤフオクwatch — 取得完了しました`
+  const body = `${conditionName} の該当オークション${count}件を通知履歴に反映しました`
+
+  const result = await sendToSub(sub, {
+    title,
+    body,
+    url: APP_URL + '/history',
+    imageUrl: topItem.imageUrl ?? null,
+    auctionId: topItem.auctionId,
+    auctionUrl: topItem.url,
+  })
+
+  console.log(`  📱 InitialFetchPush [${userId.slice(0, 8)}] ${count}件 → ${result}`)
 
   if (result === 'expired') {
     await supabaseAdmin.from('users').update({ push_sub: null }).eq('id', userId)

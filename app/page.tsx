@@ -1,10 +1,10 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { SearchCondition } from '@/lib/types'
-import { getDeviceFingerprint, IS_TRIAL } from '@/lib/fingerprint'
 import ConditionCard from '@/components/ConditionCard'
 import ConditionForm from '@/components/ConditionForm'
 import OnboardingGuide from '@/components/OnboardingGuide'
+import { ensurePushSubscription } from '@/lib/push-client'
 
 function getUserId(): string {
   if (typeof window === 'undefined') return ''
@@ -13,41 +13,10 @@ function getUserId(): string {
   return id
 }
 
-function urlBase64ToUint8Array(base64: string): ArrayBuffer {
-  const padding = '='.repeat((4 - (base64.length % 4)) % 4)
-  const b64 = (base64 + padding).replace(/-/g, '+').replace(/_/g, '/')
-  const raw = atob(b64)
-  const arr = new Uint8Array(raw.length)
-  for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i)
-  return arr.buffer
-}
-
 /** push_sub が切れていた場合に通知許可済みなら自動で再購読する（ユーザー操作不要） */
 async function tryAutoResubscribe(userId: string): Promise<boolean> {
-  try {
-    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return false
-    if (Notification.permission !== 'granted') return false
-    const { publicKey } = await fetch('/api/push/vapid-key').then(r => r.json())
-    if (!publicKey) return false
-    const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' })
-    await navigator.serviceWorker.ready
-    const sub = await reg.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(publicKey),
-    })
-    const j = sub.toJSON()
-    await fetch('/api/push/subscribe', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId, endpoint: j.endpoint, p256dh: j.keys?.p256dh, auth: j.keys?.auth, deviceFingerprint: getDeviceFingerprint(), isTrial: IS_TRIAL }),
-    })
-    await fetch('/api/settings', {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId, notificationChannel: 'webpush' }),
-    })
-    return true
-  } catch {
-    return false
-  }
+  const result = await ensurePushSubscription(userId)
+  return result.ok
 }
 
 
@@ -81,7 +50,6 @@ export default function Dashboard() {
   const [notifyReady, setNotifyReady] = useState(false)
   const [pushLost, setPushLost] = useState(false)
   const [duplicatingCondition, setDuplicatingCondition] = useState<SearchCondition | null>(null)
-  const [checking, setChecking] = useState(false)
 
   function completeOnboarding() {
     localStorage.setItem('yahoowatch_onboarded', '1')
@@ -152,11 +120,16 @@ export default function Dashboard() {
           const reg = await navigator.serviceWorker.getRegistration('/sw.js')
           const sub = reg ? await reg.pushManager.getSubscription() : null
           const wantsPush = user.hasPush || user.notificationChannel === 'webpush'
-          // ブラウザにsubがない or DBにpush_subがない(失効削除) のどちらでも再購読
+          // ブラウザにsubがない or DBにpush_subがない(失効削除) のどちらでも強制再購読
           const needsResubscribe = wantsPush && (!sub || !user.hasPush)
           if (needsResubscribe) {
             const recovered = await tryAutoResubscribe(id)
-            if (!recovered) setPushLost(true)  // 再購読失敗時のみバナー表示
+            if (recovered) {
+              setNotifyReady(true)
+              setPushLost(false)
+            } else {
+              setPushLost(true)  // 再購読失敗時のみバナー表示
+            }
           }
         } catch { /* 無視 */ }
       }
@@ -174,29 +147,6 @@ export default function Dashboard() {
         try { localStorage.setItem(CONDS_CACHE, JSON.stringify(data)) } catch {}
       }
     } catch { /* ネットワークエラーは無視 */ }
-  }
-
-  // 条件登録・更新・オン復帰時にバックグラウンドで即チェック（合計件数を1通知）
-  function runNow() {
-    if (!userId) return
-    fetch('/api/run-now', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId, manual: true }),
-    }).catch(() => {})
-  }
-
-  async function runNowManual() {
-    if (!userId || checking) return
-    setChecking(true)
-    try {
-      await fetch('/api/run-now', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, manual: true }),
-      })
-    } catch { /* ignore */ }
-    setChecking(false)
   }
 
   useEffect(() => { init() }, [])
@@ -239,20 +189,6 @@ export default function Dashboard() {
                 </p>
               )}
             </div>
-            {notifyReady && activeCount > 0 && (
-              <button
-                onClick={runNowManual}
-                disabled={checking}
-                style={{
-                  background: 'none', border: 'none', padding: '6px 8px',
-                  cursor: checking ? 'wait' : 'pointer', borderRadius: 8,
-                  color: 'var(--accent)', fontSize: 13, fontWeight: 600,
-                  opacity: checking ? 0.5 : 1, fontFamily: 'inherit',
-                }}
-              >
-                {checking ? '確認中...' : '今すぐ確認'}
-              </button>
-            )}
           </div>
         </div>
 
@@ -282,10 +218,15 @@ export default function Dashboard() {
                   boxShadow: 'var(--shadow-sm)',
                 }}>
                   <div>
-                    <p style={{ fontWeight: 600, fontSize: 13, color: 'var(--warning)' }}>通知先が未設定です</p>
-                    <p style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 1, fontWeight: 400 }}>タップして設定する</p>
+                    <p style={{ fontWeight: 700, fontSize: 13, color: 'var(--warning)' }}>通知OFF</p>
+                    <p style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 1, fontWeight: 400 }}>通知オン・ブロック解除はこちら</p>
                   </div>
-                  <span style={{ fontSize: 14, color: 'var(--text-tertiary)' }}>›</span>
+                  <span style={{
+                    height: 32, padding: '0 14px', borderRadius: 16,
+                    background: 'var(--grad-primary)', color: 'white',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 12, fontWeight: 700, flexShrink: 0,
+                  }}>通知オン</span>
                 </div>
               </a>
             )}
@@ -301,10 +242,15 @@ export default function Dashboard() {
                   boxShadow: 'var(--shadow-sm)',
                 }}>
                   <div>
-                    <p style={{ fontWeight: 600, fontSize: 13, color: 'var(--danger)' }}>🔕 通知が途切れています</p>
-                    <p style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 1, fontWeight: 400 }}>タップして通知を再設定する</p>
+                    <p style={{ fontWeight: 700, fontSize: 13, color: 'var(--danger)' }}>🔕 通知が途切れています</p>
+                    <p style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 1, fontWeight: 400 }}>通知オン・再設定はこちら</p>
                   </div>
-                  <span style={{ fontSize: 14, color: 'var(--text-tertiary)' }}>›</span>
+                  <span style={{
+                    height: 32, padding: '0 14px', borderRadius: 16,
+                    background: 'var(--grad-primary)', color: 'white',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 12, fontWeight: 700, flexShrink: 0,
+                  }}>通知オン</span>
                 </div>
               </a>
             )}
@@ -372,7 +318,7 @@ export default function Dashboard() {
                     onChange={() => loadConditions()}
                     onEdit={cond => setEditingCondition(cond)}
                     onDuplicate={cond => { window.scrollTo({ top: 0, behavior: 'smooth' }); setDuplicatingCondition(cond) }}
-                    onEnable={() => runNow()}
+                    onEnable={() => loadConditions()}
                   />
                 ))}
                 {/* 条件追加ボタン（条件がある時も常に表示） */}
@@ -420,7 +366,7 @@ export default function Dashboard() {
       {showForm && userId && (
         <ConditionForm
           userId={userId}
-          onSave={() => { setShowForm(false); loadConditions(); runNow() }}
+          onSave={() => { setShowForm(false); loadConditions() }}
           onClose={() => setShowForm(false)}
         />
       )}
@@ -428,7 +374,7 @@ export default function Dashboard() {
         <ConditionForm
           userId={userId}
           condition={editingCondition}
-          onSave={() => { setEditingCondition(null); loadConditions(); runNow() }}
+          onSave={() => { setEditingCondition(null); loadConditions() }}
           onClose={() => setEditingCondition(null)}
         />
       )}
@@ -438,7 +384,7 @@ export default function Dashboard() {
           condition={duplicatingCondition}
           isDuplicate
           existingConditions={conditions}
-          onSave={() => { setDuplicatingCondition(null); loadConditions(); runNow() }}
+          onSave={() => { setDuplicatingCondition(null); loadConditions() }}
           onClose={() => setDuplicatingCondition(null)}
         />
       )}

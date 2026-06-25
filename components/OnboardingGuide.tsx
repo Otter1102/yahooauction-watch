@@ -1,15 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { getDeviceFingerprint, IS_TRIAL as TRIAL_MODE } from '@/lib/fingerprint'
-
-function urlBase64ToUint8Array(base64: string): ArrayBuffer {
-  const padding = '='.repeat((4 - (base64.length % 4)) % 4)
-  const b64 = (base64 + padding).replace(/-/g, '+').replace(/_/g, '/')
-  const raw = atob(b64)
-  const arr = new Uint8Array(raw.length)
-  for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i)
-  return arr.buffer
-}
+import { ensurePushSubscription } from '@/lib/push-client'
 
 interface Props {
   userId: string
@@ -126,31 +117,8 @@ export default function OnboardingGuide({ userId, onComplete, onOpenConditionFor
     if (!userId) return
     setPushStatus('loading')
     try {
-      const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' })
-      await navigator.serviceWorker.ready
-      const { publicKey } = await fetch('/api/push/vapid-key').then(r => r.json())
-      if (!publicKey) { setPushStatus('idle'); return }
-      const perm = await Notification.requestPermission()
-      if (perm !== 'granted') { setPushStatus('denied'); return }
-      const sub = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(publicKey),
-      })
-      const j = sub.toJSON()
-      const subRes = await fetch('/api/push/subscribe', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, endpoint: j.endpoint, p256dh: j.keys?.p256dh, auth: j.keys?.auth, deviceFingerprint: getDeviceFingerprint(), isTrial: TRIAL_MODE }),
-      })
-      if (!subRes.ok) {
-        const err = await subRes.json().catch(() => ({}))
-        console.error('[Onboarding] subscribe failed:', err)
-        setPushStatus('idle')
-        return
-      }
-      await fetch('/api/settings', {
-        method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, notificationChannel: 'webpush' }),
-      })
+      const result = await ensurePushSubscription(userId, { requestPermission: true })
+      if (!result.ok) { setPushStatus(result.reason === 'unsupported' ? 'unsupported' : 'denied'); return }
       setPushStatus('done')
     } catch (err) {
       console.error('[Onboarding] Push error:', err)

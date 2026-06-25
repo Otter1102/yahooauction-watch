@@ -64,6 +64,9 @@ export default function SettingsPage() {
   const [isStandalone, setIsStandalone] = useState(true)
   const [isIOS, setIsIOS] = useState(false)
   const [showIosInstallGuide, setShowIosInstallGuide] = useState(false)
+  const [pushActionNotice, setPushActionNotice] = useState('')
+  const [resetLoading, setResetLoading] = useState(false)
+  const [resetNotice, setResetNotice] = useState('')
   // ── インストール状態検出 ─────────────────────────────────────────
   useEffect(() => {
     const standalone = ('standalone' in navigator && (navigator as any).standalone === true)
@@ -149,6 +152,7 @@ export default function SettingsPage() {
   async function enablePush() {
     if (!userId) return
     setPushLoading(true)
+    setPushActionNotice('')
     try {
       const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' })
       await navigator.serviceWorker.ready
@@ -156,7 +160,8 @@ export default function SettingsPage() {
       if (!publicKey) { alert('通知サーバーが設定されていません'); setPushLoading(false); return }
       const permission = await Notification.requestPermission()
       if (permission !== 'granted') { setPushState('denied'); setPushLoading(false); return }
-      const sub = await reg.pushManager.subscribe({
+      const currentSub = await reg.pushManager.getSubscription()
+      const sub = currentSub ?? await reg.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(publicKey),
       })
@@ -180,10 +185,22 @@ export default function SettingsPage() {
       }
       setPushState('subscribed')
       setHasPushDB(true)
+      setPushActionNotice('通知ONになりました。テスト通知で届くか確認できます。')
     } catch (err) {
       alert(`通知の設定に失敗しました: ${err}`)
     }
     setPushLoading(false)
+  }
+
+  async function retryEnablePushFromBlocked() {
+    if (typeof window === 'undefined') return
+    setPushActionNotice('')
+    if (Notification.permission === 'denied') {
+      setPushState('denied')
+      setPushActionNotice('まだiPhone側で通知がブロックされています。設定アプリで通知を許可してから、この画面に戻ってください。')
+      return
+    }
+    await enablePush()
   }
 
   // ── Push解除 ─────────────────────────────────────────────────────
@@ -214,7 +231,7 @@ export default function SettingsPage() {
     setTestDebug('')
     setTestExpired(false)
     try {
-      // テスト前にブラウザの購読をDBへ強制同期（auto-sync失敗の保険）
+      // テスト前にブラウザの購読をDBへ同期。既存購読は消さず、iOSで安定していた経路を使う。
       try {
         const reg = await navigator.serviceWorker.getRegistration('/sw.js')
         const sub = reg ? await reg.pushManager.getSubscription() : null
@@ -248,10 +265,38 @@ export default function SettingsPage() {
         }
       }
       setTestState(data.ok ? 'ok' : 'fail')
+      if (data.ok) {
+        setTestDebug(data.debug ?? 'サーバーPush送信完了。')
+      }
       if (data.ok) setTimeout(() => setTestState('idle'), 5000)
     } catch {
       setTestDebug('ネットワークエラー。Wi-Fi/通信を確認してください。')
       setTestState('fail')
+    }
+  }
+
+  async function resetNotifiedItems() {
+    if (!userId || resetLoading) return
+    const ok = window.confirm('通知済みログをリセットします。次回チェックで既存商品も再通知される可能性があります。実行しますか？')
+    if (!ok) return
+    setResetLoading(true)
+    setResetNotice('')
+    try {
+      const res = await fetch('/api/reset-notified', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data.ok) {
+        setResetNotice(data.error ?? 'リセットに失敗しました。時間をおいて再実行してください。')
+        return
+      }
+      setResetNotice('通知済みログをリセットしました。次の自動チェックで再通知されます。')
+    } catch {
+      setResetNotice('ネットワークエラー。通信状態を確認してください。')
+    } finally {
+      setResetLoading(false)
     }
   }
 
@@ -336,8 +381,13 @@ export default function SettingsPage() {
                   {testState === 'loading' ? '⏳ 送信中...' : '🔔 テスト通知を送る'}
                 </button>
                 {testState === 'ok' && (
-                  <div style={{ marginTop: 10, padding: '10px 14px', background: 'rgba(52,199,89,0.08)', borderRadius: 8, fontSize: 13, color: '#1a7a3a', fontWeight: 600, border: '1px solid rgba(52,199,89,0.2)' }}>
+                  <div style={{ marginTop: 10, padding: '10px 14px', background: 'rgba(52,199,89,0.08)', borderRadius: 8, fontSize: 13, color: '#1a7a3a', fontWeight: 600, border: '1px solid rgba(52,199,89,0.2)', lineHeight: 1.6 }}>
                     ✓ 通知を送信しました。スマホに届いたか確認してください
+                    {testDebug && (
+                      <p style={{ marginTop: 6, fontSize: 12, color: '#1a7a3a', fontWeight: 600 }}>
+                        {testDebug}
+                      </p>
+                    )}
                   </div>
                 )}
                 {testState === 'fail' && (
@@ -351,7 +401,7 @@ export default function SettingsPage() {
                       </p>
                     )}
                     <button
-                      onClick={() => { setTestState('idle'); setTestDebug(''); setTestExpired(false); setPushState('idle'); setHasPushDB(false) }}
+                      onClick={() => { setTestState('idle'); setTestDebug(''); setTestExpired(false); setPushState('idle'); setHasPushDB(false); enablePush() }}
                       style={{
                         width: '100%', height: 42,
                         background: 'var(--grad-primary)', border: 'none',
@@ -359,7 +409,7 @@ export default function SettingsPage() {
                         color: 'white', cursor: 'pointer', fontFamily: 'inherit',
                       }}
                     >
-                      🔄 通知を再設定する
+                      🔄 通知を再登録する
                     </button>
                   </div>
                 )}
@@ -399,7 +449,29 @@ export default function SettingsPage() {
                 </div>
               </div>
             )}
-            {pushState === 'denied' && <p style={{ fontSize: 12, color: 'var(--danger)', lineHeight: 1.6, marginLeft: 22 }}>ブラウザの設定から通知を許可してください</p>}
+            {pushState === 'denied' && (
+              <div style={{ marginLeft: 22, marginTop: 8 }}>
+                <p style={{ fontSize: 13, color: 'var(--danger)', lineHeight: 1.7, marginBottom: 10, fontWeight: 700 }}>
+                  通知がブロックされています。先に端末側で通知を許可してください。
+                </p>
+                <div style={{ background: 'rgba(246,104,138,0.06)', borderRadius: 10, padding: '10px 12px', border: '1px solid rgba(246,104,138,0.18)' }}>
+                  {isIOS ? (
+                    <p style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.85, margin: 0 }}>
+                      ① iPhoneの「設定」を開く<br/>
+                      ② 「通知」→「ヤフオクwatch」を選ぶ<br/>
+                      ③ 「通知を許可」をオンにする<br/>
+                      ④ この画面に戻って下の「通知オン」を押す
+                    </p>
+                  ) : (
+                    <p style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.85, margin: 0 }}>
+                      ① ブラウザのアドレスバー左の設定アイコンを押す<br/>
+                      ② 「通知」を「許可」に変更する<br/>
+                      ③ この画面に戻って下の「通知オン」を押す
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
             {pushState === 'unsupported' && <p style={{ fontSize: 12, color: 'var(--text-tertiary)', lineHeight: 1.6, marginLeft: 22 }}>Chrome または Safari 16.4以降でご利用ください</p>}
             {pushState === 'subscribed' && <p style={{ fontSize: 12, color: 'var(--text-tertiary)', lineHeight: 1.6, marginLeft: 22 }}>新着商品が見つかると、このブラウザに通知が届きます</p>}
             {pushState === 'idle' && <p style={{ fontSize: 12, color: 'var(--text-tertiary)', lineHeight: 1.6, marginLeft: 22 }}>下のボタンで通知を有効にしてください</p>}
@@ -407,20 +479,70 @@ export default function SettingsPage() {
 
           {(pushState === 'idle' || pushState === 'unsupported' || pushState === 'denied') && (
             <div style={{ padding: '0 16px 16px' }}>
-              <button onClick={enablePush}
-                disabled={pushLoading || pushState === 'unsupported' || pushState === 'denied'}
+              <button onClick={pushState === 'denied' ? retryEnablePushFromBlocked : () => enablePush()}
+                disabled={pushLoading || pushState === 'unsupported'}
                 style={{
                   width: '100%', height: 44,
-                  background: (pushState === 'unsupported' || pushState === 'denied') ? 'var(--fill)' : 'var(--grad-primary)',
-                  color: (pushState === 'unsupported' || pushState === 'denied') ? 'var(--text-tertiary)' : 'white',
+                  background: pushState === 'unsupported' ? 'var(--fill)' : 'var(--grad-primary)',
+                  color: pushState === 'unsupported' ? 'var(--text-tertiary)' : 'white',
                   border: '1px solid var(--border)', borderRadius: 22, fontSize: 14, fontWeight: 700,
                   cursor: pushLoading ? 'wait' : 'pointer', fontFamily: 'inherit',
                   opacity: pushLoading ? 0.6 : 1,
                 }}>
-                {pushLoading ? '設定中...' : 'このブラウザで通知を受け取る'}
+                {pushLoading ? '設定中...' : '通知オン'}
               </button>
+              {pushActionNotice && (
+                <div style={{
+                  marginTop: 10, padding: '10px 12px',
+                  borderRadius: 10,
+                  border: '1px solid rgba(246,104,138,0.24)',
+                  background: 'rgba(246,104,138,0.07)',
+                  color: 'var(--danger)',
+                  fontSize: 12, fontWeight: 700, lineHeight: 1.65,
+                }}>
+                  {pushActionNotice}
+                </div>
+              )}
+              {pushState === 'denied' && (
+                <p style={{ marginTop: 8, textAlign: 'center', fontSize: 11, color: 'var(--text-tertiary)', lineHeight: 1.6 }}>
+                  端末側で許可に戻したあと、このボタンで再登録します
+                </p>
+              )}
             </div>
           )}
+        </div>
+
+        {/* ━━━ 通知復旧 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+        <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', paddingLeft: 4, marginBottom: 6, letterSpacing: '0.8px', textTransform: 'uppercase' }}>通知復旧</p>
+        <div style={{ background: 'var(--card)', borderRadius: 12, marginBottom: 24, overflow: 'hidden', boxShadow: 'var(--shadow-sm)', border: '1px solid var(--border)' }}>
+          <div style={{ padding: '14px 16px' }}>
+            <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12, lineHeight: 1.6 }}>
+              通知が来ない状態が続く場合、通知済みログをリセットして次回チェックで再通知できるようにします。
+            </p>
+            <button
+              onClick={resetNotifiedItems}
+              disabled={resetLoading}
+              style={{
+                width: '100%', height: 42,
+                background: 'var(--fill)', border: '1px solid var(--border)',
+                borderRadius: 21, fontSize: 13, fontWeight: 700,
+                color: 'var(--text-primary)', cursor: resetLoading ? 'wait' : 'pointer',
+                fontFamily: 'inherit', opacity: resetLoading ? 0.6 : 1,
+              }}
+            >
+              {resetLoading ? 'リセット中...' : '通知ログをリセットする'}
+            </button>
+            {resetNotice && (
+              <p style={{
+                marginTop: 10, padding: '10px 12px', borderRadius: 8,
+                background: resetNotice.includes('しました') ? 'rgba(52,199,89,0.08)' : 'rgba(246,104,138,0.07)',
+                color: resetNotice.includes('しました') ? '#1a7a3a' : 'var(--danger)',
+                fontSize: 12, fontWeight: 700, lineHeight: 1.65,
+              }}>
+                {resetNotice}
+              </p>
+            )}
+          </div>
         </div>
 
       </div>

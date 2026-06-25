@@ -80,3 +80,6 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS is_trial BOOLEAN DEFAULT false;
 ALTER TABLE notification_history ADD COLUMN IF NOT EXISTS end_at TIMESTAMPTZ;
 CREATE INDEX IF NOT EXISTS idx_notification_history_end_at ON notification_history(end_at)
   WHERE end_at IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_notification_history_user_auction_unique
+  ON notification_history(user_id, auction_id)
+  WHERE auction_id IS NOT NULL;

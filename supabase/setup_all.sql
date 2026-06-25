@@ -56,6 +56,7 @@ CREATE TABLE IF NOT EXISTS notification_history (
   url            TEXT,
   image_url      TEXT,
   remaining      TEXT,
+  end_at         TIMESTAMPTZ,
   notified_at    TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -78,6 +79,14 @@ CREATE INDEX IF NOT EXISTS idx_notification_history_user_id
 
 CREATE INDEX IF NOT EXISTS idx_notification_history_notified_at
   ON notification_history(notified_at);
+
+CREATE INDEX IF NOT EXISTS idx_notification_history_end_at
+  ON notification_history(end_at)
+  WHERE end_at IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_notification_history_user_auction_unique
+  ON notification_history(user_id, auction_id)
+  WHERE auction_id IS NOT NULL;
 
 -- ─── Row Level Security（全テーブルで有効化）──────────────
 -- サービスロールキーはRLSをバイパスするため既存の動作は変わらない

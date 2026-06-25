@@ -3,6 +3,8 @@
     "app/api/cron/coordinator/route.ts":   { "maxDuration": 60 },
     "app/api/cron/check/route.ts":         { "maxDuration": 60 },
     "app/api/cron/check/[shard]/route.ts": { "maxDuration": 60 },
+    "app/api/conditions/route.ts":         { "maxDuration": 60 },
+    "app/api/conditions/[id]/route.ts":    { "maxDuration": 60 },
     "app/api/run-now/route.ts":            { "maxDuration": 60 },
     "app/api/run/[id]/route.ts":           { "maxDuration": 60 }
   },

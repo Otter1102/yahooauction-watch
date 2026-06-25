@@ -29,10 +29,10 @@ export async function POST(req: NextRequest) {
 
     if (!items?.length) return NextResponse.json({ deleted: 0 })
 
-    const toDelete: string[] = []
+    const toDelete: Array<{ id: string; auctionId: string }> = []
     for (const item of items) {
       const ended = await checkAuctionEnded(item.auction_id as string)
-      if (ended) toDelete.push(item.id as string)
+      if (ended) toDelete.push({ id: item.id as string, auctionId: item.auction_id as string })
       await new Promise(r => setTimeout(r, 300))
     }
 
@@ -40,7 +40,15 @@ export async function POST(req: NextRequest) {
       await supabase
         .from('notification_history')
         .delete()
-        .in('id', toDelete)
+        .in('id', toDelete.map(item => item.id))
+
+      for (const item of toDelete) {
+        await supabase
+          .from('notified_items')
+          .delete()
+          .eq('user_id', userId)
+          .eq('auction_id', item.auctionId)
+      }
     }
 
     return NextResponse.json({ deleted: toDelete.length })
