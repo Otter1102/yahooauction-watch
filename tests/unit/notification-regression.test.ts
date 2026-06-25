@@ -99,4 +99,15 @@ describe('通知送信の回帰防止', () => {
     expect(settings).toContain('enablePush(true)')
     expect(settings).toContain('通知を再登録する')
   })
+
+  it('通知履歴は終了済みオークションを返却前に削除する', () => {
+    const historyRoute = readSource('app/api/history/route.ts')
+    const storage = readSource('lib/storage.ts')
+    const runCheck = readSource('scripts/run-check.ts')
+
+    expect(historyRoute).toContain('cleanupEndedHistoryForUser(userId)')
+    expect(storage).toContain('cleanupEndedHistoryForUser')
+    expect(storage).toContain(".lte('end_at', nowIso)")
+    expect(runCheck).toContain('終了時刻超過オークション')
+  })
 })

@@ -38,4 +38,12 @@ describe('Yahoo検索URL生成', () => {
     expect(source).toContain('API_FETCH_MAX_PAGES = 120')
     expect(source).toContain('truncated')
   })
+
+  it('通知対象は開催中かつ終了24時間以内に限定する', () => {
+    const source = readFileSync(path.join(root, 'lib/scraper.ts'), 'utf8')
+    expect(source).toContain('開催中 + 24時間以内フィルター')
+    expect(source).toContain('item.endtimeMs !== null')
+    expect(source).toContain('item.endtimeMs > now')
+    expect(source).toContain('item.endtimeMs - now <= HOURS_24')
+  })
 })

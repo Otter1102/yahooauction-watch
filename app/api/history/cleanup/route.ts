@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseAdmin } from '@/lib/supabase'
 import { checkAuctionEnded } from '@/lib/scraper'
 import { rateGuard } from '@/lib/apiGuard'
+import { cleanupEndedHistoryForUser } from '@/lib/storage'
 
 /**
  * POST /api/history/cleanup
@@ -17,17 +18,20 @@ export async function POST(req: NextRequest) {
 
     const supabase = getSupabaseAdmin()
 
-    // 30分以上経過したものを対象（直後の誤削除を防ぐ）
-    const cutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString()
+    const endedAtDeleted = await cleanupEndedHistoryForUser(userId)
+
+    // end_at がない旧データはYahoo確認で削除する。
+    // 履歴を開催中だけに保つため、直近通知でも確認対象にする。
+    const cutoff = new Date().toISOString()
 
     const { data: items } = await supabase
       .from('notification_history')
       .select('id, auction_id')
       .eq('user_id', userId)
       .lt('notified_at', cutoff)
-      .limit(5)
+      .limit(30)
 
-    if (!items?.length) return NextResponse.json({ deleted: 0 })
+    if (!items?.length) return NextResponse.json({ deleted: endedAtDeleted })
 
     const toDelete: Array<{ id: string; auctionId: string }> = []
     for (const item of items) {
@@ -51,7 +55,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({ deleted: toDelete.length })
+    return NextResponse.json({ deleted: endedAtDeleted + toDelete.length })
   } catch {
     return NextResponse.json({ deleted: 0 })
   }

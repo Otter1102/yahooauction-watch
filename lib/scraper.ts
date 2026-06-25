@@ -420,13 +420,16 @@ export async function fetchAuctionRssWithMeta(key: RssKey, maxPages = API_FETCH_
   const { items: allRaw, urls, pages, pagesFetched, exhausted } =
     await fetchAuctionPages(key, 1, maxPages)
 
-  // 24時間フィルター:
-  //   終了まで24時間以上ある商品は除外（ユーザーが余裕を持って入札できる範囲）
-  //   endtimeMs=null の場合は終了時刻不明のため除外しない（安全側に倒す）
+  // 開催中 + 24時間以内フィルター:
+  //   終了済み、即決売切れ等で終了しているものは除外。
+  //   2日以上先は早すぎるため除外。
+  //   endtimeMs=null は開催中判定ができないため除外する。
   const now = Date.now()
   const HOURS_24 = 24 * 60 * 60 * 1_000
   const items = allRaw.filter(item =>
-    item.endtimeMs === null || item.endtimeMs - now <= HOURS_24
+    item.endtimeMs !== null &&
+    item.endtimeMs > now &&
+    item.endtimeMs - now <= HOURS_24
   )
 
   return {

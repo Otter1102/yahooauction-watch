@@ -396,3 +396,37 @@ export async function getHistory(userId: string, limit = 200): Promise<Notificat
     endAt: (r.end_at as string) ?? null,
   }))
 }
+
+export async function cleanupEndedHistoryForUser(userId: string): Promise<number> {
+  const nowIso = new Date().toISOString()
+  let deleted = 0
+
+  const { data: endedRows, error: endedErr } = await supabaseAdmin
+    .from('notification_history')
+    .select('id, auction_id')
+    .eq('user_id', userId)
+    .not('end_at', 'is', null)
+    .lte('end_at', nowIso)
+    .limit(500)
+  throwOnError(endedErr, '終了済みhistory取得エラー')
+
+  if (endedRows?.length) {
+    const ids = endedRows.map(r => r.id as string)
+    const auctionIds = endedRows.map(r => r.auction_id as string)
+    const { error: historyDeleteErr } = await supabaseAdmin
+      .from('notification_history')
+      .delete()
+      .in('id', ids)
+    throwOnError(historyDeleteErr, '終了済みhistory削除エラー')
+
+    const { error: notifiedDeleteErr } = await supabaseAdmin
+      .from('notified_items')
+      .delete()
+      .eq('user_id', userId)
+      .in('auction_id', auctionIds)
+    throwOnError(notifiedDeleteErr, '終了済みnotified_items削除エラー')
+    deleted += ids.length
+  }
+
+  return deleted
+}
