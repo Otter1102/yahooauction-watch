@@ -59,4 +59,16 @@ describe('通知送信の回帰防止', () => {
     expect(source).not.toContain("fetch('/api/run-now'")
     expect(source).not.toContain('runNow()')
   })
+
+  it('テスト期間は新着なし通知を環境変数で有効化できる', () => {
+    const runCheck = readSource('scripts/run-check.ts')
+    const runNow = readSource('app/api/run-now/route.ts')
+    const workflow = readSource('.github/workflows/cron.yml')
+
+    expect(runCheck).toContain('SEND_NO_ITEMS_PUSH')
+    expect(runCheck).toContain('await sendWebPushNoItems(userId)')
+    expect(runNow).toContain('SEND_NO_ITEMS_PUSH')
+    expect(runNow).toContain('await sendWebPushNoItems(userId, getSupabaseAdmin())')
+    expect(workflow).toContain("SEND_NO_ITEMS_PUSH: 'true'")
+  })
 })

@@ -3,13 +3,14 @@ import { getConditions, getNotifiedIds, markNotified, addHistory, updateConditio
 import { getSupabaseAdmin } from '@/lib/supabase'
 import { fetchAuctionRssWithMeta, fetchAuctionRssSimple } from '@/lib/scraper'
 import { notifyUserSummary } from '@/lib/notifier'
-import { sendWebPushSummary } from '@/lib/webpush'
+import { sendWebPushNoItems, sendWebPushSummary } from '@/lib/webpush'
 import { checkRateLimit } from '@/lib/rateLimiter'
 import { User, SearchCondition, AuctionItem } from '@/lib/types'
 
 // 1ユーザーあたり同時に処理する条件数
 // 30条件 ÷ 5 = 6バッチ × ~2s = 12s << USER_TIMEOUT_MS(30s)
 const CONDITION_CONCURRENCY = 5
+const SEND_NO_ITEMS_PUSH = process.env.SEND_NO_ITEMS_PUSH === 'true'
 
 type RssKey = Pick<SearchCondition, 'keyword' | 'maxPrice' | 'minPrice' | 'minBids' | 'sellerType' | 'itemCondition' | 'sortBy' | 'sortOrder' | 'buyItNow'>
 
@@ -202,6 +203,7 @@ export async function POST(req: NextRequest) {
     }
 
     // ── サマリー通知 ──
+    let noItemsNotified = false
     if (allFreshForSummary.length > 0) {
       const topItem = allFreshForSummary[0].item
       let delivered = false
@@ -245,6 +247,12 @@ export async function POST(req: NextRequest) {
       } else {
         console.warn(`[run-now] 通知送信失敗: ${allFreshForSummary.length}件は notified_items に記録せず次回再試行`)
       }
+    } else if (hasPush && SEND_NO_ITEMS_PUSH) {
+      try {
+        noItemsNotified = await sendWebPushNoItems(userId, getSupabaseAdmin())
+      } catch (e: any) {
+        console.warn('[run-now] 新着なしPush送信失敗 (継続):', e?.message)
+      }
     }
 
     for (const { cond, items } of fetchResults) {
@@ -261,7 +269,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({ notified: totalNotified, checked: enabled.length, results })
+    return NextResponse.json({ notified: totalNotified, noItemsNotified, checked: enabled.length, results })
   } catch (e: any) {
     const name = e?.name ?? 'UnknownError'
     const msg  = e?.message ?? String(e)

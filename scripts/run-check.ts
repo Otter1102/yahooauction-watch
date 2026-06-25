@@ -8,7 +8,7 @@
  */
 import { getAllEnabledConditions, getAllNotifiedIds, markNotified, addHistory, updateCondition, cleanupOldNotified, cleanupOldHistory, resetStalledNotified, updateHistorySnapshot } from '../lib/storage'
 import { fetchAuctionRss, checkAuctionEnded } from '../lib/scraper'
-import { sendWebPushSummary } from '../lib/webpush'
+import { sendWebPushNoItems, sendWebPushSummary } from '../lib/webpush'
 import { sendAdminErrorAlert } from '../lib/emailer'
 import { getSupabaseAdmin } from '../lib/supabase'
 const supabaseAdmin = { from: (...args: Parameters<ReturnType<typeof getSupabaseAdmin>['from']>) => getSupabaseAdmin().from(...args) }
@@ -75,6 +75,7 @@ function groupConditions(conditions: SearchCondition[]): ConditionGroup[] {
 // GitHub Actions は Vercel の CPU コスト制限がないため 10 ページ取得（最大 500 件）
 // Vercel route.ts は FETCH_PAGES=3 のまま維持（コスト削減のため）
 const GH_FETCH_PAGES = 10
+const SEND_NO_ITEMS_PUSH = process.env.SEND_NO_ITEMS_PUSH === 'true'
 
 async function fetchWithRetry(key: RssKey, retries = 2, startOffset = 1): Promise<AuctionItem[]> {
   for (let i = 0; i <= retries; i++) {
@@ -228,10 +229,12 @@ async function main() {
     }
   }
 
-  // ─── 通知（新着ありユーザーのみ・10並列で送信）───
-  // 新着あり → Web Push サマリー / 新着なし → 通知しない（毎時間の「なし」通知を廃止）
+  // ─── 通知（10並列で送信）───
+  // 通常: 新着あり → Web Push サマリー / 新着なし → 通知しない。
+  // テスト期間のみ SEND_NO_ITEMS_PUSH=true で新着なし通知も送る。
   const pushActiveUserIds = activeUserIds.filter(id => pushUserIds.has(id))
   const NOTIFY_CONCURRENCY = 10
+  let totalNoItemsNotified = 0
   for (let i = 0; i < pushActiveUserIds.length; i += NOTIFY_CONCURRENCY) {
     const batch = pushActiveUserIds.slice(i, i + NOTIFY_CONCURRENCY)
     await Promise.all(batch.map(async (userId) => {
@@ -252,6 +255,14 @@ async function main() {
         }
         totalNotified += marked
         console.log(`  📨 [${userId.slice(0,8)}] 新着${marked}件 通知`)
+      } else if (SEND_NO_ITEMS_PUSH) {
+        const delivered = await sendWebPushNoItems(userId)
+        if (delivered) {
+          totalNoItemsNotified++
+          console.log(`  📨 [${userId.slice(0,8)}] 新着なし通知`)
+        } else {
+          console.warn(`  ⚠️ [${userId.slice(0,8)}] 新着なしPush失敗`)
+        }
       }
     }))
   }
@@ -270,7 +281,7 @@ async function main() {
     console.log(`[幽霊ユーザー] ${ghostCount}件削除（通知設定なし+14日経過）`)
   }
 
-  console.log(`\n=== 完了: 合計${totalNotified}件通知 ===\n`)
+  console.log(`\n=== 完了: 合計${totalNotified}件通知 / 新着なし通知${totalNoItemsNotified}件 ===\n`)
 }
 
 /** end_at なし旧レコードを Yahoo 確認して削除する安全網（1run あたり最大20件） */
