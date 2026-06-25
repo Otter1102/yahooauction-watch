@@ -79,6 +79,13 @@ function groupConditions(conditions: SearchCondition[]): ConditionGroup[] {
 const GH_FETCH_PAGES = 120
 const SEND_NO_ITEMS_PUSH = process.env.SEND_NO_ITEMS_PUSH === 'true'
 const FORCE_CHECK_COMPLETE_PUSH = process.env.FORCE_CHECK_COMPLETE_PUSH === 'true'
+const CHECK_SHARD_TOTAL = Math.max(1, Number.parseInt(process.env.CHECK_SHARD_TOTAL ?? '1', 10) || 1)
+const CHECK_SHARD_INDEX = Math.max(0, Number.parseInt(process.env.CHECK_SHARD_INDEX ?? '0', 10) || 0)
+
+function userShard(userId: string, totalShards: number): number {
+  const hex = userId.replace(/-/g, '').slice(-4)
+  return Number.parseInt(hex || '0', 16) % totalShards
+}
 
 async function fetchWithRetry(key: RssKey, retries = 2, startOffset = 1): Promise<AuctionItem[]> {
   for (let i = 0; i <= retries; i++) {
@@ -142,6 +149,11 @@ async function main() {
       await new Promise(r => setTimeout(r, 30_000))
     }
   }
+  if (CHECK_SHARD_TOTAL > 1) {
+    allConditions = allConditions.filter(c => userShard(c.userId, CHECK_SHARD_TOTAL) === CHECK_SHARD_INDEX)
+    console.log(`シャード: ${CHECK_SHARD_INDEX + 1}/${CHECK_SHARD_TOTAL}`)
+  }
+
   console.log(`対象条件: ${allConditions.length}件`)
   if (allConditions.length === 0) { console.log('条件なし。終了。'); return }
 
@@ -190,9 +202,9 @@ async function main() {
   // GitHub Actions: GH_FETCH_PAGES=120ページまで終端探索（最大6000件）
   // → 人気キーワードで深いページにある入札あり商品も拾う
   // → 深いページングのため、Yahoo側にブロックされないよう検索単位の並列数は抑える
-  const CONCURRENCY = 3
-  for (let i = 0; i < groups.length; i += CONCURRENCY) {
-    const batch = groups.slice(i, i + CONCURRENCY)
+  const FETCH_CONCURRENCY = CHECK_SHARD_TOTAL > 1 ? 1 : 3
+  for (let i = 0; i < groups.length; i += FETCH_CONCURRENCY) {
+    const batch = groups.slice(i, i + FETCH_CONCURRENCY)
     await Promise.all(batch.map(async (group) => {
       let items: AuctionItem[] = []
       try {
@@ -273,7 +285,7 @@ async function main() {
     }))
 
     // バッチ間の待機（Yahoo RSS への負荷分散）
-    if (i + CONCURRENCY < groups.length) {
+    if (i + FETCH_CONCURRENCY < groups.length) {
       await new Promise(r => setTimeout(r, 1000))
     }
   }

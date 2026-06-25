@@ -81,6 +81,8 @@ describe('通知送信の回帰防止', () => {
     expect(runCheck).toContain('canSendCheckCompleteThisHour')
     expect(runCheck).toContain('チェック完了Pushは50分以内に送信済み')
     expect(runCheck).toContain('GH_FETCH_PAGES = 120')
+    expect(runCheck).toContain('CHECK_SHARD_TOTAL')
+    expect(runCheck).toContain('userShard')
     expect(runCheck).toContain('上限到達')
     expect(webpush).toContain('取得完了: 新着')
     expect(webpush).toContain('取得できませんでした')
@@ -130,10 +132,14 @@ describe('通知送信の回帰防止', () => {
 
   it('GitHub schedule抜け対策としてバックアップworkflowも定期実行する', () => {
     const backupWorkflow = readSource('.github/workflows/cron-backup.yml')
+    const workflow = readSource('.github/workflows/cron.yml')
 
     expect(backupWorkflow).toContain("cron: '2,17,32,47 * * * *'")
     expect(backupWorkflow).toContain('yahoo-auction-watch-check')
     expect(backupWorkflow).toContain("SEND_NO_ITEMS_PUSH: 'true'")
+    expect(backupWorkflow).toContain('CHECK_SHARD_INDEX')
+    expect(workflow).toContain('shard: [0, 1, 2, 3]')
+    expect(workflow).toContain('CHECK_SHARD_TOTAL')
   })
 
   it('商品がなくても条件チェック履歴を残す', () => {
