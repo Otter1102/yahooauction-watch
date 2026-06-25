@@ -26,12 +26,14 @@ describe('通知送信の回帰防止', () => {
     const addHistory = source.indexOf('await addHistory(toHistoryRecord(cond, item))')
     const markNotified = source.indexOf('await markNotified(userId, item.auctionId)')
     const retryWarning = source.indexOf('通知済みにせず次回再試行')
+    const recordRetryWarning = source.indexOf('未記録分は次回再試行')
 
     expect(deliveryCheck).toBeGreaterThan(-1)
     expect(markNotified).toBeGreaterThan(deliveryCheck)
     expect(addHistory).toBeGreaterThan(deliveryCheck)
     expect(markNotified).toBeGreaterThan(addHistory)
     expect(retryWarning).toBeGreaterThan(-1)
+    expect(recordRetryWarning).toBeGreaterThan(-1)
   })
 
   it('GitHub Actions run-check は自己修復を通知判定前に実行する', () => {

@@ -246,15 +246,24 @@ async function main() {
           return
         }
         let marked = 0
+        let recordErrors = 0
         for (const { item, cond } of items) {
           if (notifiedIdsCache.get(userId)?.has(item.auctionId)) continue
-          await addHistory(toHistoryRecord(cond, item))
-          await markNotified(userId, item.auctionId)
-          notifiedIdsCache.get(userId)?.add(item.auctionId)
-          marked++
+          try {
+            await addHistory(toHistoryRecord(cond, item))
+            await markNotified(userId, item.auctionId)
+            notifiedIdsCache.get(userId)?.add(item.auctionId)
+            marked++
+          } catch (e: any) {
+            recordErrors++
+            console.warn(`  ⚠️ [${userId.slice(0,8)}] 通知後記録失敗:`, e?.message ?? e)
+          }
         }
         totalNotified += marked
         console.log(`  📨 [${userId.slice(0,8)}] 新着${marked}件 通知`)
+        if (recordErrors > 0) {
+          console.error(`  ⚠️ [${userId.slice(0,8)}] 通知後記録失敗 ${recordErrors}/${items.length}件（未記録分は次回再試行）`)
+        }
       } else if (SEND_NO_ITEMS_PUSH) {
         const delivered = await sendWebPushNoItems(userId)
         if (delivered) {
