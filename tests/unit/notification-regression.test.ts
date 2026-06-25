@@ -77,7 +77,10 @@ describe('通知送信の回帰防止', () => {
     expect(runNow).toContain('fetchFailedCount')
     expect(workflow).toContain("SEND_NO_ITEMS_PUSH: 'true'")
     expect(workflow).toContain('force_check_complete')
-    expect(workflow).toContain("cron: '7 * * * *'")
+    expect(workflow).toContain('stamp_last_checked_only')
+    expect(workflow).toContain('scripts/stamp-last-checked.ts')
+    expect(workflow).toContain("cron: '7 22,23 * * *'")
+    expect(workflow).toContain("cron: '7 0-15 * * *'")
     expect(runCheck).toContain('canSendCheckCompleteThisHour')
     expect(runCheck).toContain('チェック完了Pushは50分以内に送信済み')
     expect(runCheck).toContain("process.env.GH_FETCH_PAGES ?? '40'")
@@ -131,21 +134,26 @@ describe('通知送信の回帰防止', () => {
     expect(runNow).not.toContain('items.length !== (cond.lastFoundCount ?? -1)')
   })
 
-  it('GitHub schedule抜け対策としてバックアップworkflowも定期実行する', () => {
+  it('GitHub scheduleは深夜停止し、バックアップworkflowは手動専用にする', () => {
     const backupWorkflow = readSource('.github/workflows/cron-backup.yml')
     const workflow = readSource('.github/workflows/cron.yml')
+    const conditionCard = readSource('components/ConditionCard.tsx')
 
-    expect(backupWorkflow).toContain("cron: '37 * * * *'")
+    expect(backupWorkflow).not.toContain('schedule:')
+    expect(backupWorkflow).toContain('workflow_dispatch')
     expect(backupWorkflow).toContain('yahoo-auction-watch-check')
     expect(backupWorkflow).toContain("SEND_NO_ITEMS_PUSH: 'true'")
     expect(backupWorkflow).toContain("GH_FETCH_PAGES: '40'")
     expect(backupWorkflow).not.toContain('CHECK_SHARD_INDEX')
     expect(backupWorkflow).not.toContain('matrix:')
-    expect(workflow).toContain("cron: '7 * * * *'")
+    expect(workflow).toContain("cron: '7 22,23 * * *'")
+    expect(workflow).toContain("cron: '7 0-15 * * *'")
     expect(workflow).toContain("GH_FETCH_PAGES: '40'")
     expect(workflow).toContain("SUPABASE_FETCH_TIMEOUT_MS: '60000'")
     expect(workflow).not.toContain('CHECK_SHARD_INDEX')
     expect(workflow).not.toContain('matrix:')
+    expect(conditionCard).toContain("hourCycle: 'h23'")
+    expect(conditionCard).toContain("timeZone: 'Asia/Tokyo'")
   })
 
   it('商品がなくても条件チェック履歴を残す', () => {

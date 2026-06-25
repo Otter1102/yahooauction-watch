@@ -15,6 +15,17 @@ const SELLER_LABEL: Record<SearchCondition['sellerType'], string>    = { all: ''
 const ITEM_LABEL:   Record<SearchCondition['itemCondition'], string> = { all: '', new: '新品', used: '中古' }
 const SORT_LABEL:   Record<SearchCondition['sortBy'], string>        = { endTime: '終了順', bids: '入札数', price: '価格順' }
 
+function formatLastChecked(value: string): string {
+  return new Intl.DateTimeFormat('ja-JP', {
+    timeZone: 'Asia/Tokyo',
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).format(new Date(value))
+}
+
 export default function ConditionCard({ condition, userId, onChange, onEdit, onDuplicate, onEnable }: Props) {
   const [toggling, setToggling] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -55,7 +66,7 @@ export default function ConditionCard({ condition, userId, onChange, onEdit, onD
   }
 
   const lastChecked = condition.lastCheckedAt
-    ? new Date(condition.lastCheckedAt).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+    ? formatLastChecked(condition.lastCheckedAt)
     : null
 
   const tags: string[] = []

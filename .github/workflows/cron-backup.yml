@@ -1,10 +1,7 @@
 name: ヤフオクwatch バックアップチェック
 
 on:
-  schedule:
-    # プライマリ schedule がGitHub側で抜けることがあるため、別workflowでも起動候補を置く。
-    # scripts/run-check.ts 側でチェック完了通知はユーザーごとに50分1回へ抑制する。
-    - cron: '37 * * * *'
+  # 通常巡回は cron.yml に一本化。DB負荷を避けるためバックアップは手動実行専用。
   workflow_dispatch:
 
 concurrency:
