@@ -85,7 +85,7 @@ describe('通知送信の回帰防止', () => {
     expect(runCheck).toContain('stringShard')
     expect(runCheck).toContain('検索グループ単位')
     expect(runCheck).toContain('上限到達')
-    expect(webpush).toContain('取得完了: 新着')
+    expect(webpush).toContain('新着はありませんでした')
     expect(webpush).toContain('取得できませんでした')
   })
 
@@ -138,11 +138,13 @@ describe('通知送信の回帰防止', () => {
     expect(backupWorkflow).toContain("cron: '2,17,32,47 * * * *'")
     expect(backupWorkflow).toContain('yahoo-auction-watch-check')
     expect(backupWorkflow).toContain("SEND_NO_ITEMS_PUSH: 'true'")
-    expect(backupWorkflow).toContain('CHECK_SHARD_INDEX')
     expect(backupWorkflow).toContain("GH_FETCH_PAGES: '40'")
-    expect(workflow).toContain('shard: [0, 1, 2, 3]')
-    expect(workflow).toContain('CHECK_SHARD_TOTAL')
+    expect(backupWorkflow).not.toContain('CHECK_SHARD_INDEX')
+    expect(backupWorkflow).not.toContain('matrix:')
+    expect(workflow).toContain("cron: '7,22,37,52 * * * *'")
     expect(workflow).toContain("GH_FETCH_PAGES: '40'")
+    expect(workflow).not.toContain('CHECK_SHARD_INDEX')
+    expect(workflow).not.toContain('matrix:')
   })
 
   it('商品がなくても条件チェック履歴を残す', () => {
@@ -159,5 +161,6 @@ describe('通知送信の回帰防止', () => {
     expect(runNow).toContain('addConditionCheckHistory(cond')
     expect(historyPage).toContain('条件チェック')
     expect(webpush).toContain('新着はありませんでした')
+    expect(storage).toContain(".not('auction_id', 'like', '__check_%')")
   })
 })

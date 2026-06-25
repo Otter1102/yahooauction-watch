@@ -242,6 +242,7 @@ export async function resetStalledNotified(): Promise<string[]> {
   const { data: recentUsers, error: recentErr } = await supabase
     .from('notification_history')
     .select('user_id')
+    .not('auction_id', 'like', '__check_%')
     .gte('notified_at', cutoff48h)
   throwOnError(recentErr, '直近通知履歴取得エラー')
 
