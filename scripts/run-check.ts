@@ -7,7 +7,7 @@
  * 環境変数: NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_KEY
  */
 import { getAllEnabledConditions, getAllNotifiedIds, markNotified, addHistory, updateCondition, cleanupOldNotified, cleanupOldHistory, resetStalledNotified, updateHistorySnapshot } from '../lib/storage'
-import { fetchAuctionRss, checkAuctionEnded } from '../lib/scraper'
+import { fetchAuctionRssWithMeta, checkAuctionEnded } from '../lib/scraper'
 import { sendWebPushCheckComplete, sendWebPushSummary } from '../lib/webpush'
 import { sendAdminErrorAlert } from '../lib/emailer'
 import { getSupabaseAdmin } from '../lib/supabase'
@@ -73,15 +73,18 @@ function groupConditions(conditions: SearchCondition[]): ConditionGroup[] {
   return Array.from(map.values())
 }
 
-// GitHub Actions は Vercel の CPU コスト制限がないため 10 ページ取得（最大 500 件）
-// Vercel route.ts は FETCH_PAGES=3 のまま維持（コスト削減のため）
-const GH_FETCH_PAGES = 10
+// GitHub Actions はVercelのCPUコスト制限がないため、Yahoo検索結果を深くページングする。
+// 120ページ = 最大6000件。途中でYahoo結果が尽きたらそこで停止する。
+// 実測: Coach/2万円以下/終了24h以内は90ページ(4200件)で終端。
+const GH_FETCH_PAGES = 120
 const SEND_NO_ITEMS_PUSH = process.env.SEND_NO_ITEMS_PUSH === 'true'
 const FORCE_CHECK_COMPLETE_PUSH = process.env.FORCE_CHECK_COMPLETE_PUSH === 'true'
 
 async function fetchWithRetry(key: RssKey, retries = 2, startOffset = 1): Promise<AuctionItem[]> {
   for (let i = 0; i <= retries; i++) {
-    const items = await fetchAuctionRss(key, startOffset, GH_FETCH_PAGES)
+    const meta = await fetchAuctionRssWithMeta(key, GH_FETCH_PAGES)
+    const items = meta.items
+    console.log(`  📄 [${key.keyword}] ページ取得: ${meta.pagesFetched}p / raw ${meta.rawCount}件 / 24h ${items.length}件${meta.truncated ? ' / 上限到達' : ''}`)
     if (items.length > 0 || i === retries) return items
     await new Promise(r => setTimeout(r, 2000))
   }
@@ -183,11 +186,11 @@ async function main() {
   const pendingByUser = new Map<string, PendingNotification[]>()
   const failedFetchByUser = new Map<string, number>()
 
-  // 並列でRSSフェッチ（10並列）
-  // GitHub Actions: GH_FETCH_PAGES=10 ページ取得（b=1〜451 = 最大500件）
-  // → Vercel route は CPU コスト制限で FETCH_PAGES=3 のままだが、GitHub Actions は制限なし
-  // → 人気キーワードで4ページ目以降の商品（残り8〜24h）も確実に取得できる
-  const CONCURRENCY = 10
+  // 並列でRSSフェッチ（3並列）
+  // GitHub Actions: GH_FETCH_PAGES=120ページまで終端探索（最大6000件）
+  // → 人気キーワードで深いページにある入札あり商品も拾う
+  // → 深いページングのため、Yahoo側にブロックされないよう検索単位の並列数は抑える
+  const CONCURRENCY = 3
   for (let i = 0; i < groups.length; i += CONCURRENCY) {
     const batch = groups.slice(i, i + CONCURRENCY)
     await Promise.all(batch.map(async (group) => {

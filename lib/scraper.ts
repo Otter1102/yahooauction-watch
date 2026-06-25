@@ -326,40 +326,99 @@ async function fetchPage(url: string): Promise<{
 // Public API（run-now/route.ts と scripts/run-check.ts から使用）
 // ============================================================
 
-// 1回の検索で取得するページ数（b=1〜b=151 の3ページ並列 = 最大150件）
-// 【2026-04-19 変更: 10→3】
-//   理由: Vercel Fluid Active CPU 無料枠(4時間/月)を超過したため。
-//   10ページ×8シャード×144サイクル/日 → CPU枠を1日で消費していた。
-//   aucend=1（24時間以内）+ sortBy=endTime ASC の組み合わせでは
-//   終了間近の商品が1〜3ページ目に集中するため、3ページで実用上の網羅性は保てる。
-//   仮に3ページ目以降に新着があっても次のcron実行（最大30分後）で補足できる。
-const FETCH_PAGES = 3
+// 1ページあたり50件。Yahoo検索結果をページングし、短いページ/空ページで終端判定する。
+const PAGE_SIZE = 50
+
+// Vercel API Routes 用の安全上限。条件作成直後/手動チェックでも、従来の3ページ固定ではなく
+// 最大120ページ(6000件)まで終端探索する。
+// 実測: Coach/2万円以下/終了24h以内は90ページ(4200件)で終端。40ページでは取りこぼす。
+const API_FETCH_MAX_PAGES = 120
+const PAGE_BATCH_SIZE = 3
+
+function isLastSearchPage(itemsOnPage: number): boolean {
+  return itemsOnPage < PAGE_SIZE
+}
+
+function effectiveFetchKey(key: RssKey): RssKey {
+  // 入札件数条件がある場合、終了順の深いページに入札あり商品が埋もれる。
+  // 取得時だけ「入札数が多い順」に寄せることで、条件一致候補を浅いページで網羅しやすくする。
+  if ((key.minBids ?? 0) > 0 && key.sortBy !== 'bids') {
+    return { ...key, sortBy: 'bids', sortOrder: 'desc' }
+  }
+  return key
+}
+
+function shouldStopBidSortedPage(key: RssKey, items: AuctionItem[]): boolean {
+  const minBids = key.minBids ?? 0
+  if (minBids <= 0 || key.sortBy !== 'bids' || items.length === 0) return false
+  // 入札数降順なので、このページに minBids 以上の商品が無ければ以降のページも条件外。
+  return !items.some(item => (item.bids ?? 0) >= minBids)
+}
+
+async function fetchAuctionPages(
+  key: RssKey,
+  startOffset: number,
+  maxPages: number,
+): Promise<{
+  items: AuctionItem[]
+  urls: string[]
+  pages: Awaited<ReturnType<typeof fetchPage>>[]
+  pagesFetched: number
+  exhausted: boolean
+}> {
+  const seen = new Set<string>()
+  const items: AuctionItem[] = []
+  const urls: string[] = []
+  const pages: Awaited<ReturnType<typeof fetchPage>>[] = []
+  let exhausted = false
+  const searchKey = effectiveFetchKey(key)
+
+  for (let pageStart = 0; pageStart < maxPages; pageStart += PAGE_BATCH_SIZE) {
+    const batchSize = Math.min(PAGE_BATCH_SIZE, maxPages - pageStart)
+    const batchUrls = Array.from({ length: batchSize }, (_, i) =>
+      buildSearchUrl(searchKey, startOffset + (pageStart + i) * PAGE_SIZE)
+    )
+    const batchPages = await Promise.all(batchUrls.map(url => fetchPage(url)))
+    urls.push(...batchUrls)
+    pages.push(...batchPages)
+
+    for (const page of batchPages) {
+      for (const item of page.items) {
+        if (!seen.has(item.auctionId)) {
+          seen.add(item.auctionId)
+          items.push(item)
+        }
+      }
+    }
+
+    if (
+      batchPages.some(page => page.httpStatus === 200 && isLastSearchPage(page.items.length)) ||
+      batchPages.some(page => page.httpStatus === 200 && shouldStopBidSortedPage(searchKey, page.items))
+    ) {
+      exhausted = true
+      break
+    }
+  }
+
+  return { items, urls, pages, pagesFetched: pages.length, exhausted }
+}
 
 /**
- * Vercel API Routes 用: FETCH_PAGES（3ページ）+ メタデータ付き
- * b=1〜b=101 の3ページを並列取得（最大150件）
- * ⚠️ Vercel Fluid CPU コスト削減のため 10→3 ページに削減済み（2026-04-19）
+ * Vercel API Routes 用: 最大120ページまで終端探索 + メタデータ付き
+ * b=1〜 をページングし、Yahoo側の検索結果が尽きるまで取得する（安全上限6000件）。
  */
-export async function fetchAuctionRssWithMeta(key: RssKey): Promise<{
+export async function fetchAuctionRssWithMeta(key: RssKey, maxPages = API_FETCH_MAX_PAGES): Promise<{
   items:      AuctionItem[]
   url:        string
   httpStatus: number
   rawCount:   number
   xmlPreview: string
+  pagesFetched: number
+  exhausted: boolean
+  truncated: boolean
 }> {
-  const urls = Array.from({ length: FETCH_PAGES }, (_, i) => buildSearchUrl(key, 1 + i * 50))
-  const pages = await Promise.all(urls.map(url => fetchPage(url)))
-
-  const seen  = new Set<string>()
-  const allRaw: AuctionItem[] = []
-  for (const page of pages) {
-    for (const item of page.items) {
-      if (!seen.has(item.auctionId)) {
-        seen.add(item.auctionId)
-        allRaw.push(item)
-      }
-    }
-  }
+  const { items: allRaw, urls, pages, pagesFetched, exhausted } =
+    await fetchAuctionPages(key, 1, maxPages)
 
   // 24時間フィルター:
   //   終了まで24時間以上ある商品は除外（ユーザーが余裕を持って入札できる範囲）
@@ -373,9 +432,12 @@ export async function fetchAuctionRssWithMeta(key: RssKey): Promise<{
   return {
     items,
     url:        urls[0],
-    httpStatus: pages[0].httpStatus,
+    httpStatus: pages[0]?.httpStatus ?? 0,
     rawCount:   allRaw.length,
-    xmlPreview: pages[0].rawHtml.slice(0, 500),
+    xmlPreview: pages[0]?.rawHtml.slice(0, 500) ?? '',
+    pagesFetched,
+    exhausted,
+    truncated: !exhausted && pagesFetched >= maxPages,
   }
 }
 
@@ -398,23 +460,11 @@ export async function fetchAuctionRssSimple(
 
 /**
  * GitHub Actions スクリプト用: AuctionItem[] を直接返す
- * maxPages を指定可能（デフォルト=FETCH_PAGES=3）
- * GitHub Actions では maxPages=10 等を指定してコスト制限なしで広範囲を取得できる
+ * maxPages を指定可能（デフォルト=API_FETCH_MAX_PAGES=120）
+ * GitHub Actions でも同じ終端探索を使う
  */
-export async function fetchAuctionRss(key: RssKey, startOffset = 1, maxPages = FETCH_PAGES): Promise<AuctionItem[]> {
-  const urls = Array.from({ length: maxPages }, (_, i) => buildSearchUrl(key, startOffset + i * 50))
-  const pages = await Promise.all(urls.map(url => fetchPage(url)))
-
-  const seen  = new Set<string>()
-  const items: AuctionItem[] = []
-  for (const page of pages) {
-    for (const item of page.items) {
-      if (!seen.has(item.auctionId)) {
-        seen.add(item.auctionId)
-        items.push(item)
-      }
-    }
-  }
+export async function fetchAuctionRss(key: RssKey, startOffset = 1, maxPages = API_FETCH_MAX_PAGES): Promise<AuctionItem[]> {
+  const { items } = await fetchAuctionPages(key, startOffset, maxPages)
   return items
 }
 

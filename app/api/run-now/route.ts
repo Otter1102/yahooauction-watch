@@ -21,6 +21,8 @@ type FetchResult = {
   rssUrl?: string
   httpStatus?: number
   xmlPreview?: string
+  pagesFetched?: number
+  truncated?: boolean
   simpleCount?: number
   priceWarning: boolean
 }
@@ -104,6 +106,8 @@ export async function POST(req: NextRequest) {
       rssUrl?: string
       httpStatus?: number
       xmlPreview?: string
+      pagesFetched?: number
+      truncated?: boolean
     }
     const results: ResultRow[] = []
     let fetchFailedCount = 0
@@ -120,13 +124,13 @@ export async function POST(req: NextRequest) {
             itemCondition: cond.itemCondition ?? 'all', sortBy: cond.sortBy ?? 'endTime',
             sortOrder: cond.sortOrder ?? 'asc', buyItNow: cond.buyItNow,
           }
-          const { items, url: rssUrl, httpStatus, rawCount, xmlPreview } = await fetchAuctionRssWithMeta(key)
+          const { items, url: rssUrl, httpStatus, rawCount, xmlPreview, pagesFetched, truncated } = await fetchAuctionRssWithMeta(key)
           let simpleCount: number | undefined
           if (rawCount === 0) {
             simpleCount = await fetchAuctionRssSimple(cond.keyword, cond.maxPrice, cond.minPrice)
           }
           return {
-            cond, items, rawCount, rssUrl, httpStatus, xmlPreview, simpleCount,
+            cond, items, rawCount, rssUrl, httpStatus, xmlPreview, pagesFetched, truncated, simpleCount,
             priceWarning: cond.minPrice > 0 && cond.minPrice >= cond.maxPrice,
           }
         })
@@ -147,7 +151,7 @@ export async function POST(req: NextRequest) {
     const pendingAuctionIds = new Set<string>()
     const pendingCountByCondition = new Map<string, number>()
 
-    for (const { cond, items, rawCount, rssUrl, httpStatus, xmlPreview, simpleCount, priceWarning } of fetchResults) {
+    for (const { cond, items, rawCount, rssUrl, httpStatus, xmlPreview, pagesFetched, truncated, simpleCount, priceWarning } of fetchResults) {
       const minBids = cond.minBids ?? 0
       const maxBids = cond.maxBids ?? null
       const afterBidsFilter = items.filter((item: AuctionItem) => {
@@ -201,6 +205,7 @@ export async function POST(req: NextRequest) {
         name: cond.name, fetched: items.length, rawCount, alreadyNotified,
         filteredByBids, filteredByFormat, newItems: freshItems.length,
         notified: 0, priceWarning, simpleCount, rssUrl, httpStatus, xmlPreview,
+        pagesFetched, truncated,
       })
     }
 

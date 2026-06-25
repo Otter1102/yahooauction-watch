@@ -12,6 +12,8 @@ export type InitialConditionCheckResult = {
   recorded: number
   notified: boolean
   rawCount?: number
+  pagesFetched?: number
+  truncated?: boolean
   httpStatus?: number
   rssUrl?: string
   debug?: string
@@ -78,7 +80,7 @@ export async function runInitialConditionCheck(
       buyItNow: condition.buyItNow,
     }
 
-    const { items, rawCount, httpStatus, url } = await fetchAuctionRssWithMeta(key)
+    const { items, rawCount, httpStatus, url, pagesFetched, truncated } = await fetchAuctionRssWithMeta(key)
     const matched = items.filter(item => matchesCondition(condition, item))
     const toRecord = matched.slice(0, MAX_INITIAL_HISTORY_ITEMS)
 
@@ -109,6 +111,8 @@ export async function runInitialConditionCheck(
       recorded: toRecord.length,
       notified,
       rawCount,
+      pagesFetched,
+      truncated,
       httpStatus,
       rssUrl: url,
       debug: toRecord.length > 0

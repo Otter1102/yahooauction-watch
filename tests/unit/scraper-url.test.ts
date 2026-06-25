@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { buildSearchUrl } from '@/lib/scraper'
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
+
+const root = path.resolve(__dirname, '../..')
 
 const baseKey = {
   keyword: 'コーチ',
@@ -25,5 +29,13 @@ describe('Yahoo検索URL生成', () => {
     expect(url.searchParams.get('abatch')).toBe('2,3')
     expect(url.searchParams.has('seller')).toBe(false)
     expect(url.searchParams.has('auctype')).toBe(false)
+  })
+
+  it('検索結果は固定3ページではなく終端までページングする', () => {
+    const source = readFileSync(path.join(root, 'lib/scraper.ts'), 'utf8')
+    expect(source).toContain('fetchAuctionPages')
+    expect(source).toContain('isLastSearchPage')
+    expect(source).toContain('API_FETCH_MAX_PAGES = 120')
+    expect(source).toContain('truncated')
   })
 })

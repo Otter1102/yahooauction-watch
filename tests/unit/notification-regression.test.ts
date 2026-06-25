@@ -80,6 +80,8 @@ describe('通知送信の回帰防止', () => {
     expect(workflow).toContain("cron: '7,22,37,52 * * * *'")
     expect(runCheck).toContain('canSendCheckCompleteThisHour')
     expect(runCheck).toContain('チェック完了Pushは50分以内に送信済み')
+    expect(runCheck).toContain('GH_FETCH_PAGES = 120')
+    expect(runCheck).toContain('上限到達')
     expect(webpush).toContain('取得完了: 新着')
     expect(webpush).toContain('取得できませんでした')
   })
