@@ -4,7 +4,7 @@ on:
   schedule:
     # プライマリ schedule がGitHub側で抜けることがあるため、別workflowでも起動候補を置く。
     # scripts/run-check.ts 側でチェック完了通知はユーザーごとに50分1回へ抑制する。
-    - cron: '2,17,32,47 * * * *'
+    - cron: '37 * * * *'
   workflow_dispatch:
 
 concurrency:

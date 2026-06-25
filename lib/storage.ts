@@ -101,12 +101,24 @@ export async function getConditions(userId: string): Promise<SearchCondition[]> 
 }
 
 export async function getAllEnabledConditions(): Promise<SearchCondition[]> {
-  const { data, error } = await supabaseAdmin
-    .from('conditions')
-    .select(CONDITION_COLUMNS)
-    .eq('enabled', true)
-  if (error) throw new Error(`[Supabase] conditions取得エラー: ${error.message} (code=${error.code})`)
-  return ((data ?? []) as unknown as Record<string, unknown>[]).map(dbToCondition)
+  const pageSize = 200
+  const rows: Record<string, unknown>[] = []
+
+  for (let offset = 0; ; offset += pageSize) {
+    const { data, error } = await supabaseAdmin
+      .from('conditions')
+      .select(CONDITION_COLUMNS)
+      .eq('enabled', true)
+      .order('id', { ascending: true })
+      .range(offset, offset + pageSize - 1)
+    if (error) throw new Error(`[Supabase] conditions取得エラー: ${error.message} (code=${error.code})`)
+
+    const batch = (data ?? []) as unknown as Record<string, unknown>[]
+    rows.push(...batch)
+    if (batch.length < pageSize) break
+  }
+
+  return rows.map(dbToCondition)
 }
 
 export async function createCondition(

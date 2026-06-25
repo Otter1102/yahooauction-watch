@@ -2,9 +2,9 @@ name: ヤフオクwatch 自動チェック
 
 on:
   schedule:
-    # GitHub Actions schedule は遅延/ドロップがあるため毎時4回起動候補を置く。
+    # GitHub Actions schedule は遅延/ドロップがあるため、バックアップworkflowも別分に置く。
     # scripts/run-check.ts 側でチェック完了通知はユーザーごとに50分1回へ抑制する。
-    - cron: '7,22,37,52 * * * *'
+    - cron: '7 * * * *'
   workflow_dispatch:           # 手動実行ボタン
     inputs:
       force_check_complete:
