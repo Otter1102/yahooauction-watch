@@ -305,6 +305,7 @@ export async function cleanupOldHistory(): Promise<void> {
 // ==================== History ====================
 
 type HistoryInput = Omit<NotificationRecord, 'id'>
+const CHECK_HISTORY_PREFIX = '__check_'
 
 function historyRow(record: HistoryInput, refreshNotifiedAt: boolean): Record<string, unknown> {
   const row: Record<string, unknown> = {
@@ -367,6 +368,39 @@ export async function updateHistorySnapshot(record: HistoryInput): Promise<void>
   await upsertHistory(record, false)
 }
 
+export async function addConditionCheckHistory(
+  condition: SearchCondition,
+  result: { status: 'ok' | 'failed'; matchedCount?: number; freshCount?: number }
+): Promise<void> {
+  const now = new Date()
+  const hourKey = now.toISOString().slice(0, 13)
+  const freshCount = result.freshCount ?? 0
+  const matchedCount = result.matchedCount ?? 0
+  const title = result.status === 'failed'
+    ? '条件チェック: 取得できませんでした'
+    : freshCount > 0
+      ? `条件チェック: 新着${freshCount}件を確認しました`
+      : '条件チェック: 新着はありませんでした'
+  const remaining = result.status === 'failed'
+    ? '取得失敗'
+    : `該当${matchedCount}件`
+
+  await upsertHistory({
+    userId: condition.userId,
+    conditionId: condition.id,
+    conditionName: condition.name,
+    auctionId: `${CHECK_HISTORY_PREFIX}${condition.id}_${hourKey}`,
+    title,
+    price: result.status === 'failed' ? '取得失敗' : freshCount > 0 ? `新着${freshCount}件` : '新着なし',
+    url: '/history',
+    imageUrl: '',
+    notifiedAt: now.toISOString(),
+    remaining,
+    endAt: null,
+    kind: 'check',
+  }, true)
+}
+
 export async function getHistory(userId: string, limit = 200): Promise<NotificationRecord[]> {
   const { data } = await supabaseAdmin
     .from('notification_history')
@@ -394,6 +428,7 @@ export async function getHistory(userId: string, limit = 200): Promise<Notificat
     notifiedAt: r.notified_at as string,
     remaining: (r.remaining as string) ?? null,
     endAt: (r.end_at as string) ?? null,
+    kind: String(r.auction_id ?? '').startsWith(CHECK_HISTORY_PREFIX) ? 'check' : 'auction',
   }))
 }
 

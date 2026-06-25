@@ -128,12 +128,27 @@ describe('通知送信の回帰防止', () => {
     expect(runNow).not.toContain('items.length !== (cond.lastFoundCount ?? -1)')
   })
 
-  it('GitHub schedule抜け対策としてVercel Cronも毎時シャード実行する', () => {
-    const vercel = readSource('vercel.json')
+  it('GitHub schedule抜け対策としてバックアップworkflowも定期実行する', () => {
+    const backupWorkflow = readSource('.github/workflows/cron-backup.yml')
 
-    expect(vercel).toContain('"crons"')
-    for (let shard = 0; shard < 8; shard++) {
-      expect(vercel).toContain(`/api/cron/check/${shard}`)
-    }
+    expect(backupWorkflow).toContain("cron: '2,17,32,47 * * * *'")
+    expect(backupWorkflow).toContain('yahoo-auction-watch-check')
+    expect(backupWorkflow).toContain("SEND_NO_ITEMS_PUSH: 'true'")
+  })
+
+  it('商品がなくても条件チェック履歴を残す', () => {
+    const storage = readSource('lib/storage.ts')
+    const runCheck = readSource('scripts/run-check.ts')
+    const runNow = readSource('app/api/run-now/route.ts')
+    const historyPage = readSource('app/history/page.tsx')
+    const webpush = readSource('lib/webpush.ts')
+
+    expect(storage).toContain('addConditionCheckHistory')
+    expect(storage).toContain('条件チェック: 新着はありませんでした')
+    expect(storage).toContain('__check_')
+    expect(runCheck).toContain('addConditionCheckHistory(cond')
+    expect(runNow).toContain('addConditionCheckHistory(cond')
+    expect(historyPage).toContain('条件チェック')
+    expect(webpush).toContain('新着はありませんでした')
   })
 })

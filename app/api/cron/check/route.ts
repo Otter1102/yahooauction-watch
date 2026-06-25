@@ -225,6 +225,7 @@ async function cleanupEndedAuctionsFromHistory(): Promise<void> {
     .from('notification_history')
     .select('id, auction_id, user_id')
     .is('end_at', null)
+    .not('auction_id', 'like', '__check_%')
     .lt('notified_at', softCutoff)
     .limit(100)
 

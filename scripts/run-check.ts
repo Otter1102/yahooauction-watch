@@ -6,7 +6,7 @@
  * 実行: npx tsx scripts/run-check.ts
  * 環境変数: NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_KEY
  */
-import { getAllEnabledConditions, getAllNotifiedIds, markNotified, addHistory, updateCondition, cleanupOldNotified, cleanupOldHistory, resetStalledNotified, updateHistorySnapshot } from '../lib/storage'
+import { getAllEnabledConditions, getAllNotifiedIds, markNotified, addHistory, updateCondition, cleanupOldNotified, cleanupOldHistory, resetStalledNotified, updateHistorySnapshot, addConditionCheckHistory } from '../lib/storage'
 import { fetchAuctionRssWithMeta, checkAuctionEnded } from '../lib/scraper'
 import { sendWebPushCheckComplete, sendWebPushSummary } from '../lib/webpush'
 import { sendAdminErrorAlert } from '../lib/emailer'
@@ -201,6 +201,9 @@ async function main() {
         console.error(`  ⚠️ [${group.key.keyword}] RSS取得失敗 (継続):`, e?.message ?? e)
         for (const cond of group.conditions) {
           failedFetchByUser.set(cond.userId, (failedFetchByUser.get(cond.userId) ?? 0) + 1)
+          await addConditionCheckHistory(cond, { status: 'failed' }).catch(err => {
+            console.warn(`  ⚠️ [${cond.name}] チェック履歴保存失敗:`, err?.message ?? err)
+          })
         }
         return
       }
@@ -254,6 +257,13 @@ async function main() {
         await updateCondition(cond.id, {
           lastCheckedAt: new Date().toISOString(),
           lastFoundCount: candidateItems.length,
+        })
+        await addConditionCheckHistory(cond, {
+          status: 'ok',
+          matchedCount: candidateItems.length,
+          freshCount: conditionNotified,
+        }).catch(err => {
+          console.warn(`  ⚠️ [${cond.name}] チェック履歴保存失敗:`, err?.message ?? err)
         })
 
         if (conditionNotified > 0) {
@@ -380,6 +390,7 @@ async function cleanupEndedAuctions(): Promise<void> {
     .from('notification_history')
     .select('id, auction_id, user_id')
     .is('end_at', null)
+    .not('auction_id', 'like', '__check_%')
     .lt('notified_at', cutoff)
     .limit(100)
 

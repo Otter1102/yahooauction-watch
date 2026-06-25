@@ -28,6 +28,7 @@ export async function POST(req: NextRequest) {
       .from('notification_history')
       .select('id, auction_id')
       .eq('user_id', userId)
+      .not('auction_id', 'like', '__check_%')
       .lt('notified_at', cutoff)
       .limit(30)
 

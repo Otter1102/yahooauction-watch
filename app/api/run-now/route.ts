@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getConditions, getNotifiedIds, markNotified, addHistory, updateCondition, updateHistorySnapshot } from '@/lib/storage'
+import { getConditions, getNotifiedIds, markNotified, addHistory, updateCondition, updateHistorySnapshot, addConditionCheckHistory } from '@/lib/storage'
 import { getSupabaseAdmin } from '@/lib/supabase'
 import { fetchAuctionRssWithMeta, fetchAuctionRssSimple } from '@/lib/scraper'
 import { notifyUserSummary } from '@/lib/notifier'
@@ -142,6 +142,9 @@ export async function POST(req: NextRequest) {
         } else {
           fetchFailedCount++
           console.error(`[run-now] 条件フェッチ失敗 "${batch[j].name}" (スキップ):`, r.reason)
+          await addConditionCheckHistory(batch[j], { status: 'failed' }).catch(e => {
+            console.warn('[run-now] チェック履歴保存失敗 (継続):', e?.message ?? e)
+          })
         }
       }
     }
@@ -274,6 +277,11 @@ export async function POST(req: NextRequest) {
         await updateCondition(cond.id, {
           lastCheckedAt: new Date().toISOString(),
           lastFoundCount: items.length,
+        })
+        await addConditionCheckHistory(cond, {
+          status: 'ok',
+          matchedCount: items.length,
+          freshCount: pendingCountByCondition.get(cond.id) ?? 0,
         })
       } catch (e: any) {
         console.warn('[run-now] updateCondition失敗 (継続):', e?.message)

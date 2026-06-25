@@ -213,7 +213,7 @@ export async function sendWebPushCheckComplete(
   const body = summary.failed
     ? `取得できませんでした（${summary.fetchFailedCount ?? 1}条件 / ${hh}:${mm}確認）`
     : summary.noItems
-      ? `取得完了: 新着0件（${hh}:${mm}確認）`
+      ? `新着はありませんでした（${hh}:${mm}確認）`
       : `取得完了: 新着${summary.freshCount}件（${hh}:${mm}確認）`
 
   const result = await sendToSub(sub, withReceipt({

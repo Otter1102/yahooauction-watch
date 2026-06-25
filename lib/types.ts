@@ -59,6 +59,7 @@ export interface NotificationRecord {
   notifiedAt: string
   remaining: string | null
   endAt?: string | null  // オークション終了時刻（終了12時間後に履歴削除）
+  kind?: 'auction' | 'check'
 }
 
 export const DEFAULT_USER: Omit<User, 'id'> = {

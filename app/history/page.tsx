@@ -8,6 +8,10 @@ function getUserId() {
   return localStorage.getItem('yahoowatch_user_id') ?? ''
 }
 
+function isCheckRecord(record: NotificationRecord): boolean {
+  return record.kind === 'check' || record.auctionId.startsWith('__check_')
+}
+
 // キャッシュキー: WKWebView再起動後の即時表示・白画面防止用
 const HISTORY_CACHE_KEY = 'yw_history_cache'
 
@@ -438,24 +442,41 @@ export default function HistoryPage() {
               background: 'var(--card)',
               boxShadow: 'var(--shadow-card)',
             }}>
-              {items.map((r, idx) => (
+              {items.map((r, idx) => {
+                const checkRecord = isCheckRecord(r)
+                return (
                 <div
                   key={r.id}
-                  onClick={() => openAuction(r.url)}
+                  onClick={() => {
+                    if (!checkRecord) openAuction(r.url)
+                  }}
                   style={{
                     padding: '11px 14px 11px 14px',
                     borderTop: idx > 0 ? '1px solid var(--border)' : 'none',
                     display: 'flex', alignItems: 'flex-start', gap: 11,
-                    cursor: 'pointer',
+                    cursor: checkRecord ? 'default' : 'pointer',
                     WebkitTapHighlightColor: 'rgba(0,0,0,0.04)',
                   }}
                 >
-                  <AuctionThumbnail
-                    savedUrl={r.imageUrl ?? ''}
-                    auctionUrl={r.url}
-                    size={60}
-                    radius={8}
-                  />
+                  {checkRecord ? (
+                    <div style={{
+                      width: 60, height: 60, borderRadius: 8,
+                      background: 'rgba(0,153,226,0.08)',
+                      border: '1px solid rgba(0,153,226,0.18)',
+                      color: 'var(--accent)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: 20, fontWeight: 700, flexShrink: 0,
+                    }}>
+                      ✓
+                    </div>
+                  ) : (
+                    <AuctionThumbnail
+                      savedUrl={r.imageUrl ?? ''}
+                      auctionUrl={r.url}
+                      size={60}
+                      radius={8}
+                    />
+                  )}
 
                   <div style={{ flex: 1, minWidth: 0 }}>
                     {/* Row 1: 条件名 + 時刻 */}
@@ -463,11 +484,28 @@ export default function HistoryPage() {
                       display: 'flex', alignItems: 'center',
                       justifyContent: 'space-between', marginBottom: 3,
                     }}>
-                      <span style={{
-                        fontSize: 10, fontWeight: 700,
-                        color: 'var(--accent)',
-                        letterSpacing: '0.8px', textTransform: 'uppercase',
-                      }}>{r.conditionName}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
+                        <span style={{
+                          fontSize: 10, fontWeight: 700,
+                          color: 'var(--accent)',
+                          letterSpacing: '0.8px', textTransform: 'uppercase',
+                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        }}>{r.conditionName}</span>
+                        {checkRecord && (
+                          <span style={{
+                            fontSize: 10, fontWeight: 700,
+                            color: 'var(--text-tertiary)',
+                            background: 'var(--fill)',
+                            borderRadius: 4,
+                            padding: '1px 5px',
+                            marginLeft: 6,
+                            whiteSpace: 'nowrap',
+                            flexShrink: 0,
+                          }}>
+                            条件チェック
+                          </span>
+                        )}
+                      </div>
                       <time style={{
                         fontSize: 10, color: 'var(--text-tertiary)',
                         fontWeight: 400, fontVariantNumeric: 'tabular-nums',
@@ -520,14 +558,16 @@ export default function HistoryPage() {
                           </span>
                         )}
                       </div>
+                      {!checkRecord && (
                       <span style={{
                         fontSize: 14, color: 'var(--text-tertiary)',
                         fontWeight: 300, lineHeight: 1, flexShrink: 0,
                       }}>›</span>
+                      )}
                     </div>
                   </div>
                 </div>
-              ))}
+              )})}
             </div>
           </div>
         ))}
