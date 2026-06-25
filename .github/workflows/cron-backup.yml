@@ -5,6 +5,10 @@ on:
   # 検査完了後、プライマリを1時間ごとへ戻す時に毎時30分へ戻す。
   workflow_dispatch:
 
+concurrency:
+  group: yahoo-auction-watch-check
+  cancel-in-progress: false
+
 jobs:
   check:
     runs-on: ubuntu-latest
