@@ -82,9 +82,12 @@ const FORCE_CHECK_COMPLETE_PUSH = process.env.FORCE_CHECK_COMPLETE_PUSH === 'tru
 const CHECK_SHARD_TOTAL = Math.max(1, Number.parseInt(process.env.CHECK_SHARD_TOTAL ?? '1', 10) || 1)
 const CHECK_SHARD_INDEX = Math.max(0, Number.parseInt(process.env.CHECK_SHARD_INDEX ?? '0', 10) || 0)
 
-function userShard(userId: string, totalShards: number): number {
-  const hex = userId.replace(/-/g, '').slice(-4)
-  return Number.parseInt(hex || '0', 16) % totalShards
+function stringShard(value: string, totalShards: number): number {
+  let hash = 0
+  for (let i = 0; i < value.length; i++) {
+    hash = ((hash << 5) - hash + value.charCodeAt(i)) | 0
+  }
+  return Math.abs(hash) % totalShards
 }
 
 async function fetchWithRetry(key: RssKey, retries = 2, startOffset = 1): Promise<AuctionItem[]> {
@@ -149,16 +152,23 @@ async function main() {
       await new Promise(r => setTimeout(r, 30_000))
     }
   }
-  if (CHECK_SHARD_TOTAL > 1) {
-    allConditions = allConditions.filter(c => userShard(c.userId, CHECK_SHARD_TOTAL) === CHECK_SHARD_INDEX)
-    console.log(`シャード: ${CHECK_SHARD_INDEX + 1}/${CHECK_SHARD_TOTAL}`)
-  }
-
   console.log(`対象条件: ${allConditions.length}件`)
   if (allConditions.length === 0) { console.log('条件なし。終了。'); return }
 
+  // キーワード+価格でグループ化（同じ検索は1回のみRSSフェッチ）
+  // シャード分割はユーザー単位ではなく検索グループ単位で行う。
+  // 理由: ユーザー単位だと同じ検索URLを各シャードで重複取得し、深いページング時に20分上限を超える。
+  let groups = groupConditions(allConditions)
+  if (CHECK_SHARD_TOTAL > 1) {
+    groups = groups.filter(group => stringShard(JSON.stringify(group.key), CHECK_SHARD_TOTAL) === CHECK_SHARD_INDEX)
+    console.log(`シャード: ${CHECK_SHARD_INDEX + 1}/${CHECK_SHARD_TOTAL}`)
+  }
+  const activeConditions = groups.flatMap(group => group.conditions)
+  console.log(`ユニーク検索: ${groups.length}件（重複排除後）`)
+  if (activeConditions.length === 0) { console.log('担当条件なし。終了。'); return }
+
   // ユーザー情報を一括取得
-  const uniqueUserIds = [...new Set(allConditions.map(c => c.userId))]
+  const uniqueUserIds = [...new Set(activeConditions.map(c => c.userId))]
   const usersMap = await getAllUsers(uniqueUserIds)
   console.log(`対象ユーザー: ${uniqueUserIds.length}人`)
 
@@ -172,7 +182,6 @@ async function main() {
   // 全有効条件を処理（push_sub なしのユーザーも履歴記録・フェッチは行う）
   // 理由: push_sub が期限切れで null になっても条件チェック・履歴記録は継続すべき
   //       通知送信ステップのみ push_sub の有無で制御する
-  const activeConditions = allConditions
   console.log(`処理対象条件: ${activeConditions.length}件（うち通知可能ユーザー: ${pushUserIds.size}人）`)
 
   // 自己修復は通知判定前に実行する。
@@ -188,10 +197,6 @@ async function main() {
   const activeUserIds = [...new Set(activeConditions.map(c => c.userId))]
   const notifiedIdsCache = await getAllNotifiedIds(activeUserIds)
   console.log(`通知済みIDキャッシュ取得完了: ${activeUserIds.length}ユーザー分（1クエリ）`)
-
-  // キーワード+価格でグループ化（同じ検索は1回のみRSSフェッチ）
-  const groups = groupConditions(activeConditions)
-  console.log(`ユニーク検索: ${groups.length}件（重複排除後）`)
 
   let totalNotified = 0
   // ユーザーごとの新着アイテム収集（メインループ後にサマリー1回で通知）
