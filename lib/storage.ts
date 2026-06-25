@@ -176,6 +176,17 @@ export async function updateCondition(
   await supabaseAdmin.from('conditions').update(row).eq('id', conditionId)
 }
 
+export async function stampEnabledConditionsForUser(userId: string, checkedAt: string): Promise<number> {
+  const { data, error } = await supabaseAdmin
+    .from('conditions')
+    .update({ last_checked_at: checkedAt })
+    .eq('user_id', userId)
+    .eq('enabled', true)
+    .select('id')
+  throwOnError(error, 'conditions起動時チェック時刻更新エラー')
+  return data?.length ?? 0
+}
+
 export async function deleteCondition(conditionId: string): Promise<void> {
   await supabaseAdmin.from('conditions').delete().eq('id', conditionId)
 }

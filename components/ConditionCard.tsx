@@ -9,6 +9,7 @@ interface Props {
   onEdit: (condition: SearchCondition) => void
   onDuplicate: (condition: SearchCondition) => void
   onEnable?: () => void  // オフ→オン時に即時チェックを起動するコールバック
+  displayCheckedAt?: string | null
 }
 
 const SELLER_LABEL: Record<SearchCondition['sellerType'], string>    = { all: '', store: 'ストア', individual: '個人' }
@@ -26,7 +27,17 @@ function formatLastChecked(value: string): string {
   }).format(new Date(value))
 }
 
-export default function ConditionCard({ condition, userId, onChange, onEdit, onDuplicate, onEnable }: Props) {
+function latestIso(a?: string | null, b?: string | null): string | null {
+  if (!a) return b ?? null
+  if (!b) return a
+  const aTime = Date.parse(a)
+  const bTime = Date.parse(b)
+  if (Number.isNaN(aTime)) return b
+  if (Number.isNaN(bTime)) return a
+  return aTime >= bTime ? a : b
+}
+
+export default function ConditionCard({ condition, displayCheckedAt, userId, onChange, onEdit, onDuplicate, onEnable }: Props) {
   const [toggling, setToggling] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [showMenu, setShowMenu] = useState(false)
@@ -65,8 +76,9 @@ export default function ConditionCard({ condition, userId, onChange, onEdit, onD
     }
   }
 
-  const lastChecked = condition.lastCheckedAt
-    ? formatLastChecked(condition.lastCheckedAt)
+  const effectiveLastCheckedAt = latestIso(condition.lastCheckedAt, condition.enabled ? displayCheckedAt : null)
+  const lastChecked = effectiveLastCheckedAt
+    ? formatLastChecked(effectiveLastCheckedAt)
     : null
 
   const tags: string[] = []

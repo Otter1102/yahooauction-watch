@@ -98,7 +98,7 @@ describe('通知送信の回帰防止', () => {
     const pushClient = readSource('lib/push-client.ts')
     const settings = readSource('app/settings/page.tsx')
 
-    expect(sw).toContain("CACHE_VERSION = 'v13'")
+    expect(sw).toContain("CACHE_VERSION = 'v14'")
     expect(sw).toContain('/api/push/receipt')
     expect(receipt).toContain('[push/receipt] service-worker-received')
     expect(pushClient).toContain('options.forceRefresh')
@@ -154,6 +154,22 @@ describe('通知送信の回帰防止', () => {
     expect(workflow).not.toContain('matrix:')
     expect(conditionCard).toContain("hourCycle: 'h23'")
     expect(conditionCard).toContain("timeZone: 'Asia/Tokyo'")
+  })
+
+  it('アプリ起動時に最終チェック表示を更新し、DB更新できない時も端末表示で補完する', () => {
+    const page = readSource('app/page.tsx')
+    const conditionCard = readSource('components/ConditionCard.tsx')
+    const stampRoute = readSource('app/api/conditions/stamp/route.ts')
+    const storage = readSource('lib/storage.ts')
+
+    expect(page).toContain('CHECK_DISPLAY_STAMP_KEY')
+    expect(page).toContain('/api/conditions/stamp')
+    expect(page).toContain('displayCheckedAt={displayCheckedAt}')
+    expect(conditionCard).toContain('function latestIso')
+    expect(conditionCard).toContain('condition.enabled ? displayCheckedAt : null')
+    expect(stampRoute).toContain('stampEnabledConditionsForUser')
+    expect(storage).toContain('stampEnabledConditionsForUser')
+    expect(storage).toContain('last_checked_at: checkedAt')
   })
 
   it('商品がなくても条件チェック履歴を残す', () => {

@@ -39,10 +39,12 @@ function SkeletonCard() {
 }
 
 const CONDS_CACHE = 'yw_conditions_cache'
+const CHECK_DISPLAY_STAMP_KEY = 'yw_last_check_display_stamp'
 
 export default function Dashboard() {
   const [userId, setUserId]         = useState('')
   const [conditions, setConditions] = useState<SearchCondition[]>([])
+  const [displayCheckedAt, setDisplayCheckedAt] = useState<string | null>(null)
   const [showForm, setShowForm]     = useState(false)
   const [editingCondition, setEditingCondition] = useState<SearchCondition | null>(null)
   const [loading, setLoading]       = useState(true)
@@ -78,6 +80,11 @@ export default function Dashboard() {
 
     setUserId(id)
 
+    // 起動した端末側にも確認時刻を残す。DBが一時停止していても再起動後の画面で最終確認が分かる。
+    const startupCheckedAt = new Date().toISOString()
+    try { localStorage.setItem(CHECK_DISPLAY_STAMP_KEY, startupCheckedAt) } catch {}
+    setDisplayCheckedAt(startupCheckedAt)
+
     // キャッシュがあれば即表示（API待ちなしで高速起動）
     try {
       const cached = localStorage.getItem(CONDS_CACHE)
@@ -88,12 +95,27 @@ export default function Dashboard() {
       setShowOnboarding(true)
     }
 
-    // 3つのAPIを並列実行（直列→並列で約2/3高速化）
-    const [, settingsRes, conditionsRes] = await Promise.allSettled([
+    // 4つのAPIを並列実行。stampは起動確認の証跡で、商品取得や通知送信は行わない。
+    const [, settingsRes, conditionsRes, stampRes] = await Promise.allSettled([
       fetch('/api/user', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: id }) }),
       fetch(`/api/settings?userId=${id}`),
       fetch(`/api/conditions?userId=${id}`),
+      fetch('/api/conditions/stamp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: id, checkedAt: startupCheckedAt }),
+      }),
     ])
+
+    if (stampRes.status === 'fulfilled' && stampRes.value.ok) {
+      try {
+        const stamped = await stampRes.value.json()
+        if (stamped.checkedAt) {
+          setDisplayCheckedAt(stamped.checkedAt)
+          try { localStorage.setItem(CHECK_DISPLAY_STAMP_KEY, stamped.checkedAt) } catch {}
+        }
+      } catch { /* stampレスポンスのparse失敗は表示用stampを維持 */ }
+    }
 
     // 条件を即表示（最優先）、キャッシュも更新
     try {
@@ -314,6 +336,7 @@ export default function Dashboard() {
                   <ConditionCard
                     key={c.id}
                     condition={c}
+                    displayCheckedAt={displayCheckedAt}
                     userId={userId}
                     onChange={() => loadConditions()}
                     onEdit={cond => setEditingCondition(cond)}

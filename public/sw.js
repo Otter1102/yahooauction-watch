@@ -1,6 +1,6 @@
 // ヤフオクwatch Service Worker
 // CACHE_VERSION: メジャー改修時に手動インクリメント（日常デプロイは /api/version 自動管理）
-const CACHE_VERSION = 'v13'
+const CACHE_VERSION = 'v14'
 const META_CACHE    = `yw-meta-${CACHE_VERSION}`
 
 // ── インストール: 即座に新SWを有効化 ─────────────────────────────────────
