@@ -36,6 +36,14 @@ async function sendToSub(sub: PushSub, payload: object): Promise<'ok' | 'expired
   }
 }
 
+function withReceipt(payload: Record<string, unknown>, userId: string, prefix: string): Record<string, unknown> {
+  return {
+    ...payload,
+    notificationId: `${prefix}-${Date.now()}-${userId.slice(0, 8)}`,
+    userIdHint: userId.slice(0, 8),
+  }
+}
+
 /** ユーザーの push_sub にWeb Push送信。期限切れなら自動削除 */
 export async function sendWebPushToUser(
   userId: string,
@@ -56,14 +64,14 @@ export async function sendWebPushToUser(
     (item.bids != null ? `  🔨 ${item.bids}件` : '') +
     (item.remaining ? `  ⏰ ${item.remaining}` : '')
 
-  const result = await sendToSub(sub, {
+  const result = await sendToSub(sub, withReceipt({
     title:     item.title.slice(0, 60),
     body,
     url:       APP_URL + '/history',  // 通知タップ時は常にアプリ履歴ページへ（Yahoo直リンクは空白画面の原因になる）
     imageUrl:  item.imageUrl ?? null,
     auctionId: item.auctionId,
     auctionUrl: item.url,             // Yahoo URLはauctionUrlで保持（履歴ページからの遷移用）
-  })
+  }, userId, 'item'))
 
   console.log(`  📱 Push [${userId.slice(0,8)}] → ${result} (${sub.endpoint.slice(8,40)}...)`)
 
@@ -96,14 +104,14 @@ export async function sendWebPushSummary(
     ? topItem.title.slice(0, 80)
     : `${topItem.title.slice(0, 25)}… 他${count - 1}件`
 
-  const result = await sendToSub(sub, {
+  const result = await sendToSub(sub, withReceipt({
     title,
     body,
     url: APP_URL + '/history',
     imageUrl: topItem.imageUrl ?? null,
     auctionId: topItem.auctionId,
     auctionUrl: topItem.url,
-  })
+  }, userId, 'summary'))
 
   console.log(`  📱 SummaryPush [${userId.slice(0, 8)}] ${count}件 → ${result}`)
 
@@ -134,14 +142,14 @@ export async function sendWebPushInitialFetch(
   const title = `ヤフオクwatch — 取得完了しました`
   const body = `${conditionName} の該当オークション${count}件を通知履歴に反映しました`
 
-  const result = await sendToSub(sub, {
+  const result = await sendToSub(sub, withReceipt({
     title,
     body,
     url: APP_URL + '/history',
     imageUrl: topItem.imageUrl ?? null,
     auctionId: topItem.auctionId,
     auctionUrl: topItem.url,
-  })
+  }, userId, 'initial'))
 
   console.log(`  📱 InitialFetchPush [${userId.slice(0, 8)}] ${count}件 → ${result}`)
 
@@ -166,14 +174,14 @@ export async function sendWebPushNoItems(
   const sub = data?.push_sub as PushSub | null
   if (!sub?.endpoint) return false
 
-  const result = await sendToSub(sub, {
+  const result = await sendToSub(sub, withReceipt({
     title: 'ヤフオクwatch チェック完了',
     body: '新着情報はありませんでした',
     url: APP_URL + '/history',
     imageUrl: null,
     auctionId: `no-items-${Date.now()}`,
     auctionUrl: null,
-  })
+  }, userId, 'no-items'))
 
   console.log(`  📱 NoItemsPush [${userId.slice(0, 8)}] → ${result}`)
 
@@ -208,14 +216,14 @@ export async function sendWebPushCheckComplete(
       ? `取得完了: 新着0件（${hh}:${mm}確認）`
       : `取得完了: 新着${summary.freshCount}件（${hh}:${mm}確認）`
 
-  const result = await sendToSub(sub, {
+  const result = await sendToSub(sub, withReceipt({
     title: 'ヤフオクwatch チェック完了',
     body,
     url: APP_URL + '/history',
     imageUrl: null,
     auctionId: `check-complete-${now.getTime()}-${userId.slice(0, 8)}`,
     auctionUrl: null,
-  })
+  }, userId, 'check-complete'))
 
   console.log(`  📱 CheckCompletePush [${userId.slice(0, 8)}] → ${result}`)
 

@@ -1,6 +1,6 @@
 // ヤフオクwatch Service Worker
 // CACHE_VERSION: メジャー改修時に手動インクリメント（日常デプロイは /api/version 自動管理）
-const CACHE_VERSION = 'v12'
+const CACHE_VERSION = 'v13'
 const META_CACHE    = `yw-meta-${CACHE_VERSION}`
 
 // ── インストール: 即座に新SWを有効化 ─────────────────────────────────────
@@ -65,13 +65,14 @@ self.addEventListener('push', (event) => {
   const body     = data.body     ?? '新着商品が見つかりました'
   const url      = data.url      ?? '/'
   const imageUrl = data.imageUrl ?? null
+  const notificationId = data.notificationId ?? data.auctionId ?? `push-${Date.now()}`
 
   const options = {
     body,
     // 商品サムネを通知アイコンに表示（imageUrl があればそちら、なければアプリアイコン）
     icon:  imageUrl || '/icons/icon-192.png',
     badge: '/icons/badge-72.png',
-    data:  { url, auctionId: data.auctionId ?? '' },
+    data:  { url, auctionId: data.auctionId ?? '', notificationId },
     vibrate: [200, 100, 200],
     // requireInteraction: false のまま（画面オフ時もスリープ通知が届く）
     requireInteraction: false,
@@ -82,7 +83,20 @@ self.addEventListener('push', (event) => {
   if (imageUrl) options.image = imageUrl
 
   event.waitUntil(
-    self.registration.showNotification(title, options)
+    Promise.allSettled([
+      self.registration.showNotification(title, options),
+      fetch('/api/push/receipt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          notificationId,
+          auctionId: data.auctionId ?? null,
+          title,
+          receivedAt: new Date().toISOString(),
+          userIdHint: data.userIdHint ?? null,
+        }),
+      }),
+    ])
   )
 })
 

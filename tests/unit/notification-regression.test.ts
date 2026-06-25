@@ -81,4 +81,18 @@ describe('通知送信の回帰防止', () => {
     expect(webpush).toContain('取得完了: 新着')
     expect(webpush).toContain('取得できませんでした')
   })
+
+  it('端末側のPush受信ACKと強制再登録が実装されている', () => {
+    const sw = readSource('public/sw.js')
+    const receipt = readSource('app/api/push/receipt/route.ts')
+    const pushClient = readSource('lib/push-client.ts')
+    const settings = readSource('app/settings/page.tsx')
+
+    expect(sw).toContain("CACHE_VERSION = 'v13'")
+    expect(sw).toContain('/api/push/receipt')
+    expect(receipt).toContain('[push/receipt] service-worker-received')
+    expect(pushClient).toContain('options.forceRefresh')
+    expect(settings).toContain('enablePush(true)')
+    expect(settings).toContain('通知を再登録する')
+  })
 })

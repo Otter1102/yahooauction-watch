@@ -149,7 +149,7 @@ export default function SettingsPage() {
   }, [])
 
   // ── Push有効化 ───────────────────────────────────────────────────
-  async function enablePush() {
+  async function enablePush(forceRefresh = false) {
     if (!userId) return
     setPushLoading(true)
     setPushActionNotice('')
@@ -161,7 +161,11 @@ export default function SettingsPage() {
       const permission = await Notification.requestPermission()
       if (permission !== 'granted') { setPushState('denied'); setPushLoading(false); return }
       const currentSub = await reg.pushManager.getSubscription()
-      const sub = currentSub ?? await reg.pushManager.subscribe({
+      if (currentSub && forceRefresh) {
+        await currentSub.unsubscribe().catch(() => false)
+      }
+      const reusableSub = forceRefresh ? null : currentSub
+      const sub = reusableSub ?? await reg.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(publicKey),
       })
@@ -185,7 +189,9 @@ export default function SettingsPage() {
       }
       setPushState('subscribed')
       setHasPushDB(true)
-      setPushActionNotice('通知ONになりました。テスト通知で届くか確認できます。')
+      setPushActionNotice(forceRefresh
+        ? '通知を再登録しました。テスト通知で届くか確認できます。'
+        : '通知ONになりました。テスト通知で届くか確認できます。')
     } catch (err) {
       alert(`通知の設定に失敗しました: ${err}`)
     }
@@ -401,7 +407,7 @@ export default function SettingsPage() {
                       </p>
                     )}
                     <button
-                      onClick={() => { setTestState('idle'); setTestDebug(''); setTestExpired(false); setPushState('idle'); setHasPushDB(false); enablePush() }}
+                      onClick={() => { setTestState('idle'); setTestDebug(''); setTestExpired(false); setPushState('idle'); setHasPushDB(false); enablePush(true) }}
                       style={{
                         width: '100%', height: 42,
                         background: 'var(--grad-primary)', border: 'none',
@@ -511,6 +517,43 @@ export default function SettingsPage() {
             </div>
           )}
         </div>
+
+        {/* ━━━ 通知再登録 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+        {pushState === 'subscribed' && (
+          <>
+            <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', paddingLeft: 4, marginBottom: 6, letterSpacing: '0.8px', textTransform: 'uppercase' }}>通知再登録</p>
+            <div style={{ background: 'var(--card)', borderRadius: 12, marginBottom: 24, overflow: 'hidden', boxShadow: 'var(--shadow-sm)', border: '1px solid var(--border)' }}>
+              <div style={{ padding: '14px 16px' }}>
+                <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12, lineHeight: 1.6 }}>
+                  通知ONなのに届かない場合、端末の受信先を作り直します。
+                </p>
+                <button
+                  onClick={() => enablePush(true)}
+                  disabled={pushLoading}
+                  style={{
+                    width: '100%', height: 42,
+                    background: 'var(--fill)', border: '1px solid var(--border)',
+                    borderRadius: 21, fontSize: 13, fontWeight: 700,
+                    color: 'var(--text-primary)', cursor: pushLoading ? 'wait' : 'pointer',
+                    fontFamily: 'inherit', opacity: pushLoading ? 0.6 : 1,
+                  }}
+                >
+                  {pushLoading ? '再登録中...' : '通知を再登録する'}
+                </button>
+                {pushActionNotice && (
+                  <p style={{
+                    marginTop: 10, padding: '10px 12px', borderRadius: 8,
+                    background: pushActionNotice.includes('しました') || pushActionNotice.includes('ON') ? 'rgba(52,199,89,0.08)' : 'rgba(246,104,138,0.07)',
+                    color: pushActionNotice.includes('しました') || pushActionNotice.includes('ON') ? '#1a7a3a' : 'var(--danger)',
+                    fontSize: 12, fontWeight: 700, lineHeight: 1.65,
+                  }}>
+                    {pushActionNotice}
+                  </p>
+                )}
+              </div>
+            </div>
+          </>
+        )}
 
         {/* ━━━ 通知復旧 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
         <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', paddingLeft: 4, marginBottom: 6, letterSpacing: '0.8px', textTransform: 'uppercase' }}>通知復旧</p>

@@ -60,7 +60,11 @@ export async function ensurePushSubscription(userId: string, options: EnsurePush
     await navigator.serviceWorker.ready
 
     const existingSub = await reg.pushManager.getSubscription()
-    const sub = existingSub ?? await reg.pushManager.subscribe({
+    if (existingSub && options.forceRefresh) {
+      await existingSub.unsubscribe().catch(() => false)
+    }
+    const currentSub = options.forceRefresh ? null : existingSub
+    const sub = currentSub ?? await reg.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToUint8Array(publicKey),
     })
@@ -74,7 +78,7 @@ export async function ensurePushSubscription(userId: string, options: EnsurePush
       body: JSON.stringify({ userId, notificationChannel: 'webpush' }),
     }).catch(() => {})
 
-    return { ok: true, refreshed: false }
+    return { ok: true, refreshed: !!options.forceRefresh }
   } catch (err) {
     return { ok: false, reason: 'error', message: String(err) }
   }
