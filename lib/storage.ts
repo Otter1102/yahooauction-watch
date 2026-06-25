@@ -7,6 +7,26 @@ import { getSupabaseAdmin } from './supabase'
 const supabaseAdmin = { from: (...args: Parameters<ReturnType<typeof getSupabaseAdmin>['from']>) => getSupabaseAdmin().from(...args) }
 import { SearchCondition, User, NotificationRecord, PushSub } from './types'
 
+const CONDITION_COLUMNS = [
+  'id',
+  'user_id',
+  'name',
+  'keyword',
+  'max_price',
+  'min_price',
+  'min_bids',
+  'max_bids',
+  'seller_type',
+  'item_condition',
+  'sort_by',
+  'sort_order',
+  'buy_it_now',
+  'enabled',
+  'created_at',
+  'last_checked_at',
+  'last_found_count',
+].join(',')
+
 function throwOnError(error: { message?: string } | null | undefined, context: string): void {
   if (error) throw new Error(`[Supabase] ${context}: ${error.message ?? String(error)}`)
 }
@@ -74,19 +94,19 @@ function dbToUser(row: Record<string, unknown>): User {
 export async function getConditions(userId: string): Promise<SearchCondition[]> {
   const { data } = await supabaseAdmin
     .from('conditions')
-    .select('*')
+    .select(CONDITION_COLUMNS)
     .eq('user_id', userId)
     .order('created_at', { ascending: true })
-  return (data ?? []).map(dbToCondition)
+  return ((data ?? []) as unknown as Record<string, unknown>[]).map(dbToCondition)
 }
 
 export async function getAllEnabledConditions(): Promise<SearchCondition[]> {
   const { data, error } = await supabaseAdmin
     .from('conditions')
-    .select('*')
+    .select(CONDITION_COLUMNS)
     .eq('enabled', true)
   if (error) throw new Error(`[Supabase] conditions取得エラー: ${error.message} (code=${error.code})`)
-  return (data ?? []).map(dbToCondition)
+  return ((data ?? []) as unknown as Record<string, unknown>[]).map(dbToCondition)
 }
 
 export async function createCondition(

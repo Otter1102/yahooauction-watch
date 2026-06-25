@@ -143,6 +143,7 @@ describe('通知送信の回帰防止', () => {
     expect(backupWorkflow).not.toContain('matrix:')
     expect(workflow).toContain("cron: '7,22,37,52 * * * *'")
     expect(workflow).toContain("GH_FETCH_PAGES: '40'")
+    expect(workflow).toContain("SUPABASE_FETCH_TIMEOUT_MS: '60000'")
     expect(workflow).not.toContain('CHECK_SHARD_INDEX')
     expect(workflow).not.toContain('matrix:')
   })
