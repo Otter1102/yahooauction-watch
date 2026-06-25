@@ -78,8 +78,22 @@ function groupConditions(conditions: SearchCondition[]): ConditionGroup[] {
 const GH_FETCH_PAGES = Math.max(1, Number.parseInt(process.env.GH_FETCH_PAGES ?? '40', 10) || 40)
 const SEND_NO_ITEMS_PUSH = process.env.SEND_NO_ITEMS_PUSH === 'true'
 const FORCE_CHECK_COMPLETE_PUSH = process.env.FORCE_CHECK_COMPLETE_PUSH === 'true'
+const ALLOW_NIGHT_NOTIFICATIONS = process.env.ALLOW_NIGHT_NOTIFICATIONS === 'true'
 const CHECK_SHARD_TOTAL = Math.max(1, Number.parseInt(process.env.CHECK_SHARD_TOTAL ?? '1', 10) || 1)
 const CHECK_SHARD_INDEX = Math.max(0, Number.parseInt(process.env.CHECK_SHARD_INDEX ?? '0', 10) || 0)
+
+function getJstHour(date = new Date()): number {
+  return Number(new Intl.DateTimeFormat('ja-JP', {
+    timeZone: 'Asia/Tokyo',
+    hour: '2-digit',
+    hourCycle: 'h23',
+  }).format(date))
+}
+
+function isJstQuietHour(date = new Date()): boolean {
+  const hour = getJstHour(date)
+  return hour >= 1 && hour <= 6
+}
 
 function stringShard(value: string, totalShards: number): number {
   let hash = 0
@@ -128,6 +142,10 @@ async function markCheckCompleteSent(userId: string): Promise<void> {
 
 async function main() {
   console.log(`\n=== ヤフオクwatch チェック開始 ${new Date().toLocaleString('ja-JP')} ===`)
+  if (!ALLOW_NIGHT_NOTIFICATIONS && isJstQuietHour()) {
+    console.log('[quiet-hours] JST 25:00-06:59 は通知停止時間のため、巡回せず終了します')
+    return
+  }
 
   // Supabase接続確認（環境変数チェック）
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
