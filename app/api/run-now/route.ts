@@ -106,6 +106,7 @@ export async function POST(req: NextRequest) {
       xmlPreview?: string
     }
     const results: ResultRow[] = []
+    let fetchFailedCount = 0
 
     // ── Phase 1: 全条件を CONDITION_CONCURRENCY=5 並列バッチでフェッチ ─────────────
     const fetchResults: FetchResult[] = []
@@ -135,6 +136,7 @@ export async function POST(req: NextRequest) {
         if (r.status === 'fulfilled') {
           fetchResults.push(r.value)
         } else {
+          fetchFailedCount++
           console.error(`[run-now] 条件フェッチ失敗 "${batch[j].name}" (スキップ):`, r.reason)
         }
       }
@@ -254,6 +256,8 @@ export async function POST(req: NextRequest) {
         checkCompleteNotified = await sendWebPushCheckComplete(userId, {
           freshCount: allFreshForSummary.length,
           noItems: allFreshForSummary.length === 0,
+          failed: fetchFailedCount > 0,
+          fetchFailedCount,
         }, getSupabaseAdmin())
       } catch (e: any) {
         console.warn('[run-now] チェック完了Push送信失敗 (継続):', e?.message)

@@ -62,15 +62,21 @@ describe('通知送信の回帰防止', () => {
     expect(source).not.toContain('runNow()')
   })
 
-  it('テスト期間は新着なし通知を環境変数で有効化できる', () => {
+  it('定期チェック完了通知を環境変数で有効化できる', () => {
     const runCheck = readSource('scripts/run-check.ts')
     const runNow = readSource('app/api/run-now/route.ts')
     const workflow = readSource('.github/workflows/cron.yml')
+    const webpush = readSource('lib/webpush.ts')
 
     expect(runCheck).toContain('SEND_NO_ITEMS_PUSH')
     expect(runCheck).toContain('await sendWebPushCheckComplete(userId')
+    expect(runCheck).toContain('failedFetchByUser')
     expect(runNow).toContain('SEND_NO_ITEMS_PUSH')
     expect(runNow).toContain('await sendWebPushCheckComplete(userId')
+    expect(runNow).toContain('fetchFailedCount')
     expect(workflow).toContain("SEND_NO_ITEMS_PUSH: 'true'")
+    expect(workflow).toContain("cron: '7 * * * *'")
+    expect(webpush).toContain('取得完了: 新着')
+    expect(webpush).toContain('取得できませんでした')
   })
 })

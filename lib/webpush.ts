@@ -184,10 +184,10 @@ export async function sendWebPushNoItems(
   return result === 'ok'
 }
 
-/** テスト期間用: 新着有無に関係なく検査完了を知らせるプッシュ */
+/** 定期チェック完了プッシュ: 新着件数、または取得失敗を知らせる */
 export async function sendWebPushCheckComplete(
   userId: string,
-  summary: { freshCount: number; noItems: boolean },
+  summary: { freshCount: number; noItems: boolean; failed?: boolean; fetchFailedCount?: number },
   supabaseAdmin = getSupabaseAdmin(),
 ): Promise<boolean> {
   const { data } = await supabaseAdmin
@@ -202,9 +202,11 @@ export async function sendWebPushCheckComplete(
   const now = new Date()
   const hh = String(now.getHours()).padStart(2, '0')
   const mm = String(now.getMinutes()).padStart(2, '0')
-  const body = summary.noItems
-    ? `新着情報はありませんでした（${hh}:${mm}確認）`
-    : `新着${summary.freshCount}件を検出しました（${hh}:${mm}確認）`
+  const body = summary.failed
+    ? `取得できませんでした（${summary.fetchFailedCount ?? 1}条件 / ${hh}:${mm}確認）`
+    : summary.noItems
+      ? `取得完了: 新着0件（${hh}:${mm}確認）`
+      : `取得完了: 新着${summary.freshCount}件（${hh}:${mm}確認）`
 
   const result = await sendToSub(sub, {
     title: 'ヤフオクwatch チェック完了',

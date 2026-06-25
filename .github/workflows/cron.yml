@@ -2,7 +2,7 @@ name: ヤフオクwatch 自動チェック
 
 on:
   schedule:
-    - cron: '*/5 * * * *'    # 一時対応: 5分ごと（検査完了後に1時間ごとへ戻す）
+    - cron: '7 * * * *'      # 毎時1回（GitHub Actions側で数分ずれることがある）
   workflow_dispatch:           # 手動実行ボタン
 
 concurrency:

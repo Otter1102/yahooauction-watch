@@ -153,6 +153,7 @@ async function main() {
   let totalNotified = 0
   // ユーザーごとの新着アイテム収集（メインループ後にサマリー1回で通知）
   const pendingByUser = new Map<string, PendingNotification[]>()
+  const failedFetchByUser = new Map<string, number>()
 
   // 並列でRSSフェッチ（10並列）
   // GitHub Actions: GH_FETCH_PAGES=10 ページ取得（b=1〜451 = 最大500件）
@@ -162,7 +163,16 @@ async function main() {
   for (let i = 0; i < groups.length; i += CONCURRENCY) {
     const batch = groups.slice(i, i + CONCURRENCY)
     await Promise.all(batch.map(async (group) => {
-      const items = await fetchWithRetry(group.key)
+      let items: AuctionItem[] = []
+      try {
+        items = await fetchWithRetry(group.key)
+      } catch (e: any) {
+        console.error(`  ⚠️ [${group.key.keyword}] RSS取得失敗 (継続):`, e?.message ?? e)
+        for (const cond of group.conditions) {
+          failedFetchByUser.set(cond.userId, (failedFetchByUser.get(cond.userId) ?? 0) + 1)
+        }
+        return
+      }
       console.log(`  🔍 [${group.key.keyword}] 取得: ${items.length}件`)
       if (items.length === 0) return
 
@@ -268,9 +278,12 @@ async function main() {
 
       if (SEND_NO_ITEMS_PUSH) {
         const freshCount = items?.length ?? 0
+        const fetchFailedCount = failedFetchByUser.get(userId) ?? 0
         const delivered = await sendWebPushCheckComplete(userId, {
           freshCount,
           noItems: freshCount === 0,
+          failed: fetchFailedCount > 0,
+          fetchFailedCount,
         })
         if (delivered) totalCheckCompleteNotified++
         else console.warn(`  ⚠️ [${userId.slice(0,8)}] チェック完了Push失敗`)
