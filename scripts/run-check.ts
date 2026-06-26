@@ -83,6 +83,9 @@ const ALLOW_NIGHT_NOTIFICATIONS = process.env.ALLOW_NIGHT_NOTIFICATIONS === 'tru
 const CHECK_SHARD_TOTAL = Math.max(1, Number.parseInt(process.env.CHECK_SHARD_TOTAL ?? '1', 10) || 1)
 const CHECK_SHARD_INDEX = Math.max(0, Number.parseInt(process.env.CHECK_SHARD_INDEX ?? '0', 10) || 0)
 const CHECK_SHARD_STAGGER_MS = Math.max(0, Number.parseInt(process.env.CHECK_SHARD_STAGGER_MS ?? '0', 10) || 0)
+const SNAPSHOT_UPDATE_LIMIT = Math.max(0, Number.parseInt(process.env.CHECK_SNAPSHOT_UPDATE_LIMIT ?? '50', 10) || 50)
+const NEW_ITEMS_PER_CONDITION_LIMIT = Math.max(1, Number.parseInt(process.env.CHECK_NEW_ITEMS_PER_CONDITION_LIMIT ?? '80', 10) || 80)
+const NEW_ITEMS_PER_USER_LIMIT = Math.max(1, Number.parseInt(process.env.CHECK_NEW_ITEMS_PER_USER_LIMIT ?? '200', 10) || 200)
 
 function getJstHour(date = new Date()): number {
   return Number(new Intl.DateTimeFormat('ja-JP', {
@@ -236,9 +239,13 @@ async function main() {
   // 自己修復は通知判定前に実行する。
   // 通知送信後に実行すると、直前に通知したユーザーの notified_items を誤って消し、
   // 次回以降の重複通知・判定乱れにつながる。
-  const stalledUsers = await resetStalledNotified()
-  if (stalledUsers.length > 0) {
-    console.log(`[自己修復] ${stalledUsers.length}ユーザーの通知ログをリセット`)
+  if (CHECK_SHARD_INDEX === 0) {
+    const stalledUsers = await resetStalledNotified()
+    if (stalledUsers.length > 0) {
+      console.log(`[自己修復] ${stalledUsers.length}ユーザーの通知ログをリセット`)
+    }
+  } else {
+    console.log(`[自己修復] shard ${CHECK_SHARD_INDEX + 1}/${CHECK_SHARD_TOTAL}: 全体自己修復はshard 1に集約`)
   }
 
   // 通知済みIDを全ユーザー分まとめて1クエリで取得
@@ -289,16 +296,28 @@ async function main() {
         }
 
         let conditionNotified = 0
+        let snapshotUpdates = 0
+        let skippedByCap = 0
         for (const item of candidateItems) {
           // 通知済みチェック: 送信直前にキャッシュを参照（並列グループ間の重複防止）
           if (notifiedIdsCache.get(cond.userId)?.has(item.auctionId)) {
-            await updateHistorySnapshot(toHistoryRecord(cond, item))
+            if (snapshotUpdates < SNAPSHOT_UPDATE_LIMIT) {
+              await updateHistorySnapshot(toHistoryRecord(cond, item))
+              snapshotUpdates++
+            }
             continue
           }
 
           // サマリー通知用に収集（同一実行内で同一商品の重複を除く）
           if (!pendingByUser.has(cond.userId)) pendingByUser.set(cond.userId, [])
           const alreadyPending = pendingByUser.get(cond.userId)!
+          if (
+            conditionNotified >= NEW_ITEMS_PER_CONDITION_LIMIT ||
+            alreadyPending.length >= NEW_ITEMS_PER_USER_LIMIT
+          ) {
+            skippedByCap++
+            continue
+          }
           if (!alreadyPending.some(a => a.item.auctionId === item.auctionId)) {
             alreadyPending.push({ item, cond })
             conditionNotified++
@@ -320,6 +339,9 @@ async function main() {
 
         if (conditionNotified > 0) {
           console.log(`  ✅ [${cond.name}] ${conditionNotified}件新着`)
+        }
+        if (skippedByCap > 0) {
+          console.log(`  ℹ️ [${cond.name}] DB負荷抑制のため今回記録上限を超えた候補をスキップ: ${skippedByCap}件`)
         }
       }
     }))
@@ -403,16 +425,20 @@ async function main() {
   // ─── 時間ベース整理 ───
   // notification_history は削除せず、終了後24時間超の履歴は表示側で非表示。
   // notified_items は48時間通知対象 + 12時間バッファを超えた重複防止レコードだけ削除。
-  await cleanupOldHistory()
-  await cleanupOldNotified()
+  if (CHECK_SHARD_INDEX === 0) {
+    await cleanupOldHistory()
+    await cleanupOldNotified()
 
-  // ─── end_at なし旧レコードのYahoo確認クリーンアップ（安全網）───
-  await cleanupEndedAuctions()
+    // ─── end_at なし旧レコードのYahoo確認クリーンアップ（安全網）───
+    await cleanupEndedAuctions()
 
-  // ─── 幽霊ユーザー削除（通知設定なし + 14日以上経過）───
-  const ghostCount = await cleanupGhostUsers()
-  if (ghostCount > 0) {
-    console.log(`[幽霊ユーザー] ${ghostCount}件削除（通知設定なし+14日経過）`)
+    // ─── 幽霊ユーザー削除（通知設定なし + 14日以上経過）───
+    const ghostCount = await cleanupGhostUsers()
+    if (ghostCount > 0) {
+      console.log(`[幽霊ユーザー] ${ghostCount}件削除（通知設定なし+14日経過）`)
+    }
+  } else {
+    console.log(`[cleanup] shard ${CHECK_SHARD_INDEX + 1}/${CHECK_SHARD_TOTAL}: 全体cleanupはshard 1に集約`)
   }
 
   console.log(`\n=== 完了: 合計${totalNotified}件通知 / チェック完了通知${totalCheckCompleteNotified}件 ===\n`)
