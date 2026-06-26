@@ -29,6 +29,8 @@ const UA =
   '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
 
 const FETCH_TIMEOUT = 15_000
+const ENDING_SOON_WINDOW_HOURS = 48
+const ENDING_SOON_WINDOW_MS = ENDING_SOON_WINDOW_HOURS * 60 * 60 * 1_000
 
 // Yahooリクエスト共通ヘッダー（bot検知回避）
 const YAHOO_HEADERS: Record<string, string> = {
@@ -59,8 +61,6 @@ export function buildSearchUrl(key: RssKey, offset: number): string {
     aucmaxprice: String(key.maxPrice),
     b:           String(offset),
     n:           '50',
-    // 終了24時間以内に絞る: ユーザーが余裕を持って入札できるタイミングで通知
-    aucend:      '1',
   }
   if (key.minPrice > 0) params.aucminprice = String(key.minPrice)
 
@@ -331,7 +331,7 @@ const PAGE_SIZE = 50
 
 // Vercel API Routes 用の安全上限。条件作成直後/手動チェックでも、従来の3ページ固定ではなく
 // 最大120ページ(6000件)まで終端探索する。
-// 実測: Coach/2万円以下/終了24h以内は90ページ(4200件)で終端。40ページでは取りこぼす。
+// 実測: Coach/2万円以下/終了48h以内は深いページに入札あり商品が埋もれるため、40ページでは取りこぼす。
 const API_FETCH_MAX_PAGES = 120
 const PAGE_BATCH_SIZE = 3
 
@@ -355,6 +355,12 @@ function shouldStopBidSortedPage(key: RssKey, items: AuctionItem[]): boolean {
   return !items.some(item => (item.bids ?? 0) >= minBids)
 }
 
+function shouldStopEndTimePage(key: RssKey, items: AuctionItem[], now: number): boolean {
+  if (key.sortBy !== 'endTime' || key.sortOrder !== 'asc' || items.length === 0) return false
+  // 終了時刻の昇順なので、ページ全体が48時間より先なら以降のページも通知対象外。
+  return items.every(item => item.endtimeMs !== null && item.endtimeMs - now > ENDING_SOON_WINDOW_MS)
+}
+
 async function fetchAuctionPages(
   key: RssKey,
   startOffset: number,
@@ -372,6 +378,7 @@ async function fetchAuctionPages(
   const pages: Awaited<ReturnType<typeof fetchPage>>[] = []
   let exhausted = false
   const searchKey = effectiveFetchKey(key)
+  const now = Date.now()
 
   for (let pageStart = 0; pageStart < maxPages; pageStart += PAGE_BATCH_SIZE) {
     const batchSize = Math.min(PAGE_BATCH_SIZE, maxPages - pageStart)
@@ -393,7 +400,8 @@ async function fetchAuctionPages(
 
     if (
       batchPages.some(page => page.httpStatus === 200 && isLastSearchPage(page.items.length)) ||
-      batchPages.some(page => page.httpStatus === 200 && shouldStopBidSortedPage(searchKey, page.items))
+      batchPages.some(page => page.httpStatus === 200 && shouldStopBidSortedPage(searchKey, page.items)) ||
+      batchPages.some(page => page.httpStatus === 200 && shouldStopEndTimePage(searchKey, page.items, now))
     ) {
       exhausted = true
       break
@@ -420,16 +428,15 @@ export async function fetchAuctionRssWithMeta(key: RssKey, maxPages = API_FETCH_
   const { items: allRaw, urls, pages, pagesFetched, exhausted } =
     await fetchAuctionPages(key, 1, maxPages)
 
-  // 開催中 + 24時間以内フィルター:
+  // 開催中 + 48時間以内フィルター:
   //   終了済み、即決売切れ等で終了しているものは除外。
-  //   2日以上先は早すぎるため除外。
+  //   2日より先は早すぎるため除外。
   //   endtimeMs=null は開催中判定ができないため除外する。
   const now = Date.now()
-  const HOURS_24 = 24 * 60 * 60 * 1_000
   const items = allRaw.filter(item =>
     item.endtimeMs !== null &&
     item.endtimeMs > now &&
-    item.endtimeMs - now <= HOURS_24
+    item.endtimeMs - now <= ENDING_SOON_WINDOW_MS
   )
 
   return {
@@ -455,7 +462,7 @@ export async function fetchAuctionRssSimple(
     p:           keyword,
     aucmaxprice: String(maxPrice),
     ...(minPrice > 0 ? { aucminprice: String(minPrice) } : {}),
-    b: '1', n: '50', aucend: '1',
+    b: '1', n: '50',
   })}`
   const { items } = await fetchPage(url)
   return items.length

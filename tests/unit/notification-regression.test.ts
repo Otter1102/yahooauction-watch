@@ -103,6 +103,7 @@ describe('通知送信の回帰防止', () => {
     const receipt = readSource('app/api/push/receipt/route.ts')
     const pushClient = readSource('lib/push-client.ts')
     const settings = readSource('app/settings/page.tsx')
+    const page = readSource('app/page.tsx')
 
     expect(sw).toContain("CACHE_VERSION = 'v14'")
     expect(sw).toContain('/api/push/receipt')
@@ -110,6 +111,25 @@ describe('通知送信の回帰防止', () => {
     expect(pushClient).toContain('options.forceRefresh')
     expect(settings).toContain('enablePush(true)')
     expect(settings).toContain('通知を再登録する')
+    expect(page).toContain('PUSH_SETUP_REMINDER_KEY')
+    expect(page).toContain('通知設定が必要です')
+    expect(page).toContain('設定しないと新着通知を受け取れません')
+    expect(page).toContain('showPushSetupReminder')
+  })
+
+  it('48時間以内終了の商品を通知対象にし、重複防止ログは60時間保持する', () => {
+    const scraper = readSource('lib/scraper.ts')
+    const storage = readSource('lib/storage.ts')
+    const runCheck = readSource('scripts/run-check.ts')
+
+    expect(scraper).toContain('ENDING_SOON_WINDOW_HOURS = 48')
+    expect(scraper).toContain('開催中 + 48時間以内フィルター')
+    expect(scraper).toContain('shouldStopEndTimePage')
+    expect(scraper).toContain('item.endtimeMs - now <= ENDING_SOON_WINDOW_MS')
+    expect(scraper).not.toContain("aucend:      '1'")
+    expect(storage).toContain('60時間以上古い重複防止レコードを削除')
+    expect(storage).toContain('60 * 60 * 60 * 1000')
+    expect(runCheck).toContain('/ 48h ${items.length}件')
   })
 
   it('通知履歴はDB削除せず、履歴消失を防ぐ', () => {

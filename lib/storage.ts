@@ -264,10 +264,10 @@ export async function clearNotifiedHistory(userId: string): Promise<void> {
 }
 
 export async function cleanupOldNotified(): Promise<void> {
-  // 36時間以上古い重複防止レコードを削除
-  // 根拠: 通知対象は「残り24時間以内」のオークション → 終了まで最大24h。
-  //       終了後12時間 = 最大 notified_at + 36h 後に安全に削除できる。
-  const cutoff = new Date(Date.now() - 36 * 60 * 60 * 1000).toISOString()
+  // 60時間以上古い重複防止レコードを削除
+  // 根拠: 通知対象は「残り48時間以内」のオークション → 終了まで最大48h。
+  //       終了後12時間 = 最大 notified_at + 60h 後に安全に削除できる。
+  const cutoff = new Date(Date.now() - 60 * 60 * 60 * 1000).toISOString()
   const { error } = await supabaseAdmin
     .from('notified_items')
     .delete()

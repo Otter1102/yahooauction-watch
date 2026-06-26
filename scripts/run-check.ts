@@ -107,7 +107,7 @@ async function fetchWithRetry(key: RssKey, retries = 2, startOffset = 1): Promis
   for (let i = 0; i <= retries; i++) {
     const meta = await fetchAuctionRssWithMeta(key, GH_FETCH_PAGES)
     const items = meta.items
-    console.log(`  📄 [${key.keyword}] ページ取得: ${meta.pagesFetched}p / raw ${meta.rawCount}件 / 24h ${items.length}件${meta.truncated ? ' / 上限到達' : ''}`)
+    console.log(`  📄 [${key.keyword}] ページ取得: ${meta.pagesFetched}p / raw ${meta.rawCount}件 / 48h ${items.length}件${meta.truncated ? ' / 上限到達' : ''}`)
     if (items.length > 0 || i === retries) return items
     await new Promise(r => setTimeout(r, 2000))
   }

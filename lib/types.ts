@@ -40,7 +40,7 @@ export interface AuctionItem {
   bids: number | null
   isBuyItNow: boolean
   remaining: string | null
-  endtimeMs: number | null  // オークション終了時刻（Unix ms）。24時間フィルターに使用
+  endtimeMs: number | null  // オークション終了時刻（Unix ms）。48時間フィルターに使用
   url: string
   imageUrl: string
   pubDate: string

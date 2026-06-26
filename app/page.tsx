@@ -40,6 +40,29 @@ function SkeletonCard() {
 
 const CONDS_CACHE = 'yw_conditions_cache'
 const CHECK_DISPLAY_STAMP_KEY = 'yw_last_check_display_stamp'
+const PUSH_SETUP_REMINDER_KEY = 'yw_push_setup_reminder_at'
+
+async function showPushSetupReminder() {
+  if (typeof window === 'undefined' || !('Notification' in window)) return
+  if (Notification.permission !== 'granted') return
+  try {
+    const last = Number(localStorage.getItem(PUSH_SETUP_REMINDER_KEY) ?? '0')
+    if (Number.isFinite(last) && Date.now() - last < 24 * 60 * 60 * 1000) return
+    localStorage.setItem(PUSH_SETUP_REMINDER_KEY, String(Date.now()))
+    const title = 'ヤフオクwatch 通知設定が必要です'
+    const options = {
+      body: '通知設定を完了しないと、新着オークションを受け取れません。',
+      icon: '/icons/icon-192.png',
+      badge: '/icons/badge-72.png',
+      data: { url: '/settings' },
+      tag: 'yw-push-setup-required',
+      renotify: true,
+    }
+    const reg = await navigator.serviceWorker.getRegistration('/sw.js')
+    if (reg) await reg.showNotification(title, options)
+    else new Notification(title, options)
+  } catch { /* ローカル通知の失敗は画面バナーで補う */ }
+}
 
 export default function Dashboard() {
   const [userId, setUserId]         = useState('')
@@ -131,7 +154,7 @@ export default function Dashboard() {
     // 設定はバックグラウンドで反映
     if (settingsRes.status === 'fulfilled' && settingsRes.value.ok) {
       const user = await settingsRes.value.json()
-      setNotifyReady(!!(user.ntfyTopic || user.discordWebhook || user.notificationChannel === 'webpush'))
+      setNotifyReady(!!(user.ntfyTopic || user.discordWebhook || user.hasPush))
 
       // push_sub の状態を自動修復する（2パターン）
       // 1. ブラウザのsubが切れた → DB有り: tryAutoResubscribeで再購読
@@ -151,7 +174,10 @@ export default function Dashboard() {
               setPushLost(false)
             } else {
               setPushLost(true)  // 再購読失敗時のみバナー表示
+              await showPushSetupReminder()
             }
+          } else if (!user.hasPush && !user.ntfyTopic && !user.discordWebhook) {
+            await showPushSetupReminder()
           }
         } catch { /* 無視 */ }
       }
@@ -236,19 +262,19 @@ export default function Dashboard() {
                   background: 'var(--card)', borderRadius: 12,
                   padding: '12px 16px',
                   display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  border: '1px solid rgba(255,149,0,0.25)',
+                  border: '1px solid rgba(246,104,138,0.32)',
                   boxShadow: 'var(--shadow-sm)',
                 }}>
                   <div>
-                    <p style={{ fontWeight: 700, fontSize: 13, color: 'var(--warning)' }}>通知OFF</p>
-                    <p style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 1, fontWeight: 400 }}>通知オン・ブロック解除はこちら</p>
+                    <p style={{ fontWeight: 700, fontSize: 13, color: 'var(--danger)' }}>通知設定が必要です</p>
+                    <p style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 1, fontWeight: 400 }}>設定しないと新着通知を受け取れません</p>
                   </div>
                   <span style={{
                     height: 32, padding: '0 14px', borderRadius: 16,
                     background: 'var(--grad-primary)', color: 'white',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     fontSize: 12, fontWeight: 700, flexShrink: 0,
-                  }}>通知オン</span>
+                  }}>設定する</span>
                 </div>
               </a>
             )}
@@ -264,8 +290,8 @@ export default function Dashboard() {
                   boxShadow: 'var(--shadow-sm)',
                 }}>
                   <div>
-                    <p style={{ fontWeight: 700, fontSize: 13, color: 'var(--danger)' }}>🔕 通知が途切れています</p>
-                    <p style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 1, fontWeight: 400 }}>通知オン・再設定はこちら</p>
+                    <p style={{ fontWeight: 700, fontSize: 13, color: 'var(--danger)' }}>通知の再設定が必要です</p>
+                    <p style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 1, fontWeight: 400 }}>再登録しないと新着通知が止まります</p>
                   </div>
                   <span style={{
                     height: 32, padding: '0 14px', borderRadius: 16,

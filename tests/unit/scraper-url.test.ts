@@ -39,11 +39,15 @@ describe('Yahoo検索URL生成', () => {
     expect(source).toContain('truncated')
   })
 
-  it('通知対象は開催中かつ終了24時間以内に限定する', () => {
+  it('通知対象は開催中かつ終了48時間以内に限定する', () => {
     const source = readFileSync(path.join(root, 'lib/scraper.ts'), 'utf8')
-    expect(source).toContain('開催中 + 24時間以内フィルター')
+    expect(source).toContain('ENDING_SOON_WINDOW_HOURS = 48')
+    expect(source).toContain('開催中 + 48時間以内フィルター')
+    expect(source).toContain('shouldStopEndTimePage')
+    expect(source).toContain('ページ全体が48時間より先なら以降のページも通知対象外')
     expect(source).toContain('item.endtimeMs !== null')
     expect(source).toContain('item.endtimeMs > now')
-    expect(source).toContain('item.endtimeMs - now <= HOURS_24')
+    expect(source).toContain('item.endtimeMs - now <= ENDING_SOON_WINDOW_MS')
+    expect(buildSearchUrl({ ...baseKey, sellerType: 'all' }, 1)).not.toContain('aucend=')
   })
 })
