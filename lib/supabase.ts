@@ -15,7 +15,7 @@ export function getSupabase(): SupabaseClient {
 export function getSupabaseAdmin(): SupabaseClient {
   if (!_admin) {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL!
-    const key = process.env.SUPABASE_SERVICE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    const key = process.env.SUPABASE_SERVICE_KEY!
     const timeoutMs = Math.max(5_000, Number.parseInt(process.env.SUPABASE_FETCH_TIMEOUT_MS ?? '20000', 10) || 20_000)
     _admin = createClient(url, key, {
       global: {
