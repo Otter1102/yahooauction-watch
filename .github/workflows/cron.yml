@@ -87,7 +87,10 @@ jobs:
           GH_FETCH_PAGES: '40'
           CHECK_SHARD_TOTAL: '6'
           CHECK_SHARD_INDEX: ${{ matrix.shard }}
-          CHECK_FETCH_CONCURRENCY: '3'
+          CHECK_FETCH_CONCURRENCY: '1'
+          CHECK_SHARD_STAGGER_MS: '15000'
+          YAHOO_PAGE_BATCH_SIZE: '1'
+          YAHOO_PAGE_DELAY_MS: '250'
           SUPABASE_FETCH_TIMEOUT_MS: '90000'
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}

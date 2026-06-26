@@ -23,6 +23,9 @@ type FetchResult = {
   httpStatus?: number
   xmlPreview?: string
   pagesFetched?: number
+  successfulPages?: number
+  failedPages?: number
+  statusSummary?: string
   truncated?: boolean
   simpleCount?: number
   priceWarning: boolean
@@ -125,13 +128,20 @@ export async function POST(req: NextRequest) {
             itemCondition: cond.itemCondition ?? 'all', sortBy: cond.sortBy ?? 'endTime',
             sortOrder: cond.sortOrder ?? 'asc', buyItNow: cond.buyItNow,
           }
-          const { items, url: rssUrl, httpStatus, rawCount, xmlPreview, pagesFetched, truncated } = await fetchAuctionRssWithMeta(key)
+          const {
+            items, url: rssUrl, httpStatus, rawCount, xmlPreview, pagesFetched,
+            successfulPages, failedPages, statusSummary, truncated,
+          } = await fetchAuctionRssWithMeta(key)
+          if (pagesFetched > 0 && successfulPages === 0) {
+            throw new Error(`Yahoo検索取得失敗: status=${statusSummary || 'none'} pages=${pagesFetched}`)
+          }
           let simpleCount: number | undefined
           if (rawCount === 0) {
             simpleCount = await fetchAuctionRssSimple(cond.keyword, cond.maxPrice, cond.minPrice)
           }
           return {
-            cond, items, rawCount, rssUrl, httpStatus, xmlPreview, pagesFetched, truncated, simpleCount,
+            cond, items, rawCount, rssUrl, httpStatus, xmlPreview, pagesFetched,
+            successfulPages, failedPages, statusSummary, truncated, simpleCount,
             priceWarning: cond.minPrice > 0 && cond.minPrice >= cond.maxPrice,
           }
         })

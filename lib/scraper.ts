@@ -333,7 +333,8 @@ const PAGE_SIZE = 50
 // 最大120ページ(6000件)まで終端探索する。
 // 実測: Coach/2万円以下/終了48h以内は深いページに入札あり商品が埋もれるため、40ページでは取りこぼす。
 const API_FETCH_MAX_PAGES = 120
-const PAGE_BATCH_SIZE = 3
+const PAGE_BATCH_SIZE = Math.max(1, Number.parseInt(process.env.YAHOO_PAGE_BATCH_SIZE ?? '3', 10) || 3)
+const PAGE_DELAY_MS = Math.max(0, Number.parseInt(process.env.YAHOO_PAGE_DELAY_MS ?? '0', 10) || 0)
 
 function isLastSearchPage(itemsOnPage: number): boolean {
   return itemsOnPage < PAGE_SIZE
@@ -418,6 +419,10 @@ async function fetchAuctionPages(
       exhausted = true
       break
     }
+
+    if (PAGE_DELAY_MS > 0 && pageStart + batchSize < maxPages) {
+      await new Promise(r => setTimeout(r, PAGE_DELAY_MS))
+    }
   }
 
   return { items, urls, pages, pagesFetched: pages.length, exhausted }
@@ -434,11 +439,25 @@ export async function fetchAuctionRssWithMeta(key: RssKey, maxPages = API_FETCH_
   rawCount:   number
   xmlPreview: string
   pagesFetched: number
+  successfulPages: number
+  failedPages: number
+  statusSummary: string
   exhausted: boolean
   truncated: boolean
 }> {
   const { items: allRaw, urls, pages, pagesFetched, exhausted } =
     await fetchAuctionPages(key, 1, maxPages)
+  const statusCounts = pages.reduce<Record<string, number>>((acc, page) => {
+    const status = String(page.httpStatus)
+    acc[status] = (acc[status] ?? 0) + 1
+    return acc
+  }, {})
+  const successfulPages = pages.filter(page => page.httpStatus === 200).length
+  const failedPages = pages.length - successfulPages
+  const statusSummary = Object.entries(statusCounts)
+    .sort(([a], [b]) => Number(a) - Number(b))
+    .map(([status, count]) => `${status}:${count}`)
+    .join(',')
 
   // 開催中 + 48時間以内フィルター:
   //   終了済み、即決売切れ等で終了しているものは除外。
@@ -458,6 +477,9 @@ export async function fetchAuctionRssWithMeta(key: RssKey, maxPages = API_FETCH_
     rawCount:   allRaw.length,
     xmlPreview: pages[0]?.rawHtml.slice(0, 500) ?? '',
     pagesFetched,
+    successfulPages,
+    failedPages,
+    statusSummary,
     exhausted,
     truncated: !exhausted && pagesFetched >= maxPages,
   }

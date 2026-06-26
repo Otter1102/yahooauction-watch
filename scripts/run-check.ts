@@ -82,6 +82,7 @@ const FORCE_CHECK_COMPLETE_PUSH = process.env.FORCE_CHECK_COMPLETE_PUSH === 'tru
 const ALLOW_NIGHT_NOTIFICATIONS = process.env.ALLOW_NIGHT_NOTIFICATIONS === 'true'
 const CHECK_SHARD_TOTAL = Math.max(1, Number.parseInt(process.env.CHECK_SHARD_TOTAL ?? '1', 10) || 1)
 const CHECK_SHARD_INDEX = Math.max(0, Number.parseInt(process.env.CHECK_SHARD_INDEX ?? '0', 10) || 0)
+const CHECK_SHARD_STAGGER_MS = Math.max(0, Number.parseInt(process.env.CHECK_SHARD_STAGGER_MS ?? '0', 10) || 0)
 
 function getJstHour(date = new Date()): number {
   return Number(new Intl.DateTimeFormat('ja-JP', {
@@ -108,8 +109,20 @@ async function fetchWithRetry(key: RssKey, retries = 2, startOffset = 1): Promis
   for (let i = 0; i <= retries; i++) {
     const meta = await fetchAuctionRssWithMeta(key, GH_FETCH_PAGES)
     const items = meta.items
-    console.log(`  📄 [${key.keyword}] ページ取得: ${meta.pagesFetched}p / raw ${meta.rawCount}件 / 48h ${items.length}件${meta.truncated ? ' / 上限到達' : ''}`)
-    if (items.length > 0 || i === retries) return items
+    const statusText = meta.statusSummary ? ` / status ${meta.statusSummary}` : ''
+    console.log(`  📄 [${key.keyword}] ページ取得: ${meta.pagesFetched}p / ok ${meta.successfulPages}p / fail ${meta.failedPages}p / raw ${meta.rawCount}件 / 48h ${items.length}件${statusText}${meta.truncated ? ' / 上限到達' : ''}`)
+
+    // 全ページが失敗している場合は「商品なし」ではなく取得失敗。
+    // 旧挙動では raw 0件として扱われ、ユーザーには「商品が見つかりませんでした」と見えていた。
+    if (meta.pagesFetched > 0 && meta.successfulPages === 0) {
+      if (i < retries) {
+        await new Promise(r => setTimeout(r, 5000 * (i + 1)))
+        continue
+      }
+      throw new Error(`Yahoo検索取得失敗: status=${meta.statusSummary || 'none'} pages=${meta.pagesFetched}`)
+    }
+
+    if (items.length > 0 || meta.rawCount > 0 || meta.successfulPages > 0 || i === retries) return items
     await new Promise(r => setTimeout(r, 2000))
   }
   return []
@@ -159,6 +172,11 @@ async function main() {
   if (!ALLOW_NIGHT_NOTIFICATIONS && isJstQuietHour()) {
     console.log('[quiet-hours] JST 25:00-06:59 は通知停止時間のため、巡回せず終了します')
     return
+  }
+  if (CHECK_SHARD_STAGGER_MS > 0 && CHECK_SHARD_INDEX > 0) {
+    const staggerMs = CHECK_SHARD_INDEX * CHECK_SHARD_STAGGER_MS
+    console.log(`[stagger] shard ${CHECK_SHARD_INDEX + 1}/${CHECK_SHARD_TOTAL}: ${staggerMs}ms待機`)
+    await new Promise(r => setTimeout(r, staggerMs))
   }
 
   // Supabase接続確認（環境変数チェック）

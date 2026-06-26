@@ -61,7 +61,13 @@ export async function runInitialConditionCheck(
       buyItNow: condition.buyItNow,
     }
 
-    const { items, rawCount, httpStatus, url, pagesFetched, truncated } = await fetchAuctionRssWithMeta(key)
+    const {
+      items, rawCount, httpStatus, url, pagesFetched, truncated,
+      successfulPages, statusSummary,
+    } = await fetchAuctionRssWithMeta(key)
+    if (pagesFetched > 0 && successfulPages === 0) {
+      throw new Error(`Yahoo検索取得失敗: status=${statusSummary || 'none'} pages=${pagesFetched}`)
+    }
     const selection = selectConditionCandidates(condition, items)
     const matched = selection.items
     const toRecord = matched.slice(0, MAX_INITIAL_HISTORY_ITEMS)
