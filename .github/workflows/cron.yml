@@ -25,6 +25,10 @@ jobs:
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5]
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -80,6 +84,8 @@ jobs:
           SEND_NO_ITEMS_PUSH: 'true'
           FORCE_CHECK_COMPLETE_PUSH: ${{ github.event.inputs.force_check_complete || 'false' }}
           GH_FETCH_PAGES: '40'
+          CHECK_SHARD_TOTAL: '6'
+          CHECK_SHARD_INDEX: ${{ matrix.shard }}
           SUPABASE_FETCH_TIMEOUT_MS: '90000'
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}

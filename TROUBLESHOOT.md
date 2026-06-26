@@ -3,9 +3,9 @@
 | 項目 | 内容 |
 |------|------|
 | **症状** | ユーザーの通知履歴が空になる。GitHub Actions の定期巡回が失敗し、1時間ごとの「新着はありませんでした」通知も届かない時間帯がある |
-| **原因** | 履歴取得API・履歴画面の手動更新・Vercel cron・GitHub Actions の複数経路で、終了済みオークションや7日超の `notification_history` を物理削除していた。さらに Actions #858 は Node 警告ではなく、Supabase `conditions` 取得のタイムアウトで `scripts/run-check.ts` が exit 1 になっていた |
-| **対策** | `notification_history` の物理削除を一時停止。履歴画面はサーバーが空を返しても端末キャッシュを消さず、`/api/history/restore` でキャッシュからDBへ復元する。Actions の Supabase precheck は service key で `conditions` を確認し、Node 22 / actions v5 / DB timeout 90秒へ更新 |
-| **解決した理由** | 巡回・手動更新・履歴取得の全経路で履歴を消さなくなり、端末に残った履歴キャッシュをDBへ戻せる。Actions 側は誤った anon key precheck と Node 20 警告を解消し、Supabase 遅延にも耐えやすくした |
+| **原因** | 履歴取得API・履歴画面の手動更新・Vercel cron・GitHub Actions の複数経路で、終了済みオークションや7日超の `notification_history` を物理削除していた。さらに Actions #858 は Node 警告ではなく、Supabase `conditions` 取得のタイムアウトで `scripts/run-check.ts` が exit 1 になっていた。復旧後の手動巡回 #28213148030 は対象条件271件・ユニーク検索268件を1ジョブで40ページ取得したため、20分上限でキャンセルされた |
+| **対策** | `notification_history` の物理削除を一時停止。履歴画面はサーバーが空を返しても端末キャッシュを消さず、`/api/history/restore` でキャッシュからDBへ復元する。Actions の Supabase precheck は service key で `conditions` を確認し、Node 22 / actions v5 / DB timeout 90秒へ更新。定期巡回は6 shard 並列へ分割し、チェック完了Pushは送信前に `notified_items` へ時間マーカーを予約して shard 間の重複を防止する |
+| **解決した理由** | 巡回・手動更新・履歴取得の全経路で履歴を消さなくなり、端末に残った履歴キャッシュをDBへ戻せる。Actions 側は誤った anon key precheck と Node 20 警告を解消し、Supabase 遅延にも耐えやすくした。検索処理を6分割したため、ユニーク検索数が増えても1時間ごとの巡回が20分上限に収まりやすい |
 | **再発防止** | `notification_history` を削除する実装を戻さない。終了済みを隠す場合はDB削除ではなく表示側フィルターで実装する。cron失敗時は warning ではなく `Run auction check` のログと exit code を確認する |
 
 ---

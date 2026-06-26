@@ -130,13 +130,26 @@ async function canSendCheckCompleteThisHour(userId: string): Promise<boolean> {
   return !data?.length
 }
 
-async function markCheckCompleteSent(userId: string): Promise<void> {
+async function reserveCheckCompleteThisHour(userId: string): Promise<boolean> {
   const marker = `${CHECK_COMPLETE_MARKER_PREFIX}${new Date().toISOString().slice(0, 13)}`
   const { error } = await supabaseAdmin
     .from('notified_items')
-    .upsert({ user_id: userId, auction_id: marker })
+    .insert({ user_id: userId, auction_id: marker })
+  if (!error) return true
+  if ('code' in error && error.code === '23505') return false
+  console.warn(`  ⚠️ [${userId.slice(0,8)}] チェック完了通知マーカー予約失敗:`, error.message)
+  return false
+}
+
+async function releaseCheckCompleteReservation(userId: string): Promise<void> {
+  const marker = `${CHECK_COMPLETE_MARKER_PREFIX}${new Date().toISOString().slice(0, 13)}`
+  const { error } = await supabaseAdmin
+    .from('notified_items')
+    .delete()
+    .eq('user_id', userId)
+    .eq('auction_id', marker)
   if (error) {
-    console.warn(`  ⚠️ [${userId.slice(0,8)}] チェック完了通知マーカー保存失敗:`, error.message)
+    console.warn(`  ⚠️ [${userId.slice(0,8)}] チェック完了通知マーカー解除失敗:`, error.message)
   }
 }
 
@@ -358,6 +371,11 @@ async function main() {
         if (FORCE_CHECK_COMPLETE_PUSH) {
           console.log(`  🔁 [${userId.slice(0,8)}] 手動実行のためチェック完了Push抑制を解除`)
         }
+        const reserved = await reserveCheckCompleteThisHour(userId)
+        if (!reserved) {
+          console.log(`  ↪️ [${userId.slice(0,8)}] チェック完了Pushは他シャードで処理済みのためスキップ`)
+          return
+        }
         const freshCount = items?.length ?? 0
         const fetchFailedCount = failedFetchByUser.get(userId) ?? 0
         const delivered = await sendWebPushCheckComplete(userId, {
@@ -367,10 +385,12 @@ async function main() {
           fetchFailedCount,
         })
         if (delivered) {
-          await markCheckCompleteSent(userId)
           totalCheckCompleteNotified++
         }
-        else console.warn(`  ⚠️ [${userId.slice(0,8)}] チェック完了Push失敗`)
+        else {
+          await releaseCheckCompleteReservation(userId)
+          console.warn(`  ⚠️ [${userId.slice(0,8)}] チェック完了Push失敗`)
+        }
       }
     }))
   }
