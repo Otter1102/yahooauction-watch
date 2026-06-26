@@ -340,6 +340,18 @@ function isLastSearchPage(itemsOnPage: number): boolean {
 }
 
 function effectiveFetchKey(key: RssKey): RssKey {
+  const hasYahooSideNarrowing =
+    key.sellerType !== 'all' ||
+    key.itemCondition !== 'all' ||
+    key.buyItNow !== null
+
+  if (hasYahooSideNarrowing) {
+    // ストア/中古/出品形式と入札数順をYahoo側で同時にかけると、検索結果が
+    // 0件または入札0件だけに偏ることがある。絞り込み条件がある場合は
+    // ユーザー指定の終了順/価格順を維持し、アプリ側の候補緩和で空振りを避ける。
+    return key
+  }
+
   // 入札件数条件がある場合、終了順の深いページに入札あり商品が埋もれる。
   // 取得時だけ「入札数が多い順」に寄せることで、条件一致候補を浅いページで網羅しやすくする。
   if ((key.minBids ?? 0) > 0 && key.sortBy !== 'bids') {

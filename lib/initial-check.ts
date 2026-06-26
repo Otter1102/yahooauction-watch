@@ -1,5 +1,6 @@
 import type { AuctionItem, SearchCondition } from './types'
 import { fetchAuctionRssWithMeta } from './scraper'
+import { selectConditionCandidates } from './condition-match'
 import { addHistory, markNotified, updateCondition } from './storage'
 import { getSupabaseAdmin } from './supabase'
 import { sendWebPushInitialFetch } from './webpush'
@@ -20,26 +21,6 @@ export type InitialConditionCheckResult = {
 }
 
 const MAX_INITIAL_HISTORY_ITEMS = 100
-
-function matchesCondition(cond: SearchCondition, item: AuctionItem): boolean {
-  const minBids = cond.minBids ?? 0
-  const maxBids = cond.maxBids ?? null
-
-  if (minBids > 0 || maxBids !== null) {
-    if (item.bids === null) {
-      if (minBids > 0) return false
-    } else {
-      if (minBids > 0 && item.bids < minBids) return false
-      if (maxBids !== null && item.bids >= maxBids) return false
-    }
-  }
-
-  if (minBids > 0 && cond.buyItNow === null && item.isBuyItNow === true) return false
-  if (cond.buyItNow === true && item.isBuyItNow !== true) return false
-  if (cond.buyItNow === false && item.isBuyItNow === true) return false
-
-  return true
-}
 
 function toHistoryRecord(userId: string, cond: SearchCondition, item: AuctionItem) {
   return {
@@ -81,7 +62,8 @@ export async function runInitialConditionCheck(
     }
 
     const { items, rawCount, httpStatus, url, pagesFetched, truncated } = await fetchAuctionRssWithMeta(key)
-    const matched = items.filter(item => matchesCondition(condition, item))
+    const selection = selectConditionCandidates(condition, items)
+    const matched = selection.items
     const toRecord = matched.slice(0, MAX_INITIAL_HISTORY_ITEMS)
 
     await runInChunks(toRecord, 10, item => addHistory(toHistoryRecord(userId, condition, item)))
@@ -116,7 +98,9 @@ export async function runInitialConditionCheck(
       httpStatus,
       rssUrl: url,
       debug: toRecord.length > 0
-        ? `取得完了: ${toRecord.length}件を履歴に反映`
+        ? selection.relaxed
+          ? `取得完了: 厳密一致0件のため候補${toRecord.length}件を履歴に反映`
+          : `取得完了: ${toRecord.length}件を履歴に反映`
         : '取得完了: 現時点の該当オークションはありません',
     }
   } catch (e: any) {

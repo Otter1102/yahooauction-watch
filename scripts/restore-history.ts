@@ -10,6 +10,7 @@
  */
 import { getAllEnabledConditions, addHistory, updateHistorySnapshot } from '../lib/storage'
 import { fetchAuctionRssWithMeta } from '../lib/scraper'
+import { selectConditionCandidates } from '../lib/condition-match'
 import { getSupabaseAdmin } from '../lib/supabase'
 import { AuctionItem, SearchCondition } from '../lib/types'
 
@@ -63,18 +64,6 @@ function toHistoryRecord(cond: SearchCondition, item: AuctionItem, notifiedAt = 
   }
 }
 
-function matchesCondition(cond: SearchCondition, item: AuctionItem): boolean {
-  const minBids = cond.minBids ?? 0
-  const maxBids = cond.maxBids ?? null
-  if (minBids > 0 && item.bids !== null && item.bids < minBids) return false
-  if (minBids > 0 && item.bids === null) return false
-  if (maxBids !== null && item.bids !== null && item.bids >= maxBids) return false
-  if (minBids > 0 && cond.buyItNow === null && item.isBuyItNow === true) return false
-  if (cond.buyItNow === true && item.isBuyItNow !== true) return false
-  if (cond.buyItNow === false && item.isBuyItNow === true) return false
-  return true
-}
-
 function logWriteFailure(action: string, auctionId: string, err: unknown) {
   writeFailures++
   if (writeFailures <= 20 || writeFailures % 50 === 0) {
@@ -109,7 +98,8 @@ async function restoreCurrentMatches(): Promise<number> {
       const meta = await fetchAuctionRssWithMeta(group.key, RESTORE_FETCH_PAGES)
       let groupRestored = 0
       for (const cond of group.conditions) {
-        const matched = meta.items.filter(item => matchesCondition(cond, item))
+        const selection = selectConditionCandidates(cond, meta.items)
+        const matched = selection.items
         for (const item of matched) {
           if (await tryAddHistory(toHistoryRecord(cond, item))) groupRestored++
         }

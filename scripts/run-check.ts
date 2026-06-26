@@ -8,6 +8,7 @@
  */
 import { getAllEnabledConditions, getAllNotifiedIds, markNotified, addHistory, updateCondition, cleanupOldNotified, cleanupOldHistory, resetStalledNotified, updateHistorySnapshot, addConditionCheckHistory } from '../lib/storage'
 import { fetchAuctionRssWithMeta } from '../lib/scraper'
+import { selectConditionCandidates } from '../lib/condition-match'
 import { sendWebPushCheckComplete, sendWebPushSummary } from '../lib/webpush'
 import { sendAdminErrorAlert } from '../lib/emailer'
 import { getSupabaseAdmin } from '../lib/supabase'
@@ -263,25 +264,11 @@ async function main() {
         const user = usersMap.get(cond.userId)
         if (!user) continue
 
-        const minBids = cond.minBids ?? 0
-        const maxBids = cond.maxBids ?? null
-        // 入札数・出品形式フィルターのみ事前適用（通知済みチェックは直前に行う）
-        const candidateItems = items
-          .filter(item => {
-            // 入札数フィルター
-            if (minBids <= 0 && maxBids === null) return true
-            if (item.bids === null) return minBids <= 0
-            if (minBids > 0 && item.bids < minBids) return false
-            if (maxBids !== null && item.bids >= maxBids) return false
-            return true
-          })
-          .filter(item => {
-            // 出品形式フィルター
-            if (minBids > 0 && cond.buyItNow === null && item.isBuyItNow === true) return false
-            if (cond.buyItNow === null) return true
-            if (cond.buyItNow === true) return item.isBuyItNow === true
-            return item.isBuyItNow !== true
-          })
+        const selection = selectConditionCandidates(cond, items)
+        const candidateItems = selection.items
+        if (selection.relaxed) {
+          console.log(`  ↪️ [${cond.name}] 厳密一致0件のため入札数条件を候補条件として緩和: ${candidateItems.length}件`)
+        }
 
         let conditionNotified = 0
         for (const item of candidateItems) {

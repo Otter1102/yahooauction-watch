@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getConditions, getNotifiedIds, markNotified, addHistory, updateCondition, updateHistorySnapshot, addConditionCheckHistory } from '@/lib/storage'
 import { getSupabaseAdmin } from '@/lib/supabase'
 import { fetchAuctionRssWithMeta, fetchAuctionRssSimple } from '@/lib/scraper'
+import { selectConditionCandidates } from '@/lib/condition-match'
 import { notifyUserSummary } from '@/lib/notifier'
 import { sendWebPushCheckComplete, sendWebPushSummary } from '@/lib/webpush'
 import { checkRateLimit } from '@/lib/rateLimiter'
@@ -155,23 +156,10 @@ export async function POST(req: NextRequest) {
     const pendingCountByCondition = new Map<string, number>()
 
     for (const { cond, items, rawCount, rssUrl, httpStatus, xmlPreview, pagesFetched, truncated, simpleCount, priceWarning } of fetchResults) {
-      const minBids = cond.minBids ?? 0
-      const maxBids = cond.maxBids ?? null
-      const afterBidsFilter = items.filter((item: AuctionItem) => {
-        if (minBids <= 0 && maxBids === null) return true
-        if (item.bids === null) return minBids <= 0
-        if (minBids > 0 && item.bids < minBids) return false
-        if (maxBids !== null && item.bids >= maxBids) return false
-        return true
-      })
-      const filteredByBids = items.length - afterBidsFilter.length
-      const matchingItems = afterBidsFilter.filter((item: AuctionItem) => {
-        if (minBids > 0 && cond.buyItNow === null && item.isBuyItNow === true) return false
-        if (cond.buyItNow === null) return true
-        if (cond.buyItNow === true) return item.isBuyItNow === true
-        return item.isBuyItNow !== true
-      })
-      const filteredByFormat = afterBidsFilter.length - matchingItems.length
+      const selection = selectConditionCandidates(cond, items)
+      const matchingItems = selection.items
+      const filteredByBids = selection.filteredByBids
+      const filteredByFormat = selection.filteredByFormat
       const freshItems = matchingItems.filter((item: AuctionItem) => !notifiedIds.has(item.auctionId))
       const alreadyNotified = matchingItems.length - freshItems.length
       let condPending = 0

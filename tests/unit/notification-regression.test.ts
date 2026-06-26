@@ -121,6 +121,7 @@ describe('通知送信の回帰防止', () => {
     const scraper = readSource('lib/scraper.ts')
     const storage = readSource('lib/storage.ts')
     const runCheck = readSource('scripts/run-check.ts')
+    const matcher = readSource('lib/condition-match.ts')
 
     expect(scraper).toContain('ENDING_SOON_WINDOW_HOURS = 48')
     expect(scraper).toContain('開催中 + 48時間以内フィルター')
@@ -130,6 +131,10 @@ describe('通知送信の回帰防止', () => {
     expect(storage).toContain('60時間以上古い重複防止レコードを削除')
     expect(storage).toContain('60 * 60 * 60 * 1000')
     expect(runCheck).toContain('/ 48h ${items.length}件')
+    expect(runCheck).toContain('selectConditionCandidates')
+    expect(matcher).toContain('厳密一致が0件の時だけ入札数条件を候補条件へ')
+    expect(scraper).toContain('hasYahooSideNarrowing')
+    expect(scraper).toContain('ストア/中古/出品形式と入札数順')
   })
 
   it('通知履歴はDB削除せず、履歴消失を防ぐ', () => {
