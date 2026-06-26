@@ -56,16 +56,18 @@ jobs:
             echo "試行 $i: HTTP $STATUS"
             if [ "$STATUS" = "200" ] || [ "$STATUS" = "206" ]; then
               echo "Supabase 起動確認完了"
+              echo "SUPABASE_READY=true" >> "$GITHUB_ENV"
               sleep 2
               exit 0
             fi
             echo "Supabase 起動待機中... 10秒後に再試行"
             sleep 10
           done
-          echo "Supabase が応答しませんでした。処理を継続します"
+          echo "Supabase が応答しませんでした。この回の巡回はスキップします"
+          echo "SUPABASE_READY=false" >> "$GITHUB_ENV"
 
       - name: Stamp last checked only
-        if: ${{ github.event.inputs.stamp_last_checked_only == 'true' }}
+        if: ${{ github.event.inputs.stamp_last_checked_only == 'true' && env.SUPABASE_READY == 'true' }}
         run: npx tsx scripts/stamp-last-checked.ts
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -74,7 +76,7 @@ jobs:
           SUPABASE_FETCH_TIMEOUT_MS: '120000'
 
       - name: Run auction check
-        if: ${{ github.event.inputs.stamp_last_checked_only != 'true' }}
+        if: ${{ github.event.inputs.stamp_last_checked_only != 'true' && env.SUPABASE_READY == 'true' }}
         run: npx tsx scripts/run-check.ts
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
