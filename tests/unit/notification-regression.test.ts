@@ -181,12 +181,13 @@ describe('通知送信の回帰防止', () => {
     expect(runNow).not.toContain('items.length !== (cond.lastFoundCount ?? -1)')
   })
 
-  it('GitHub scheduleは深夜停止し、バックアップworkflowは手動専用にする', () => {
+  it('GitHub scheduleは深夜停止し、バックアップworkflowも日中だけ起動候補を持つ', () => {
     const backupWorkflow = readSource('.github/workflows/cron-backup.yml')
     const workflow = readSource('.github/workflows/cron.yml')
     const conditionCard = readSource('components/ConditionCard.tsx')
 
-    expect(backupWorkflow).not.toContain('schedule:')
+    expect(backupWorkflow).toContain("cron: '12,27,42,57 22,23 * * *'")
+    expect(backupWorkflow).toContain("cron: '12,27,42,57 0-15 * * *'")
     expect(backupWorkflow).toContain('workflow_dispatch')
     expect(backupWorkflow).toContain('yahoo-auction-watch-check')
     expect(backupWorkflow).toContain("SEND_NO_ITEMS_PUSH: 'true'")
