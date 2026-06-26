@@ -87,7 +87,7 @@ jobs:
           GH_FETCH_PAGES: '40'
           CHECK_SHARD_TOTAL: '6'
           CHECK_SHARD_INDEX: ${{ matrix.shard }}
-          CHECK_FETCH_CONCURRENCY: '1'
+          CHECK_FETCH_CONCURRENCY: '2'
           CHECK_SHARD_STAGGER_MS: '15000'
           YAHOO_PAGE_BATCH_SIZE: '1'
           YAHOO_PAGE_DELAY_MS: '250'
