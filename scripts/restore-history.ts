@@ -20,6 +20,7 @@ const supabase = getSupabaseAdmin()
 const RESTORE_FETCH_PAGES = Math.max(1, Number.parseInt(process.env.RESTORE_FETCH_PAGES ?? '40', 10) || 40)
 const RESTORE_FETCH_CONCURRENCY = Math.max(1, Number.parseInt(process.env.RESTORE_FETCH_CONCURRENCY ?? '3', 10) || 3)
 const RESTORE_NOTIFIED_HOURS = Math.max(1, Number.parseInt(process.env.RESTORE_NOTIFIED_HOURS ?? '72', 10) || 72)
+const RESTORE_NOTIFIED_CONCURRENCY = Math.max(1, Number.parseInt(process.env.RESTORE_NOTIFIED_CONCURRENCY ?? '8', 10) || 8)
 const RESTORE_SKIP_CURRENT = process.env.RESTORE_SKIP_CURRENT === '1'
 const RESTORE_SKIP_NOTIFIED = process.env.RESTORE_SKIP_NOTIFIED === '1'
 const ZERO_UUID = '00000000-0000-0000-0000-000000000000'
@@ -185,19 +186,21 @@ async function restoreFromNotifiedItems(): Promise<number> {
   const rows = data ?? []
   console.log(`[restore] notified_items candidates=${rows.length}`)
   let restored = 0
+  let processed = 0
   const snapshotCache = new Map<string, AuctionItem | null>()
-  for (const row of rows) {
+
+  async function restoreRow(row: { user_id: unknown; auction_id: unknown; notified_at: unknown }): Promise<number> {
     const auctionId = String(row.auction_id)
-    if (!snapshotCache.has(auctionId)) {
+    let item = snapshotCache.get(auctionId)
+    if (item === undefined) {
       try {
-        snapshotCache.set(auctionId, await fetchAuctionSnapshot(auctionId))
+        item = await fetchAuctionSnapshot(auctionId)
       } catch {
-        snapshotCache.set(auctionId, null)
+        item = null
       }
-      await new Promise(r => setTimeout(r, 150))
+      snapshotCache.set(auctionId, item)
     }
-    const item = snapshotCache.get(auctionId)
-    if (!item) continue
+    if (!item) return 0
     try {
       await updateHistorySnapshot({
         userId: String(row.user_id),
@@ -212,9 +215,20 @@ async function restoreFromNotifiedItems(): Promise<number> {
         remaining: item.remaining,
         endAt: item.endtimeMs ? new Date(item.endtimeMs).toISOString() : null,
       } as any)
-      restored++
+      return 1
     } catch (err) {
       logWriteFailure('updateHistorySnapshot', auctionId, err)
+      return 0
+    }
+  }
+
+  for (let i = 0; i < rows.length; i += RESTORE_NOTIFIED_CONCURRENCY) {
+    const batch = rows.slice(i, i + RESTORE_NOTIFIED_CONCURRENCY)
+    const counts = await Promise.all(batch.map(row => restoreRow(row as any)))
+    restored += counts.reduce((sum, n) => sum + n, 0)
+    processed += batch.length
+    if (processed % 50 === 0 || processed >= rows.length) {
+      console.log(`[restore] notified progress=${processed}/${rows.length} restored=${restored}`)
     }
   }
   return restored
