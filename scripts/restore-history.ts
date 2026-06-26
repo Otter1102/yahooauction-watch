@@ -20,7 +20,10 @@ const supabase = getSupabaseAdmin()
 const RESTORE_FETCH_PAGES = Math.max(1, Number.parseInt(process.env.RESTORE_FETCH_PAGES ?? '40', 10) || 40)
 const RESTORE_FETCH_CONCURRENCY = Math.max(1, Number.parseInt(process.env.RESTORE_FETCH_CONCURRENCY ?? '3', 10) || 3)
 const RESTORE_NOTIFIED_HOURS = Math.max(1, Number.parseInt(process.env.RESTORE_NOTIFIED_HOURS ?? '72', 10) || 72)
+const RESTORE_SKIP_CURRENT = process.env.RESTORE_SKIP_CURRENT === '1'
+const RESTORE_SKIP_NOTIFIED = process.env.RESTORE_SKIP_NOTIFIED === '1'
 const ZERO_UUID = '00000000-0000-0000-0000-000000000000'
+let writeFailures = 0
 
 function groupConditions(conditions: SearchCondition[]): ConditionGroup[] {
   const map = new Map<string, ConditionGroup>()
@@ -71,7 +74,29 @@ function matchesCondition(cond: SearchCondition, item: AuctionItem): boolean {
   return true
 }
 
+function logWriteFailure(action: string, auctionId: string, err: unknown) {
+  writeFailures++
+  if (writeFailures <= 20 || writeFailures % 50 === 0) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.warn(`[restore] ${action} failed auction=${auctionId}: ${message}`)
+  }
+}
+
+async function tryAddHistory(record: ReturnType<typeof toHistoryRecord>): Promise<boolean> {
+  try {
+    await addHistory(record)
+    return true
+  } catch (err) {
+    logWriteFailure('addHistory', record.auctionId, err)
+    return false
+  }
+}
+
 async function restoreCurrentMatches(): Promise<number> {
+  if (RESTORE_SKIP_CURRENT) {
+    console.log('[restore] current matches skipped')
+    return 0
+  }
   const conditions = (await getAllEnabledConditions()).filter(c => c.enabled)
   const groups = groupConditions(conditions)
   console.log(`[restore] enabled conditions=${conditions.length} unique searches=${groups.length}`)
@@ -85,8 +110,7 @@ async function restoreCurrentMatches(): Promise<number> {
       for (const cond of group.conditions) {
         const matched = meta.items.filter(item => matchesCondition(cond, item))
         for (const item of matched) {
-          await addHistory(toHistoryRecord(cond, item))
-          groupRestored++
+          if (await tryAddHistory(toHistoryRecord(cond, item))) groupRestored++
         }
       }
       restored += groupRestored
@@ -144,6 +168,10 @@ async function fetchAuctionSnapshot(auctionId: string): Promise<AuctionItem | nu
 }
 
 async function restoreFromNotifiedItems(): Promise<number> {
+  if (RESTORE_SKIP_NOTIFIED) {
+    console.log('[restore] notified_items skipped')
+    return 0
+  }
   const cutoff = new Date(Date.now() - RESTORE_NOTIFIED_HOURS * 60 * 60 * 1000).toISOString()
   const { data, error } = await supabase
     .from('notified_items')
@@ -170,20 +198,24 @@ async function restoreFromNotifiedItems(): Promise<number> {
     }
     const item = snapshotCache.get(auctionId)
     if (!item) continue
-    await updateHistorySnapshot({
-      userId: String(row.user_id),
-      conditionId: ZERO_UUID,
-      conditionName: '復旧履歴',
-      auctionId,
-      title: item.title,
-      price: item.price,
-      url: item.url,
-      imageUrl: item.imageUrl ?? '',
-      notifiedAt: String(row.notified_at),
-      remaining: item.remaining,
-      endAt: item.endtimeMs ? new Date(item.endtimeMs).toISOString() : null,
-    } as any)
-    restored++
+    try {
+      await updateHistorySnapshot({
+        userId: String(row.user_id),
+        conditionId: ZERO_UUID,
+        conditionName: '復旧履歴',
+        auctionId,
+        title: item.title,
+        price: item.price,
+        url: item.url,
+        imageUrl: item.imageUrl ?? '',
+        notifiedAt: String(row.notified_at),
+        remaining: item.remaining,
+        endAt: item.endtimeMs ? new Date(item.endtimeMs).toISOString() : null,
+      } as any)
+      restored++
+    } catch (err) {
+      logWriteFailure('updateHistorySnapshot', auctionId, err)
+    }
   }
   return restored
 }
@@ -195,7 +227,7 @@ async function main() {
   console.log('[restore] start')
   const current = await restoreCurrentMatches()
   const notified = await restoreFromNotifiedItems()
-  console.log(`[restore] done current=${current} notified=${notified} total=${current + notified}`)
+  console.log(`[restore] done current=${current} notified=${notified} total=${current + notified} writeFailures=${writeFailures}`)
 }
 
 main().catch(err => {
