@@ -23,8 +23,8 @@ describe('通知送信の回帰防止', () => {
   it('GitHub Actions run-check もPush成功後だけ notified_items に保存する', () => {
     const source = readSource('scripts/run-check.ts')
     const deliveryCheck = source.indexOf('if (!delivered) {')
-    const addHistory = source.indexOf('await addHistory(toHistoryRecord(cond, item))')
-    const markNotified = source.indexOf('await markNotified(userId, item.auctionId)')
+    const addHistory = source.indexOf('await addHistories(')
+    const markNotified = source.indexOf('await markNotifiedMany(')
     const retryWarning = source.indexOf('通知済みにせず次回再試行')
     const recordRetryWarning = source.indexOf('未記録分は次回再試行')
 

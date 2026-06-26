@@ -6,7 +6,7 @@
  * 実行: npx tsx scripts/run-check.ts
  * 環境変数: NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_KEY
  */
-import { getAllEnabledConditions, getAllNotifiedIds, markNotified, addHistory, updateCondition, cleanupOldNotified, cleanupOldHistory, resetStalledNotified, updateHistorySnapshot, addConditionCheckHistory } from '../lib/storage'
+import { getAllEnabledConditions, getAllNotifiedIds, markNotifiedMany, addHistories, updateCondition, cleanupOldNotified, cleanupOldHistory, resetStalledNotified, updateHistorySnapshots, addConditionCheckHistory } from '../lib/storage'
 import { fetchAuctionRssWithMeta } from '../lib/scraper'
 import { selectConditionCandidates } from '../lib/condition-match'
 import { sendWebPushCheckComplete, sendWebPushSummary } from '../lib/webpush'
@@ -83,9 +83,9 @@ const ALLOW_NIGHT_NOTIFICATIONS = process.env.ALLOW_NIGHT_NOTIFICATIONS === 'tru
 const CHECK_SHARD_TOTAL = Math.max(1, Number.parseInt(process.env.CHECK_SHARD_TOTAL ?? '1', 10) || 1)
 const CHECK_SHARD_INDEX = Math.max(0, Number.parseInt(process.env.CHECK_SHARD_INDEX ?? '0', 10) || 0)
 const CHECK_SHARD_STAGGER_MS = Math.max(0, Number.parseInt(process.env.CHECK_SHARD_STAGGER_MS ?? '0', 10) || 0)
-const SNAPSHOT_UPDATE_LIMIT = Math.max(0, Number.parseInt(process.env.CHECK_SNAPSHOT_UPDATE_LIMIT ?? '50', 10) || 50)
-const NEW_ITEMS_PER_CONDITION_LIMIT = Math.max(1, Number.parseInt(process.env.CHECK_NEW_ITEMS_PER_CONDITION_LIMIT ?? '80', 10) || 80)
-const NEW_ITEMS_PER_USER_LIMIT = Math.max(1, Number.parseInt(process.env.CHECK_NEW_ITEMS_PER_USER_LIMIT ?? '200', 10) || 200)
+const SNAPSHOT_UPDATE_LIMIT = Math.max(0, Number.parseInt(process.env.CHECK_SNAPSHOT_UPDATE_LIMIT ?? '200', 10) || 200)
+const NEW_ITEMS_PER_CONDITION_LIMIT = Math.max(1, Number.parseInt(process.env.CHECK_NEW_ITEMS_PER_CONDITION_LIMIT ?? '300', 10) || 300)
+const NEW_ITEMS_PER_USER_LIMIT = Math.max(1, Number.parseInt(process.env.CHECK_NEW_ITEMS_PER_USER_LIMIT ?? '1000', 10) || 1000)
 
 function getJstHour(date = new Date()): number {
   return Number(new Intl.DateTimeFormat('ja-JP', {
@@ -298,11 +298,12 @@ async function main() {
         let conditionNotified = 0
         let snapshotUpdates = 0
         let skippedByCap = 0
+        const snapshotRecords: ReturnType<typeof toHistoryRecord>[] = []
         for (const item of candidateItems) {
           // 通知済みチェック: 送信直前にキャッシュを参照（並列グループ間の重複防止）
           if (notifiedIdsCache.get(cond.userId)?.has(item.auctionId)) {
             if (snapshotUpdates < SNAPSHOT_UPDATE_LIMIT) {
-              await updateHistorySnapshot(toHistoryRecord(cond, item))
+              snapshotRecords.push(toHistoryRecord(cond, item))
               snapshotUpdates++
             }
             continue
@@ -322,6 +323,9 @@ async function main() {
             alreadyPending.push({ item, cond })
             conditionNotified++
           }
+        }
+        if (snapshotRecords.length > 0) {
+          await updateHistorySnapshots(snapshotRecords)
         }
 
         // 最終チェック時刻は、件数変化がなくても巡回成功の証跡として必ず更新する。
@@ -368,24 +372,17 @@ async function main() {
           console.warn(`  ⚠️ [${userId.slice(0,8)}] Push失敗: ${items.length}件は通知済みにせず次回再試行`)
           return
         }
-        let marked = 0
-        let recordErrors = 0
-        for (const { item, cond } of items) {
-          if (notifiedIdsCache.get(userId)?.has(item.auctionId)) continue
-          try {
-            await addHistory(toHistoryRecord(cond, item))
-            await markNotified(userId, item.auctionId)
+        const freshItems = items.filter(({ item }) => !notifiedIdsCache.get(userId)?.has(item.auctionId))
+        try {
+          await addHistories(freshItems.map(({ item, cond }) => toHistoryRecord(cond, item)))
+          await markNotifiedMany(userId, freshItems.map(({ item }) => item.auctionId))
+          for (const { item } of freshItems) {
             notifiedIdsCache.get(userId)?.add(item.auctionId)
-            marked++
-          } catch (e: any) {
-            recordErrors++
-            console.warn(`  ⚠️ [${userId.slice(0,8)}] 通知後記録失敗:`, e?.message ?? e)
           }
-        }
-        totalNotified += marked
-        console.log(`  📨 [${userId.slice(0,8)}] 新着${marked}件 通知`)
-        if (recordErrors > 0) {
-          console.error(`  ⚠️ [${userId.slice(0,8)}] 通知後記録失敗 ${recordErrors}/${items.length}件（未記録分は次回再試行）`)
+          totalNotified += freshItems.length
+          console.log(`  📨 [${userId.slice(0,8)}] 新着${freshItems.length}件 通知`)
+        } catch (e: any) {
+          console.error(`  ⚠️ [${userId.slice(0,8)}] 通知後一括記録失敗 ${freshItems.length}/${items.length}件（未記録分は次回再試行）:`, e?.message ?? e)
         }
       }
 

@@ -232,6 +232,15 @@ export async function markNotified(userId: string, auctionId: string): Promise<v
   throwOnError(error, 'notified_items保存エラー')
 }
 
+export async function markNotifiedMany(userId: string, auctionIds: string[]): Promise<void> {
+  const rows = [...new Set(auctionIds)].map(auctionId => ({ user_id: userId, auction_id: auctionId }))
+  if (rows.length === 0) return
+  const { error } = await supabaseAdmin
+    .from('notified_items')
+    .upsert(rows, { onConflict: 'user_id,auction_id', ignoreDuplicates: true })
+  throwOnError(error, 'notified_items一括保存エラー')
+}
+
 export async function getNotifiedIds(userId: string): Promise<Set<string>> {
   const { data, error } = await supabaseAdmin
     .from('notified_items')
@@ -402,12 +411,41 @@ async function upsertHistory(record: HistoryInput, refreshNotifiedAt: boolean): 
   throwOnError(insertErr, 'notification_history保存エラー')
 }
 
+async function upsertHistories(records: HistoryInput[], refreshNotifiedAt: boolean): Promise<void> {
+  const unique = new Map<string, HistoryInput>()
+  for (const record of records) {
+    unique.set(`${record.userId}:${record.auctionId}`, record)
+  }
+  const deduped = [...unique.values()]
+  if (deduped.length === 0) return
+
+  const rows = deduped.map(record => historyRow(record, refreshNotifiedAt))
+  const { error } = await supabaseAdmin
+    .from('notification_history')
+    .upsert(rows, { onConflict: 'user_id,auction_id' })
+
+  if (!error) return
+
+  // migration_008 適用前など、bulk upsert の競合キーが使えない環境では既存の安全経路へフォールバック。
+  for (const record of deduped) {
+    await upsertHistory(record, refreshNotifiedAt)
+  }
+}
+
 export async function addHistory(record: HistoryInput): Promise<void> {
   await upsertHistory(record, true)
 }
 
+export async function addHistories(records: HistoryInput[]): Promise<void> {
+  await upsertHistories(records, true)
+}
+
 export async function updateHistorySnapshot(record: HistoryInput): Promise<void> {
   await upsertHistory(record, false)
+}
+
+export async function updateHistorySnapshots(records: HistoryInput[]): Promise<void> {
+  await upsertHistories(records, false)
 }
 
 export async function addConditionCheckHistory(
