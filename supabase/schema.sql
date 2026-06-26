@@ -83,3 +83,31 @@ CREATE INDEX IF NOT EXISTS idx_notification_history_end_at ON notification_histo
 CREATE UNIQUE INDEX IF NOT EXISTS idx_notification_history_user_auction_unique
   ON notification_history(user_id, auction_id)
   WHERE auction_id IS NOT NULL;
+
+-- ============================================================
+-- Migration: DB軽量化・保持期間整理・巡回用index
+-- 2026-06-27 追加
+-- ============================================================
+CREATE INDEX IF NOT EXISTS idx_conditions_enabled_id
+  ON conditions(id)
+  WHERE enabled = TRUE;
+CREATE INDEX IF NOT EXISTS idx_notification_history_user_notified_at
+  ON notification_history(user_id, notified_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notification_history_end_at_auction
+  ON notification_history(end_at)
+  WHERE end_at IS NOT NULL
+    AND auction_id IS NOT NULL
+    AND auction_id NOT LIKE '__check_%';
+CREATE INDEX IF NOT EXISTS idx_notification_history_check_notified_at
+  ON notification_history(notified_at)
+  WHERE auction_id LIKE '__check_%';
+CREATE INDEX IF NOT EXISTS idx_notification_history_unknown_end_notified_at
+  ON notification_history(notified_at)
+  WHERE end_at IS NULL
+    AND auction_id IS NOT NULL
+    AND auction_id NOT LIKE '__check_%';
+CREATE INDEX IF NOT EXISTS idx_notified_items_notified_at
+  ON notified_items(notified_at);
+CREATE INDEX IF NOT EXISTS idx_users_push_sub_present
+  ON users(id)
+  WHERE push_sub IS NOT NULL;

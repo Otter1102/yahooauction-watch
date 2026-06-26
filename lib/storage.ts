@@ -273,10 +273,11 @@ export async function clearNotifiedHistory(userId: string): Promise<void> {
 }
 
 export async function cleanupOldNotified(): Promise<void> {
-  // 60時間以上古い重複防止レコードを削除
+  const retentionHours = Math.max(24, Number.parseInt(process.env.NOTIFIED_RETENTION_HOURS ?? '60', 10) || 60)
+  // 古い重複防止レコードを削除
   // 根拠: 通知対象は「残り48時間以内」のオークション → 終了まで最大48h。
-  //       終了後12時間 = 最大 notified_at + 60h 後に安全に削除できる。
-  const cutoff = new Date(Date.now() - 60 * 60 * 60 * 1000).toISOString()
+  //       終了後の表示猶予を含めても、長期保持はDBを圧迫するためTTLで削除する。
+  const cutoff = new Date(Date.now() - retentionHours * 60 * 60 * 1000).toISOString()
   const { error } = await supabaseAdmin
     .from('notified_items')
     .delete()
@@ -285,6 +286,11 @@ export async function cleanupOldNotified(): Promise<void> {
 }
 
 export async function resetStalledNotified(): Promise<string[]> {
+  if (process.env.ENABLE_STALLED_NOTIFIED_RESET !== 'true') {
+    console.log('[自己修復] resetStalledNotified はDB負荷軽減のため停止中')
+    return []
+  }
+
   // 自己修復: 48時間以上通知が届いていないのに notified_items が溜まっているユーザーを検出し、
   //           通知済みリストを強制リセット（次のcronで再通知を開始させる）
   const supabase = getSupabaseAdmin()
@@ -336,9 +342,38 @@ export async function resetStalledNotified(): Promise<string[]> {
 }
 
 export async function cleanupOldHistory(): Promise<void> {
-  // 履歴消失の報告が出たため、notification_history のDB削除は一時停止。
-  // 古い履歴の整理を再開する場合も、削除ではなく表示側の非表示で実装する。
-  console.log('[cleanup] notification_history の古い履歴削除は一時停止中')
+  const checkRetentionHours = Math.max(6, Number.parseInt(process.env.CHECK_HISTORY_RETENTION_HOURS ?? '36', 10) || 36)
+  const unknownRetentionHours = Math.max(24, Number.parseInt(process.env.UNKNOWN_END_HISTORY_RETENTION_HOURS ?? '72', 10) || 72)
+  const now = Date.now()
+  const endedCutoff = new Date(now - 24 * 60 * 60 * 1000).toISOString()
+  const checkCutoff = new Date(now - checkRetentionHours * 60 * 60 * 1000).toISOString()
+  const unknownEndCutoff = new Date(now - unknownRetentionHours * 60 * 60 * 1000).toISOString()
+
+  // 条件チェック履歴は「巡回している証跡」なので短期保持で十分。
+  const { error: checkErr } = await supabaseAdmin
+    .from('notification_history')
+    .delete()
+    .like('auction_id', `${CHECK_HISTORY_PREFIX}%`)
+    .lt('notified_at', checkCutoff)
+  throwOnError(checkErr, '古い条件チェック履歴削除エラー')
+
+  // 終了済みオークションは終了後24時間を超えたらDBから削除する。
+  const { error: endedErr } = await supabaseAdmin
+    .from('notification_history')
+    .delete()
+    .not('auction_id', 'like', `${CHECK_HISTORY_PREFIX}%`)
+    .not('end_at', 'is', null)
+    .lt('end_at', endedCutoff)
+  throwOnError(endedErr, '終了24時間超の通知履歴削除エラー')
+
+  // end_at が無い旧レコードは開催中判定ができないため、短期だけ残して削除する。
+  const { error: unknownErr } = await supabaseAdmin
+    .from('notification_history')
+    .delete()
+    .not('auction_id', 'like', `${CHECK_HISTORY_PREFIX}%`)
+    .is('end_at', null)
+    .lt('notified_at', unknownEndCutoff)
+  throwOnError(unknownErr, 'end_atなし旧通知履歴削除エラー')
 }
 
 // ==================== History ====================
@@ -514,8 +549,15 @@ export async function getHistory(userId: string, limit = 500): Promise<Notificat
 }
 
 export async function cleanupEndedHistoryForUser(userId: string): Promise<number> {
-  void userId
-  // 履歴消失の報告が出たため、終了済み履歴のDB削除は一時停止。
-  // 終了24時間超の履歴は getHistory() の表示フィルターで非表示にする。
-  return 0
+  const cutoff = new Date(Date.now() - ENDED_AUCTION_HISTORY_VISIBLE_MS).toISOString()
+  const { data, error } = await supabaseAdmin
+    .from('notification_history')
+    .delete()
+    .eq('user_id', userId)
+    .not('auction_id', 'like', `${CHECK_HISTORY_PREFIX}%`)
+    .not('end_at', 'is', null)
+    .lt('end_at', cutoff)
+    .select('id')
+  throwOnError(error, 'ユーザー別終了済み履歴削除エラー')
+  return data?.length ?? 0
 }

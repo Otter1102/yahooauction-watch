@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { rateGuard } from '@/lib/apiGuard'
+import { cleanupEndedHistoryForUser } from '@/lib/storage'
 
 /**
  * POST /api/history/cleanup
@@ -13,9 +14,8 @@ export async function POST(req: NextRequest) {
     const limited = rateGuard(`history-cleanup:${userId}`, 5, 60_000)
     if (limited) return limited
 
-    // 履歴消失の報告が出たため、削除処理は一時停止。
-    // 復旧後は「DBから削除」ではなく「表示だけ非表示」に切り替える。
-    return NextResponse.json({ deleted: 0, disabled: true })
+    const deleted = await cleanupEndedHistoryForUser(userId)
+    return NextResponse.json({ deleted })
   } catch {
     return NextResponse.json({ deleted: 0 })
   }
