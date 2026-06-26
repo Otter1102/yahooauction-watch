@@ -208,13 +208,17 @@ export async function sendWebPushCheckComplete(
   if (!sub?.endpoint) return false
 
   const now = new Date()
-  const hh = String(now.getHours()).padStart(2, '0')
-  const mm = String(now.getMinutes()).padStart(2, '0')
+  const checkedAt = new Intl.DateTimeFormat('ja-JP', {
+    timeZone: 'Asia/Tokyo',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).format(now)
   const body = summary.failed
-    ? `取得できませんでした（${summary.fetchFailedCount ?? 1}条件 / ${hh}:${mm}確認）`
+    ? `取得できませんでした（${summary.fetchFailedCount ?? 1}条件 / ${checkedAt}確認）`
     : summary.noItems
-      ? `新着はありませんでした（${hh}:${mm}確認）`
-      : `取得完了: 新着${summary.freshCount}件（${hh}:${mm}確認）`
+      ? `新着はありませんでした（${checkedAt}確認）`
+      : `取得完了: 新着${summary.freshCount}件（${checkedAt}確認）`
 
   const result = await sendToSub(sub, withReceipt({
     title: 'ヤフオクwatch チェック完了',

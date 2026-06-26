@@ -96,6 +96,8 @@ describe('通知送信の回帰防止', () => {
     expect(runCheck).toContain('JST 25:00-06:59 は通知停止時間')
     expect(webpush).toContain('新着はありませんでした')
     expect(webpush).toContain('取得できませんでした')
+    expect(webpush).toContain("timeZone: 'Asia/Tokyo'")
+    expect(webpush).toContain("hourCycle: 'h23'")
   })
 
   it('端末側のPush受信ACKと強制再登録が実装されている', () => {
