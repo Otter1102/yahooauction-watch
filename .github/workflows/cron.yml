@@ -24,7 +24,7 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -86,6 +86,7 @@ jobs:
           GH_FETCH_PAGES: '40'
           CHECK_SHARD_TOTAL: '6'
           CHECK_SHARD_INDEX: ${{ matrix.shard }}
+          CHECK_FETCH_CONCURRENCY: '3'
           SUPABASE_FETCH_TIMEOUT_MS: '90000'
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}

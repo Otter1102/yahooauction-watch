@@ -237,7 +237,7 @@ async function main() {
   // GitHub Actions: GH_FETCH_PAGES=120ページまで終端探索（最大6000件）
   // → 人気キーワードで深いページにある入札あり商品も拾う
   // → 深いページングのため、Yahoo側にブロックされないよう検索単位の並列数は抑える
-  const FETCH_CONCURRENCY = CHECK_SHARD_TOTAL > 1 ? 1 : 3
+  const FETCH_CONCURRENCY = Math.max(1, Number.parseInt(process.env.CHECK_FETCH_CONCURRENCY ?? '3', 10) || 3)
   for (let i = 0; i < groups.length; i += FETCH_CONCURRENCY) {
     const batch = groups.slice(i, i + FETCH_CONCURRENCY)
     await Promise.all(batch.map(async (group) => {
