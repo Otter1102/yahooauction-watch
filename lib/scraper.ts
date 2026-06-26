@@ -340,6 +340,10 @@ function isLastSearchPage(itemsOnPage: number): boolean {
   return itemsOnPage < PAGE_SIZE
 }
 
+function isUsableSearchPage(page: Awaited<ReturnType<typeof fetchPage>>): boolean {
+  return page.httpStatus === 200 || page.items.length > 0
+}
+
 function effectiveFetchKey(key: RssKey): RssKey {
   const hasYahooSideNarrowing =
     key.sellerType !== 'all' ||
@@ -412,11 +416,15 @@ async function fetchAuctionPages(
     }
 
     if (
-      batchPages.some(page => page.httpStatus === 200 && isLastSearchPage(page.items.length)) ||
-      batchPages.some(page => page.httpStatus === 200 && shouldStopBidSortedPage(searchKey, page.items)) ||
-      batchPages.some(page => page.httpStatus === 200 && shouldStopEndTimePage(searchKey, page.items, now))
+      batchPages.some(page => isUsableSearchPage(page) && isLastSearchPage(page.items.length)) ||
+      batchPages.some(page => isUsableSearchPage(page) && shouldStopBidSortedPage(searchKey, page.items)) ||
+      batchPages.some(page => isUsableSearchPage(page) && shouldStopEndTimePage(searchKey, page.items, now))
     ) {
       exhausted = true
+      break
+    }
+
+    if (batchPages.every(page => !isUsableSearchPage(page))) {
       break
     }
 
@@ -452,7 +460,7 @@ export async function fetchAuctionRssWithMeta(key: RssKey, maxPages = API_FETCH_
     acc[status] = (acc[status] ?? 0) + 1
     return acc
   }, {})
-  const successfulPages = pages.filter(page => page.httpStatus === 200).length
+  const successfulPages = pages.filter(isUsableSearchPage).length
   const failedPages = pages.length - successfulPages
   const statusSummary = Object.entries(statusCounts)
     .sort(([a], [b]) => Number(a) - Number(b))
