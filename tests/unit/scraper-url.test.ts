@@ -31,6 +31,12 @@ describe('Yahoo検索URL生成', () => {
     expect(url.searchParams.has('auctype')).toBe(false)
   })
 
+  it('入札件数ソートはYahoo現行UIの「多い順」パラメータを使う', () => {
+    const url = new URL(buildSearchUrl({ ...baseKey, sellerType: 'all', sortBy: 'bids' }, 1))
+    expect(url.searchParams.get('s1')).toBe('bids')
+    expect(url.searchParams.get('o1')).toBe('a')
+  })
+
   it('検索結果は固定3ページではなく終端までページングする', () => {
     const source = readFileSync(path.join(root, 'lib/scraper.ts'), 'utf8')
     expect(source).toContain('fetchAuctionPages')

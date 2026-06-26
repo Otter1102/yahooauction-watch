@@ -70,7 +70,8 @@ export function buildSearchUrl(key: RssKey, offset: number): string {
   } else if (key.sortBy === 'price') {
     params.s1 = 'cbids'; params.o1 = key.sortOrder === 'desc' ? 'd' : 'a'
   } else if (key.sortBy === 'bids') {
-    params.s1 = 'bids';  params.o1 = 'd'
+    // 2026-06-27確認: Yahoo現行UIでは o1=a が「入札件数の多い順」、o1=d が「少ない順」。
+    params.s1 = 'bids';  params.o1 = 'a'
   }
 
   // 出品者タイプ

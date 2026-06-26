@@ -281,7 +281,23 @@ async function main() {
         return
       }
       console.log(`  🔍 [${group.key.keyword}] 取得: ${items.length}件`)
-      if (items.length === 0) return
+      if (items.length === 0) {
+        for (const cond of group.conditions) {
+          if (!cond.enabled) continue
+          await updateCondition(cond.id, {
+            lastCheckedAt: new Date().toISOString(),
+            lastFoundCount: 0,
+          })
+          await addConditionCheckHistory(cond, {
+            status: 'ok',
+            matchedCount: 0,
+            freshCount: 0,
+          }).catch(err => {
+            console.warn(`  ⚠️ [${cond.name}] チェック履歴保存失敗:`, err?.message ?? err)
+          })
+        }
+        return
+      }
 
       // このグループの全ユーザーを処理
       for (const cond of group.conditions) {
