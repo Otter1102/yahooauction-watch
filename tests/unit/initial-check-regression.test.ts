@@ -11,11 +11,14 @@ function readSource(relativePath: string): string {
 describe('条件作成直後の初回取得', () => {
   it('/api/conditions の新規作成後に初回取得を実行する', () => {
     const source = readSource('app/api/conditions/route.ts')
+    const createUser = source.indexOf('await getOrCreateUser(userId)')
     const create = source.indexOf('const condition = await createCondition')
     const initialCheck = source.indexOf('await runInitialConditionCheck(userId, condition)')
     const response = source.indexOf('return NextResponse.json({ ...condition, initialCheck }')
 
+    expect(createUser).toBeGreaterThan(-1)
     expect(create).toBeGreaterThan(-1)
+    expect(create).toBeGreaterThan(createUser)
     expect(initialCheck).toBeGreaterThan(create)
     expect(response).toBeGreaterThan(initialCheck)
   })

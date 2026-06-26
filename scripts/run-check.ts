@@ -7,7 +7,7 @@
  * 環境変数: NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_KEY
  */
 import { getAllEnabledConditions, getAllNotifiedIds, markNotified, addHistory, updateCondition, cleanupOldNotified, cleanupOldHistory, resetStalledNotified, updateHistorySnapshot, addConditionCheckHistory } from '../lib/storage'
-import { fetchAuctionRssWithMeta, checkAuctionEnded } from '../lib/scraper'
+import { fetchAuctionRssWithMeta } from '../lib/scraper'
 import { sendWebPushCheckComplete, sendWebPushSummary } from '../lib/webpush'
 import { sendAdminErrorAlert } from '../lib/emailer'
 import { getSupabaseAdmin } from '../lib/supabase'
@@ -392,75 +392,11 @@ async function main() {
   console.log(`\n=== 完了: 合計${totalNotified}件通知 / チェック完了通知${totalCheckCompleteNotified}件 ===\n`)
 }
 
-/** end_at なし旧レコードを Yahoo 確認して削除する安全網（1run あたり最大20件） */
+/** end_at なし旧レコードを Yahoo 確認して削除する安全網（停止中） */
 async function cleanupEndedAuctions(): Promise<void> {
-  // end_at が設定済みで終了時刻を過ぎたレコードは即削除。
-  const nowIso = new Date().toISOString()
-  const { data: endedRows } = await supabaseAdmin
-    .from('notification_history')
-    .select('id, auction_id, user_id')
-    .not('end_at', 'is', null)
-    .lte('end_at', nowIso)
-    .limit(1000)
-  if (endedRows?.length) {
-    await supabaseAdmin
-      .from('notification_history')
-      .delete()
-      .in('id', endedRows.map(r => r.id as string))
-    for (const row of endedRows) {
-      await supabaseAdmin
-        .from('notified_items')
-        .delete()
-        .eq('user_id', row.user_id as string)
-        .eq('auction_id', row.auction_id as string)
-    }
-    console.log(`終了時刻超過オークション ${endedRows.length}件を履歴・通知ログから削除`)
-  }
-
-  // end_at がない旧レコードのみYahoo確認して終了済みなら即削除。
-  const cutoff = new Date().toISOString()
-
-  const { data: items } = await supabaseAdmin
-    .from('notification_history')
-    .select('id, auction_id, user_id')
-    .is('end_at', null)
-    .not('auction_id', 'like', '__check_%')
-    .lt('notified_at', cutoff)
-    .limit(100)
-
-  if (!items?.length) return
-
-  const toDeleteHistoryIds: string[] = []
-  const toDeleteNotified: Array<{ userId: string; auctionId: string }> = []
-
-  for (const item of items) {
-    const ended = await checkAuctionEnded(item.auction_id as string)
-    if (ended) {
-      toDeleteHistoryIds.push(item.id as string)
-      toDeleteNotified.push({ userId: item.user_id as string, auctionId: item.auction_id as string })
-    }
-    await new Promise(r => setTimeout(r, 400))  // Yahoo への負荷分散
-  }
-
-  if (toDeleteHistoryIds.length === 0) return
-
-  // 1. 通知履歴から削除
-  await supabaseAdmin
-    .from('notification_history')
-    .delete()
-    .in('id', toDeleteHistoryIds)
-
-  // 2. notified_items からも削除（重要: ここを消さないと終了済みIDが残り続け、新着通知を妨げる）
-  //    アプリ削除→再インストール後も新規ユーザーのnotified_itemsは空なので自動的にクリーンな状態になる
-  for (const { userId, auctionId } of toDeleteNotified) {
-    await supabaseAdmin
-      .from('notified_items')
-      .delete()
-      .eq('user_id', userId)
-      .eq('auction_id', auctionId)
-  }
-
-  console.log(`終了オークション ${toDeleteHistoryIds.length}件を履歴・通知ログから削除`)
+  // 履歴消失の報告が出たため、終了済みオークションのDB削除は一時停止。
+  // notified_items の整理も含め、復旧後に「履歴は残す/表示だけ非表示」で再設計する。
+  console.log('[cleanup] 終了済みオークション削除は一時停止中')
 }
 
 /**

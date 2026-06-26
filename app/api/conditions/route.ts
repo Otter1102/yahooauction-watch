@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getConditions, createCondition } from '@/lib/storage'
+import { getConditions, createCondition, getOrCreateUser } from '@/lib/storage'
 import { getIp, rateGuard } from '@/lib/apiGuard'
 import { runInitialConditionCheck } from '@/lib/initial-check'
 
@@ -30,6 +30,9 @@ export async function POST(req: NextRequest) {
     // レート制限: userId単位で20回/分
     const limited = rateGuard(`conditions-post:${userId}`, 20, 60_000)
     if (limited) return limited
+
+    // PWA初回起動直後など、/api/user より先に条件作成が来ても外部キーで落ちないようにする。
+    await getOrCreateUser(userId)
 
     // 上限チェック（トライアル: 5件 / 通常: 30件）
     const isTrial = process.env.NEXT_PUBLIC_TRIAL_MODE === 'true'

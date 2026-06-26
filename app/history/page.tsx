@@ -15,6 +15,23 @@ function isCheckRecord(record: NotificationRecord): boolean {
 // キャッシュキー: WKWebView再起動後の即時表示・白画面防止用
 const HISTORY_CACHE_KEY = 'yw_history_cache'
 
+function readCachedHistory(): NotificationRecord[] {
+  if (typeof window === 'undefined') return []
+  try {
+    const cached = localStorage.getItem(HISTORY_CACHE_KEY)
+    if (!cached) return []
+    const parsed = JSON.parse(cached)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+function writeCachedHistory(records: NotificationRecord[]): void {
+  if (typeof window === 'undefined' || records.length === 0) return
+  try { localStorage.setItem(HISTORY_CACHE_KEY, JSON.stringify(records)) } catch {}
+}
+
 // ─── Yahoo公式大カテゴリ分類 ───
 const CATEGORIES = [
   { id: 'all',        label: 'すべて' },
@@ -97,25 +114,50 @@ export default function HistoryPage() {
   const tabsRef     = useRef<HTMLDivElement>(null)
   const touchStartX = useRef(0)
   const touchStartY = useRef(0)
+  const restoreAttempted = useRef(false)
   // Yahoo遷移フラグ: SFSafariViewController から戻ってきた時に履歴を再取得する
   const navigatedAway = useRef(false)
 
   // ─── データ取得 ─────────────────────────────────────────────
+  const restoreCachedHistory = useCallback(async (userId: string, cached: NotificationRecord[]) => {
+    if (restoreAttempted.current || cached.length === 0) return
+    restoreAttempted.current = true
+    try {
+      const res = await fetch('/api/history/restore', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, records: cached }),
+      })
+      if (!res.ok) return
+      const restored = await fetch(`/api/history?userId=${userId}`).then(r => r.json())
+      if (Array.isArray(restored) && restored.length > 0) {
+        setHistory(restored)
+        writeCachedHistory(restored)
+      }
+    } catch {
+      // 復元失敗時も端末キャッシュ表示は維持する
+    }
+  }, [])
+
   const fetchHistory = useCallback(async () => {
     const id = getUserId()
     if (!id) return
     const data = await fetch(`/api/history?userId=${id}`).then(r => r.json())
+    const cached = readCachedHistory()
+    if (Array.isArray(data) && data.length === 0 && cached.length > 0) {
+      setHistory(cached)
+      await restoreCachedHistory(id, cached)
+      return
+    }
     setHistory(data)
     // WKWebView再起動後の白画面防止: 最新データをキャッシュ保存
-    try { localStorage.setItem(HISTORY_CACHE_KEY, JSON.stringify(data)) } catch {}
-  }, [])
+    if (Array.isArray(data) && data.length > 0) writeCachedHistory(data)
+  }, [restoreCachedHistory])
 
   useEffect(() => {
     // キャッシュから即時表示（WKWebView強制終了後の再起動時に白画面にならないよう）
-    try {
-      const cached = localStorage.getItem(HISTORY_CACHE_KEY)
-      if (cached) setHistory(JSON.parse(cached))
-    } catch {}
+    const cached = readCachedHistory()
+    if (cached.length > 0) setHistory(cached)
     fetchHistory().finally(() => setLoading(false))
   }, [fetchHistory])
 
@@ -147,17 +189,6 @@ export default function HistoryPage() {
     if (refreshing) return
     setRefreshing(true)
     try {
-      const id = getUserId()
-      // クリーンアップをバックグラウンドで実行（終了オークション削除・待たない）
-      if (id) {
-        fetch('/api/history/cleanup', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: id }),
-        }).catch(() => {})
-      }
-      // 少し待ってから取得（クリーンアップが先行して完了しやすくする）
-      await new Promise(r => setTimeout(r, 800))
       await fetchHistory()
     } finally {
       setRefreshing(false)

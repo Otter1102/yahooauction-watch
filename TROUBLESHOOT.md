@@ -1,3 +1,15 @@
+## 2026-06-26 — 通知履歴が空になる / 1時間巡回が失敗する
+
+| 項目 | 内容 |
+|------|------|
+| **症状** | ユーザーの通知履歴が空になる。GitHub Actions の定期巡回が失敗し、1時間ごとの「新着はありませんでした」通知も届かない時間帯がある |
+| **原因** | 履歴取得API・履歴画面の手動更新・Vercel cron・GitHub Actions の複数経路で、終了済みオークションや7日超の `notification_history` を物理削除していた。さらに Actions #858 は Node 警告ではなく、Supabase `conditions` 取得のタイムアウトで `scripts/run-check.ts` が exit 1 になっていた |
+| **対策** | `notification_history` の物理削除を一時停止。履歴画面はサーバーが空を返しても端末キャッシュを消さず、`/api/history/restore` でキャッシュからDBへ復元する。Actions の Supabase precheck は service key で `conditions` を確認し、Node 22 / actions v5 / DB timeout 90秒へ更新 |
+| **解決した理由** | 巡回・手動更新・履歴取得の全経路で履歴を消さなくなり、端末に残った履歴キャッシュをDBへ戻せる。Actions 側は誤った anon key precheck と Node 20 警告を解消し、Supabase 遅延にも耐えやすくした |
+| **再発防止** | `notification_history` を削除する実装を戻さない。終了済みを隠す場合はDB削除ではなく表示側フィルターで実装する。cron失敗時は warning ではなく `Run auction check` のログと exit code を確認する |
+
+---
+
 ## 2026-06-25 — 条件作成直後に該当オークションが履歴へ出ない
 
 | 項目 | 内容 |

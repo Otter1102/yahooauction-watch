@@ -327,23 +327,9 @@ export async function resetStalledNotified(): Promise<string[]> {
 }
 
 export async function cleanupOldHistory(): Promise<void> {
-  // 7日超えを 500件ずつページネーションして削除
-  // 一括削除は全件スキャンでタイムアウトするため、id指定のバッチ削除に変更
-  const cutoff7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
-  let deleted = 0
-  while (true) {
-    const { data } = await supabaseAdmin
-      .from('notification_history')
-      .select('id')
-      .lt('notified_at', cutoff7d)
-      .limit(500)
-    if (!data?.length) break
-    const ids = data.map(r => r.id as string)
-    await supabaseAdmin.from('notification_history').delete().in('id', ids)
-    deleted += ids.length
-    if (ids.length < 500) break
-  }
-  if (deleted > 0) console.log(`[cleanup] notification_history ${deleted}件削除`)
+  // 履歴消失の報告が出たため、notification_history のDB削除は一時停止。
+  // 古い履歴の整理を再開する場合も、削除ではなく表示側の非表示で実装する。
+  console.log('[cleanup] notification_history の古い履歴削除は一時停止中')
 }
 
 // ==================== History ====================
@@ -477,35 +463,8 @@ export async function getHistory(userId: string, limit = 200): Promise<Notificat
 }
 
 export async function cleanupEndedHistoryForUser(userId: string): Promise<number> {
-  const nowIso = new Date().toISOString()
-  let deleted = 0
-
-  const { data: endedRows, error: endedErr } = await supabaseAdmin
-    .from('notification_history')
-    .select('id, auction_id')
-    .eq('user_id', userId)
-    .not('end_at', 'is', null)
-    .lte('end_at', nowIso)
-    .limit(500)
-  throwOnError(endedErr, '終了済みhistory取得エラー')
-
-  if (endedRows?.length) {
-    const ids = endedRows.map(r => r.id as string)
-    const auctionIds = endedRows.map(r => r.auction_id as string)
-    const { error: historyDeleteErr } = await supabaseAdmin
-      .from('notification_history')
-      .delete()
-      .in('id', ids)
-    throwOnError(historyDeleteErr, '終了済みhistory削除エラー')
-
-    const { error: notifiedDeleteErr } = await supabaseAdmin
-      .from('notified_items')
-      .delete()
-      .eq('user_id', userId)
-      .in('auction_id', auctionIds)
-    throwOnError(notifiedDeleteErr, '終了済みnotified_items削除エラー')
-    deleted += ids.length
-  }
-
-  return deleted
+  void userId
+  // 履歴消失の報告が出たため、終了済み履歴のDB削除は一時停止。
+  // 再開する場合は、削除ではなく表示側の非表示フィルターで実装する。
+  return 0
 }

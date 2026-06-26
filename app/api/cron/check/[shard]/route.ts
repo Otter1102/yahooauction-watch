@@ -13,7 +13,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseAdmin } from '@/lib/supabase'
 import { cleanupOldNotified, cleanupOldHistory, resetStalledNotified } from '@/lib/storage'
-import { checkAuctionEnded } from '@/lib/scraper'
 
 const APP_URL         = process.env.NEXT_PUBLIC_APP_URL ?? 'https://yahooauction-watch.vercel.app'
 const CONCURRENCY     = 25
@@ -192,62 +191,7 @@ async function processUsers(
 }
 
 async function cleanupEndedAuctionsFromHistory(): Promise<void> {
-  const supabase = getSupabaseAdmin()
-  const nowIso = new Date().toISOString()
-
-  const { data: endedRows } = await supabase
-    .from('notification_history')
-    .select('id, auction_id, user_id')
-    .not('end_at', 'is', null)
-    .lte('end_at', nowIso)
-    .limit(1000)
-
-  if (endedRows?.length) {
-    await supabase
-      .from('notification_history')
-      .delete()
-      .in('id', endedRows.map(row => row.id as string))
-    for (const row of endedRows) {
-      await supabase
-        .from('notified_items')
-        .delete()
-        .eq('user_id', row.user_id as string)
-        .eq('auction_id', row.auction_id as string)
-    }
-    console.log(`[cron/shard0] 終了時刻超過オークション ${endedRows.length}件を削除`)
-  }
-
-  // end_at がない旧履歴だけYahoo確認で削除する。
-  const { data: items } = await supabase
-    .from('notification_history')
-    .select('id, auction_id, user_id')
-    .is('end_at', null)
-    .not('auction_id', 'like', '__check_%')
-    .lt('notified_at', nowIso)
-    .limit(100)
-
-  if (!items?.length) return
-
-  const toDeleteIds: string[] = []
-  const toDeletePairs: Array<{ userId: string; auctionId: string }> = []
-  const BATCH = 5
-  for (let i = 0; i < items.length; i += BATCH) {
-    const chunk = items.slice(i, i + BATCH)
-    const results = await Promise.allSettled(
-      chunk.map(item => checkAuctionEnded(item.auction_id as string))
-    )
-    results.forEach((r, idx) => {
-      if (r.status === 'fulfilled' && r.value) {
-        toDeleteIds.push(chunk[idx].id as string)
-        toDeletePairs.push({ userId: chunk[idx].user_id as string, auctionId: chunk[idx].auction_id as string })
-      }
-    })
-  }
-  if (!toDeleteIds.length) return
-
-  await supabase.from('notification_history').delete().in('id', toDeleteIds)
-  for (const { userId, auctionId } of toDeletePairs) {
-    await supabase.from('notified_items').delete().eq('user_id', userId).eq('auction_id', auctionId)
-  }
-  console.log(`[cron/shard0] 終了オークション(旧レコード) ${toDeleteIds.length}件を削除`)
+  // 履歴消失の報告が出たため、DB削除は一時停止。
+  // 再開する場合は「DBは残す・表示側だけ非表示」で実装する。
+  console.log('[cron/shard0] 終了済みオークション削除は一時停止中')
 }

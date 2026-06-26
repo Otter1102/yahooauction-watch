@@ -16,9 +16,9 @@ jobs:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v5.0.1
 
-      - uses: actions/setup-node@v4.4.0
+      - uses: actions/setup-node@v5
         with:
           node-version: '22'
           cache: 'npm'
@@ -30,11 +30,11 @@ jobs:
         run: |
           for i in 1 2 3; do
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-              "${{ secrets.SUPABASE_URL }}/rest/v1/" \
-              -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
-              -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
+              "${{ secrets.SUPABASE_URL }}/rest/v1/conditions?select=id&limit=1" \
+              -H "apikey: ${{ secrets.SUPABASE_SERVICE_KEY }}" \
+              -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_KEY }}" \
               --max-time 10)
-            if [ "$STATUS" = "200" ] || [ "$STATUS" = "400" ] || [ "$STATUS" = "401" ]; then
+            if [ "$STATUS" = "200" ] || [ "$STATUS" = "206" ]; then
               exit 0
             fi
             sleep 10
@@ -50,7 +50,7 @@ jobs:
           VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
           SEND_NO_ITEMS_PUSH: 'true'
           GH_FETCH_PAGES: '40'
-          SUPABASE_FETCH_TIMEOUT_MS: '60000'
+          SUPABASE_FETCH_TIMEOUT_MS: '90000'
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           GMAIL_NOTIFY_TO: ${{ secrets.GMAIL_NOTIFY_TO }}
