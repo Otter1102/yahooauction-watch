@@ -52,7 +52,7 @@ jobs:
               "${{ secrets.SUPABASE_URL }}/rest/v1/conditions?select=id&limit=1" \
               -H "apikey: ${{ secrets.SUPABASE_SERVICE_KEY }}" \
               -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_KEY }}" \
-              --max-time 10)
+              --max-time 10) || STATUS=000
             echo "試行 $i: HTTP $STATUS"
             if [ "$STATUS" = "200" ] || [ "$STATUS" = "206" ]; then
               echo "Supabase 起動確認完了"
