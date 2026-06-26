@@ -336,6 +336,18 @@ export async function cleanupOldHistory(): Promise<void> {
 
 type HistoryInput = Omit<NotificationRecord, 'id'>
 const CHECK_HISTORY_PREFIX = '__check_'
+const ENDED_AUCTION_HISTORY_VISIBLE_MS = 24 * 60 * 60 * 1_000
+
+function isVisibleHistoryRow(row: Record<string, unknown>, now = Date.now()): boolean {
+  const auctionId = String(row.auction_id ?? '')
+  if (auctionId.startsWith(CHECK_HISTORY_PREFIX)) return true
+  const endAt = row.end_at
+  if (!endAt) return true
+  const endMs = Date.parse(String(endAt))
+  if (!Number.isFinite(endMs)) return true
+  // 開催中、または終了後24時間以内だけ表示。DBからは削除しない。
+  return endMs >= now - ENDED_AUCTION_HISTORY_VISIBLE_MS
+}
 
 function historyRow(record: HistoryInput, refreshNotifiedAt: boolean): Record<string, unknown> {
   const row: Record<string, unknown> = {
@@ -431,21 +443,22 @@ export async function addConditionCheckHistory(
   }, true)
 }
 
-export async function getHistory(userId: string, limit = 200): Promise<NotificationRecord[]> {
+export async function getHistory(userId: string, limit = 500): Promise<NotificationRecord[]> {
   const { data } = await supabaseAdmin
     .from('notification_history')
     .select('*')
     .eq('user_id', userId)
     .order('notified_at', { ascending: false })
-    .limit(limit)
+    .limit(Math.max(limit * 2, 1000))
   const seen = new Set<string>()
   return (data ?? []).filter(r => {
+    if (!isVisibleHistoryRow(r)) return false
     const auctionId = r.auction_id as string
     if (!auctionId) return true
     if (seen.has(auctionId)) return false
     seen.add(auctionId)
     return true
-  }).map(r => ({
+  }).slice(0, limit).map(r => ({
     id: r.id as string,
     userId: r.user_id as string,
     conditionId: r.condition_id as string,
@@ -465,6 +478,6 @@ export async function getHistory(userId: string, limit = 200): Promise<Notificat
 export async function cleanupEndedHistoryForUser(userId: string): Promise<number> {
   void userId
   // 履歴消失の報告が出たため、終了済み履歴のDB削除は一時停止。
-  // 再開する場合は、削除ではなく表示側の非表示フィルターで実装する。
+  // 終了24時間超の履歴は getHistory() の表示フィルターで非表示にする。
   return 0
 }

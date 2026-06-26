@@ -140,6 +140,7 @@ describe('通知送信の回帰防止', () => {
     const runCheck = readSource('scripts/run-check.ts')
     const cronRoute = readSource('app/api/cron/check/route.ts')
     const cronShardRoute = readSource('app/api/cron/check/[shard]/route.ts')
+    const restoreScript = readSource('scripts/restore-history.ts')
 
     expect(historyRoute).not.toContain('cleanupEndedHistoryForUser(userId)')
     expect(historyRestoreRoute).toContain('await addHistory(record)')
@@ -149,11 +150,17 @@ describe('通知送信の回帰防止', () => {
     expect(storage).toContain('cleanupEndedHistoryForUser')
     expect(storage).toContain('終了済み履歴のDB削除は一時停止')
     expect(storage).toContain('notification_history のDB削除は一時停止')
+    expect(storage).toContain('ENDED_AUCTION_HISTORY_VISIBLE_MS')
+    expect(storage).toContain('終了後24時間以内だけ表示')
+    expect(storage).toContain('isVisibleHistoryRow')
     expect(runCheck).toContain('終了済みオークション削除は一時停止中')
     expect(cronRoute).toContain('終了済みオークション削除は一時停止中')
     expect(cronShardRoute).toContain('終了済みオークション削除は一時停止中')
     expect(cronRoute).not.toContain(".lte('end_at'")
     expect(cronShardRoute).not.toContain(".lte('end_at'")
+    expect(restoreScript).toContain('restoreCurrentMatches')
+    expect(restoreScript).toContain('restoreFromNotifiedItems')
+    expect(restoreScript).toContain('通知履歴復旧スクリプト')
   })
 
   it('巡回成功時は件数変化がなくても最終チェック時刻を更新する', () => {

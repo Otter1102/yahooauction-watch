@@ -58,7 +58,7 @@ export interface NotificationRecord {
   imageUrl: string
   notifiedAt: string
   remaining: string | null
-  endAt?: string | null  // オークション終了時刻（終了12時間後に履歴削除）
+  endAt?: string | null  // オークション終了時刻（終了後24時間超は表示側で非表示）
   kind?: 'auction' | 'check'
 }
 

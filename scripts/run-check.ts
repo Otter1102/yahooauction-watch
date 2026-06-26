@@ -395,8 +395,9 @@ async function main() {
     }))
   }
 
-  // ─── 時間ベースクリーンアップ ───
-  // end_at あり: 終了12時間後に削除 / end_at なし(旧データ): 通知36時間後に削除
+  // ─── 時間ベース整理 ───
+  // notification_history は削除せず、終了後24時間超の履歴は表示側で非表示。
+  // notified_items は48時間通知対象 + 12時間バッファを超えた重複防止レコードだけ削除。
   await cleanupOldHistory()
   await cleanupOldNotified()
 
@@ -415,7 +416,7 @@ async function main() {
 /** end_at なし旧レコードを Yahoo 確認して削除する安全網（停止中） */
 async function cleanupEndedAuctions(): Promise<void> {
   // 履歴消失の報告が出たため、終了済みオークションのDB削除は一時停止。
-  // notified_items の整理も含め、復旧後に「履歴は残す/表示だけ非表示」で再設計する。
+  // 今後も「履歴は残す/表示だけ非表示」を維持する。
   console.log('[cleanup] 終了済みオークション削除は一時停止中')
 }
 
