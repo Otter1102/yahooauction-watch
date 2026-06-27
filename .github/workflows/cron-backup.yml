@@ -15,7 +15,7 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -64,14 +64,14 @@ jobs:
           VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY }}
           VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
           SEND_NO_ITEMS_PUSH: 'true'
-          GH_FETCH_PAGES: '40'
+          GH_FETCH_PAGES: '20'
           CHECK_SHARD_TOTAL: '6'
           CHECK_SHARD_INDEX: ${{ matrix.shard }}
           CHECK_FETCH_CONCURRENCY: '2'
           CHECK_SHARD_STAGGER_MS: '15000'
           CHECK_SNAPSHOT_UPDATE_LIMIT: '200'
           CHECK_NEW_ITEMS_PER_CONDITION_LIMIT: '300'
-          CHECK_NEW_ITEMS_PER_USER_LIMIT: '1000'
+          CHECK_NEW_ITEMS_PER_USER_LIMIT: '500'
           NOTIFIED_RETENTION_HOURS: '60'
           CHECK_HISTORY_RETENTION_HOURS: '36'
           UNKNOWN_END_HISTORY_RETENTION_HOURS: '72'
@@ -79,6 +79,8 @@ jobs:
           YAHOO_PAGE_BATCH_SIZE: '1'
           YAHOO_PAGE_DELAY_MS: '250'
           SUPABASE_FETCH_TIMEOUT_MS: '90000'
+          HISTORY_UPSERT_BATCH_SIZE: '100'
+          NOTIFIED_UPSERT_BATCH_SIZE: '200'
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           GMAIL_NOTIFY_TO: ${{ secrets.GMAIL_NOTIFY_TO }}

@@ -248,10 +248,13 @@ export async function markNotified(userId: string, auctionId: string): Promise<v
 export async function markNotifiedMany(userId: string, auctionIds: string[]): Promise<void> {
   const rows = [...new Set(auctionIds)].map(auctionId => ({ user_id: userId, auction_id: auctionId }))
   if (rows.length === 0) return
-  const { error } = await supabaseAdmin
-    .from('notified_items')
-    .upsert(rows, { onConflict: 'user_id,auction_id', ignoreDuplicates: true })
-  throwOnError(error, 'notified_items一括保存エラー')
+  const batchSize = Math.max(50, Number.parseInt(process.env.NOTIFIED_UPSERT_BATCH_SIZE ?? '200', 10) || 200)
+  for (let i = 0; i < rows.length; i += batchSize) {
+    const { error } = await supabaseAdmin
+      .from('notified_items')
+      .upsert(rows.slice(i, i + batchSize), { onConflict: 'user_id,auction_id', ignoreDuplicates: true })
+    throwOnError(error, 'notified_items一括保存エラー')
+  }
 }
 
 export async function getNotifiedIds(userId: string): Promise<Set<string>> {
@@ -467,16 +470,20 @@ async function upsertHistories(records: HistoryInput[], refreshNotifiedAt: boole
   const deduped = [...unique.values()]
   if (deduped.length === 0) return
 
-  const rows = deduped.map(record => historyRow(record, refreshNotifiedAt))
-  const { error } = await supabaseAdmin
-    .from('notification_history')
-    .upsert(rows, { onConflict: 'user_id,auction_id' })
+  const batchSize = Math.max(25, Number.parseInt(process.env.HISTORY_UPSERT_BATCH_SIZE ?? '100', 10) || 100)
+  for (let i = 0; i < deduped.length; i += batchSize) {
+    const batch = deduped.slice(i, i + batchSize)
+    const rows = batch.map(record => historyRow(record, refreshNotifiedAt))
+    const { error } = await supabaseAdmin
+      .from('notification_history')
+      .upsert(rows, { onConflict: 'user_id,auction_id' })
 
-  if (!error) return
+    if (!error) continue
 
-  // migration_008 適用前など、bulk upsert の競合キーが使えない環境では既存の安全経路へフォールバック。
-  for (const record of deduped) {
-    await upsertHistory(record, refreshNotifiedAt)
+    // migration_008 適用前など、bulk upsert の競合キーが使えない環境では既存の安全経路へフォールバック。
+    for (const record of batch) {
+      await upsertHistory(record, refreshNotifiedAt)
+    }
   }
 }
 

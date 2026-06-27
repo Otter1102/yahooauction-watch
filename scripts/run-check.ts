@@ -74,9 +74,9 @@ function groupConditions(conditions: SearchCondition[]): ConditionGroup[] {
   return Array.from(map.values())
 }
 
-// 定期巡回は1時間以内に確実に終えるため、GitHub Actionsでは最大40ページに抑える。
-// 40ページ = 最大2000件/検索。条件作成・手動API側の深掘り上限は別途 scraper.ts で維持する。
-const GH_FETCH_PAGES = Math.max(1, Number.parseInt(process.env.GH_FETCH_PAGES ?? '40', 10) || 40)
+// 定期巡回は確実に完走させるため、GitHub Actionsでは最大20ページに抑える。
+// 20ページ = 最大1000件/検索。条件作成・手動API側の深掘り上限は別途 scraper.ts で維持する。
+const GH_FETCH_PAGES = Math.max(1, Number.parseInt(process.env.GH_FETCH_PAGES ?? '20', 10) || 20)
 const SEND_NO_ITEMS_PUSH = process.env.SEND_NO_ITEMS_PUSH === 'true'
 const FORCE_CHECK_COMPLETE_PUSH = process.env.FORCE_CHECK_COMPLETE_PUSH === 'true'
 const ALLOW_NIGHT_NOTIFICATIONS = process.env.ALLOW_NIGHT_NOTIFICATIONS === 'true'
