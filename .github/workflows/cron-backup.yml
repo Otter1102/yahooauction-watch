@@ -36,19 +36,23 @@ jobs:
 
       - name: Supabase 起動確認
         run: |
-          for i in 1 2 3; do
+          echo "Supabase への接続確認中..."
+          for i in 1 2 3 4 5 6 7 8; do
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
               "${{ secrets.SUPABASE_URL }}/rest/v1/conditions?select=id&limit=1" \
               -H "apikey: ${{ secrets.SUPABASE_SERVICE_KEY }}" \
               -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_KEY }}" \
-              --max-time 10) || STATUS=000
+              --max-time 20) || STATUS=000
+            echo "試行 $i: HTTP $STATUS"
             if [ "$STATUS" = "200" ] || [ "$STATUS" = "206" ]; then
               echo "SUPABASE_READY=true" >> "$GITHUB_ENV"
               exit 0
             fi
-            sleep 10
+            sleep 15
           done
           echo "SUPABASE_READY=false" >> "$GITHUB_ENV"
+          echo "Supabase が応答しませんでした。巡回停止を隠さないため、このrunは失敗扱いにします"
+          exit 1
 
       - name: Run auction check (backup)
         if: ${{ env.SUPABASE_READY == 'true' }}

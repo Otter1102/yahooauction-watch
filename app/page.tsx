@@ -74,6 +74,7 @@ export default function Dashboard() {
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [notifyReady, setNotifyReady] = useState(false)
   const [pushLost, setPushLost] = useState(false)
+  const [dbUnavailable, setDbUnavailable] = useState(false)
   const [duplicatingCondition, setDuplicatingCondition] = useState<SearchCondition | null>(null)
 
   function completeOnboarding() {
@@ -145,7 +146,10 @@ export default function Dashboard() {
       if (conditionsRes.status === 'fulfilled' && conditionsRes.value.ok) {
         const data = await conditionsRes.value.json()
         setConditions(data)
+        setDbUnavailable(false)
         try { localStorage.setItem(CONDS_CACHE, JSON.stringify(data)) } catch {}
+      } else if (conditionsRes.status === 'fulfilled' && conditionsRes.value.status >= 500) {
+        setDbUnavailable(true)
       }
     } catch { /* JSON parseエラーは無視 */ } finally {
       setLoading(false)
@@ -192,9 +196,12 @@ export default function Dashboard() {
       if (res.ok) {
         const data = await res.json()
         setConditions(data)
+        setDbUnavailable(false)
         try { localStorage.setItem(CONDS_CACHE, JSON.stringify(data)) } catch {}
+      } else if (res.status >= 500) {
+        setDbUnavailable(true)
       }
-    } catch { /* ネットワークエラーは無視 */ }
+    } catch { setDbUnavailable(true) }
   }
 
   useEffect(() => { init() }, [])
@@ -255,6 +262,21 @@ export default function Dashboard() {
 
         {!loading && (
           <>
+            {/* ─── DB接続障害バナー ─── */}
+            {dbUnavailable && (
+              <div style={{
+                background: 'var(--card)', borderRadius: 12,
+                padding: '12px 16px', marginBottom: 12,
+                border: '1px solid rgba(225,112,85,0.35)',
+                boxShadow: 'var(--shadow-sm)',
+              }}>
+                <p style={{ fontWeight: 700, fontSize: 13, color: 'var(--danger)' }}>サーバー接続が不安定です</p>
+                <p style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 3, lineHeight: 1.6 }}>
+                  条件の保存と新着通知が一時停止しています。復旧後に再読み込みしてください。
+                </p>
+              </div>
+            )}
+
             {/* ─── 通知未設定バナー ─── */}
             {!notifyReady && (
               <a href="/settings" style={{ display: 'block', marginBottom: 12, textDecoration: 'none' }}>

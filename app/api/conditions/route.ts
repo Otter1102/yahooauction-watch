@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getConditions, createCondition, getOrCreateUser } from '@/lib/storage'
+import {
+  getConditions,
+  createCondition,
+  getOrCreateUser,
+  isSupabaseUnavailableError,
+  SUPABASE_UNAVAILABLE_MESSAGE,
+} from '@/lib/storage'
 import { getIp, rateGuard } from '@/lib/apiGuard'
 import { runInitialConditionCheck } from '@/lib/initial-check'
 
@@ -13,6 +19,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(conditions)
   } catch (e) {
     console.error('[GET /api/conditions]', e)
+    if (isSupabaseUnavailableError(e)) {
+      return NextResponse.json({ error: SUPABASE_UNAVAILABLE_MESSAGE, retryable: true }, { status: 503 })
+    }
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
   }
 }
@@ -81,6 +90,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ...condition, initialCheck }, { status: 201 })
   } catch (e) {
     console.error('[POST /api/conditions]', e)
+    if (isSupabaseUnavailableError(e)) {
+      return NextResponse.json({ error: SUPABASE_UNAVAILABLE_MESSAGE, retryable: true }, { status: 503 })
+    }
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
   }
 }

@@ -31,33 +31,45 @@ function throwOnError(error: { message?: string } | null | undefined, context: s
   if (error) throw new Error(`[Supabase] ${context}: ${error.message ?? String(error)}`)
 }
 
+export function isSupabaseUnavailableError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  return /TimeoutError|operation was aborted|fetch failed|network|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|Cloudflare|HTTP 000|522|503|504|Invalid API key/i.test(message)
+}
+
+export const SUPABASE_UNAVAILABLE_MESSAGE =
+  '現在サーバーの保存先DBに接続できません。条件は保存されていません。数分後にもう一度お試しください。'
+
 // ==================== Users ====================
 
 export async function userExists(userId: string): Promise<boolean> {
-  const { data } = await supabaseAdmin
+  const { data, error } = await supabaseAdmin
     .from('users')
     .select('id')
     .eq('id', userId)
     .single()
+  if (error && error.code !== 'PGRST116') throwOnError(error, 'users存在確認エラー')
   return !!data
 }
 
 export async function getOrCreateUser(userId: string): Promise<User> {
-  const { data } = await supabaseAdmin
+  const { data, error } = await supabaseAdmin
     .from('users')
     .select('*')
     .eq('id', userId)
     .single()
 
   if (data) return dbToUser(data)
+  if (error && error.code !== 'PGRST116') throwOnError(error, 'users取得エラー')
 
-  const { data: created } = await supabaseAdmin
+  const { data: created, error: createError } = await supabaseAdmin
     .from('users')
     .insert({ id: userId })
     .select()
     .single()
+  throwOnError(createError, 'users作成エラー')
+  if (!created) throw new Error('[Supabase] users作成エラー: 作成結果が空です')
 
-  return dbToUser(created!)
+  return dbToUser(created)
 }
 
 export async function updateUser(userId: string, updates: Partial<User>): Promise<void> {
@@ -92,11 +104,12 @@ function dbToUser(row: Record<string, unknown>): User {
 // ==================== Conditions ====================
 
 export async function getConditions(userId: string): Promise<SearchCondition[]> {
-  const { data } = await supabaseAdmin
+  const { data, error } = await supabaseAdmin
     .from('conditions')
     .select(CONDITION_COLUMNS)
     .eq('user_id', userId)
     .order('created_at', { ascending: true })
+  throwOnError(error, 'conditions取得エラー')
   return ((data ?? []) as unknown as Record<string, unknown>[]).map(dbToCondition)
 }
 
