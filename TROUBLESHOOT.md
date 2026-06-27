@@ -1,3 +1,15 @@
+## 2026-06-27 — Supabase容量逼迫対策として notified_items をUpstash Redisへ逃がす
+
+| 項目 | 内容 |
+|------|------|
+| **症状** | Supabase project が `Unhealthy` になり、API Gateway が 522/timeout を返すと、条件登録・通知済み判定・通知履歴保存がまとめて止まる |
+| **原因** | `conditions` / `users` / `notification_history` だけでなく、毎時巡回の重複通知判定 `notified_items` と1時間通知マーカーもSupabase RESTへ集中していた |
+| **対策** | `UPSTASH_REDIS_REST_URL` と `UPSTASH_REDIS_REST_TOKEN` が設定されている環境では、`notified_items` の取得・保存・リセット・1時間通知マーカーをUpstash Redisへ切り替える。未設定環境では従来通りSupabaseへ自動フォールバック |
+| **確認** | `/api/health` の `notifiedItems` と、Actionsログの `[notified_items] 保存先:` で `upstash` / `supabase` を確認する |
+| **注意** | これはSupabase負荷の一部を逃がす対策。`conditions` と `users.push_sub` はまだSupabaseなので、Supabase完全停止中は巡回開始自体はできない |
+
+---
+
 ## 2026-06-27 — Supabase未応答で条件追加500・通知停止が再発
 
 | 項目 | 内容 |

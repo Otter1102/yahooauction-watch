@@ -6,6 +6,18 @@
 import { describeSupabaseError, getSupabaseAdmin } from './supabase'
 const supabaseAdmin = { from: (...args: Parameters<ReturnType<typeof getSupabaseAdmin>['from']>) => getSupabaseAdmin().from(...args) }
 import { SearchCondition, User, NotificationRecord, PushSub } from './types'
+import {
+  isUpstashNotifiedEnabled,
+  notifiedItemsStoreName,
+  upstashClearNotifiedHistory,
+  upstashGetAllNotifiedIds,
+  upstashGetNotifiedIds,
+  upstashIsNotified,
+  upstashMarkNotified,
+  upstashMarkNotifiedMany,
+  upstashReleaseNotifiedId,
+  upstashReserveNotifiedId,
+} from './notified-store'
 
 const CONDITION_COLUMNS = [
   'id',
@@ -228,7 +240,14 @@ function dbToCondition(row: Record<string, unknown>): SearchCondition {
 
 // ==================== Notified Items ====================
 
+export function getNotifiedItemsStoreName(): 'upstash' | 'supabase' {
+  return notifiedItemsStoreName()
+}
+
 export async function isNotified(userId: string, auctionId: string): Promise<boolean> {
+  if (isUpstashNotifiedEnabled()) {
+    return upstashIsNotified(userId, auctionId)
+  }
   const { data } = await supabaseAdmin
     .from('notified_items')
     .select('auction_id')
@@ -239,6 +258,10 @@ export async function isNotified(userId: string, auctionId: string): Promise<boo
 }
 
 export async function markNotified(userId: string, auctionId: string): Promise<void> {
+  if (isUpstashNotifiedEnabled()) {
+    await upstashMarkNotified(userId, auctionId)
+    return
+  }
   const { error } = await supabaseAdmin
     .from('notified_items')
     .upsert({ user_id: userId, auction_id: auctionId })
@@ -246,6 +269,10 @@ export async function markNotified(userId: string, auctionId: string): Promise<v
 }
 
 export async function markNotifiedMany(userId: string, auctionIds: string[]): Promise<void> {
+  if (isUpstashNotifiedEnabled()) {
+    await upstashMarkNotifiedMany(userId, auctionIds)
+    return
+  }
   const rows = [...new Set(auctionIds)].map(auctionId => ({ user_id: userId, auction_id: auctionId }))
   if (rows.length === 0) return
   const batchSize = Math.max(50, Number.parseInt(process.env.NOTIFIED_UPSERT_BATCH_SIZE ?? '200', 10) || 200)
@@ -258,6 +285,9 @@ export async function markNotifiedMany(userId: string, auctionIds: string[]): Pr
 }
 
 export async function getNotifiedIds(userId: string): Promise<Set<string>> {
+  if (isUpstashNotifiedEnabled()) {
+    return upstashGetNotifiedIds(userId)
+  }
   const { data, error } = await supabaseAdmin
     .from('notified_items')
     .select('auction_id')
@@ -270,6 +300,9 @@ export async function getNotifiedIds(userId: string): Promise<Set<string>> {
 // 100ユーザーでも getNotifiedIds を100回呼ぶ代わりに1回で済む
 export async function getAllNotifiedIds(userIds: string[]): Promise<Map<string, Set<string>>> {
   if (userIds.length === 0) return new Map()
+  if (isUpstashNotifiedEnabled()) {
+    return upstashGetAllNotifiedIds(userIds)
+  }
   const { data, error } = await supabaseAdmin
     .from('notified_items')
     .select('user_id, auction_id')
@@ -284,11 +317,47 @@ export async function getAllNotifiedIds(userIds: string[]): Promise<Map<string, 
 }
 
 export async function clearNotifiedHistory(userId: string): Promise<void> {
+  if (isUpstashNotifiedEnabled()) {
+    await upstashClearNotifiedHistory(userId)
+    return
+  }
   const { error } = await supabaseAdmin.from('notified_items').delete().eq('user_id', userId)
   throwOnError(error, 'notified_items削除エラー')
 }
 
+export async function reserveNotifiedItem(userId: string, auctionId: string): Promise<boolean> {
+  if (isUpstashNotifiedEnabled()) {
+    return upstashReserveNotifiedId(userId, auctionId)
+  }
+  const { error } = await supabaseAdmin
+    .from('notified_items')
+    .insert({ user_id: userId, auction_id: auctionId })
+  if (!error) return true
+  if ('code' in error && error.code === '23505') return false
+  console.warn(`  ⚠️ [${userId.slice(0,8)}] notified_items予約失敗:`, error.message)
+  return false
+}
+
+export async function releaseNotifiedItemReservation(userId: string, auctionId: string): Promise<void> {
+  if (isUpstashNotifiedEnabled()) {
+    await upstashReleaseNotifiedId(userId, auctionId)
+    return
+  }
+  const { error } = await supabaseAdmin
+    .from('notified_items')
+    .delete()
+    .eq('user_id', userId)
+    .eq('auction_id', auctionId)
+  if (error) {
+    console.warn(`  ⚠️ [${userId.slice(0,8)}] notified_items予約解除失敗:`, error.message)
+  }
+}
+
 export async function cleanupOldNotified(): Promise<void> {
+  if (isUpstashNotifiedEnabled()) {
+    console.log('[cleanup] notified_items はUpstash Redis TTL/ZREMRANGEBYSCOREで整理')
+    return
+  }
   const retentionHours = Math.max(24, Number.parseInt(process.env.NOTIFIED_RETENTION_HOURS ?? '60', 10) || 60)
   // 古い重複防止レコードを削除
   // 根拠: 通知対象は「残り48時間以内」のオークション → 終了まで最大48h。
@@ -302,6 +371,10 @@ export async function cleanupOldNotified(): Promise<void> {
 }
 
 export async function resetStalledNotified(): Promise<string[]> {
+  if (isUpstashNotifiedEnabled()) {
+    console.log('[自己修復] notified_items はUpstash Redisへ移行済みのためSupabase集計リセットをスキップ')
+    return []
+  }
   if (process.env.ENABLE_STALLED_NOTIFIED_RESET !== 'true') {
     console.log('[自己修復] resetStalledNotified はDB負荷軽減のため停止中')
     return []

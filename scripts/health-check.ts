@@ -6,6 +6,12 @@
  */
 import { getSupabaseAdmin } from '../lib/supabase'
 import { execSync } from 'child_process'
+import {
+  isUpstashNotifiedEnabled,
+  notifiedItemsStoreName,
+  upstashCountNotifiedItems,
+  upstashPing,
+} from '../lib/notified-store'
 
 interface HealthReport {
   healthy: boolean
@@ -106,17 +112,27 @@ async function main() {
   // 3. notified_items: 異常蓄積チェック
   // ──────────────────────────────────────────────
   try {
-    const { count } = await sb
-      .from('notified_items')
-      .select('*', { count: 'exact', head: true })
+    if (isUpstashNotifiedEnabled()) {
+      const pong = await upstashPing()
+      const count = await upstashCountNotifiedItems()
+      lines.push(`📋 notified_items: Upstash Redis (${pong}) / ${count}件`)
+      if (count > 2000) {
+        issues.push(`NOTIFIED_ITEMS_OVERFLOW: Upstash notified_items が${count}件溜まっている`)
+        fixes.push('RUN_RESET: npx tsx scripts/reset-notified.ts')
+      }
+    } else {
+      const { count } = await sb
+        .from('notified_items')
+        .select('*', { count: 'exact', head: true })
 
-    lines.push(`📋 notified_items: ${count ?? '?'}件`)
-    if ((count ?? 0) > 200) {
-      issues.push(`NOTIFIED_ITEMS_OVERFLOW: notified_items が${count}件溜まっている (上限目安200件)`)
-      fixes.push('RUN_RESET: npx tsx scripts/reset-notified.ts')
+      lines.push(`📋 notified_items: Supabase / ${count ?? '?'}件`)
+      if ((count ?? 0) > 200) {
+        issues.push(`NOTIFIED_ITEMS_OVERFLOW: notified_items が${count}件溜まっている (上限目安200件)`)
+        fixes.push('RUN_RESET: npx tsx scripts/reset-notified.ts')
+      }
     }
   } catch (e: any) {
-    issues.push(`NOTIFIED_COUNT_ERROR: ${e.message?.slice(0, 100)}`)
+    issues.push(`NOTIFIED_COUNT_ERROR(${notifiedItemsStoreName()}): ${e.message?.slice(0, 100)}`)
   }
 
   // ──────────────────────────────────────────────

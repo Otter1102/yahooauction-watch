@@ -8,28 +8,45 @@
  *   RESET_NOTIFICATION_HISTORY=true npx tsx scripts/reset-notified.ts
  */
 import { getSupabaseAdmin } from '../lib/supabase'
+import {
+  isUpstashNotifiedEnabled,
+  upstashClearAllNotifiedItems,
+  upstashCountNotifiedItems,
+} from '../lib/notified-store'
 
 async function main() {
   const supabase = getSupabaseAdmin()
   console.log('=== notified_items リセット ===')
   const resetHistory = process.env.RESET_NOTIFICATION_HISTORY === 'true'
 
-  const { count: before } = await supabase
-    .from('notified_items')
-    .select('*', { count: 'exact', head: true })
-  console.log(`削除前: ${before ?? '?'} 件`)
+  if (isUpstashNotifiedEnabled()) {
+    console.log('保存先: Upstash Redis')
+    const before = await upstashCountNotifiedItems()
+    console.log(`削除前: ${before} 件`)
 
-  const { error } = await supabase
-    .from('notified_items')
-    .delete()
-    .gte('notified_at', '2000-01-01')
+    const deletedKeys = await upstashClearAllNotifiedItems()
 
-  if (error) { console.error('[エラー]', error.message); process.exit(1) }
+    const after = await upstashCountNotifiedItems()
+    console.log(`削除後: ${after} 件（削除キー: ${deletedKeys}）`)
+  } else {
+    console.log('保存先: Supabase')
+    const { count: before } = await supabase
+      .from('notified_items')
+      .select('*', { count: 'exact', head: true })
+    console.log(`削除前: ${before ?? '?'} 件`)
 
-  const { count: after } = await supabase
-    .from('notified_items')
-    .select('*', { count: 'exact', head: true })
-  console.log(`削除後: ${after ?? 0} 件`)
+    const { error } = await supabase
+      .from('notified_items')
+      .delete()
+      .gte('notified_at', '2000-01-01')
+
+    if (error) { console.error('[エラー]', error.message); process.exit(1) }
+
+    const { count: after } = await supabase
+      .from('notified_items')
+      .select('*', { count: 'exact', head: true })
+    console.log(`削除後: ${after ?? 0} 件`)
+  }
 
   if (resetHistory) {
     console.log('\n=== notification_history 全削除 ===')

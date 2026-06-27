@@ -49,10 +49,18 @@ describe('通知送信の回帰防止', () => {
 
   it('ストレージ層は通知履歴と通知済み保存のSupabaseエラーを握りつぶさない', () => {
     const source = readSource('lib/storage.ts')
+    const notifiedStore = readSource('lib/notified-store.ts')
 
     expect(source).toContain('function throwOnError')
     expect(source).toContain("throwOnError(insertErr, 'notification_history保存エラー')")
     expect(source).toContain("throwOnError(error, 'notified_items保存エラー')")
+    expect(source).toContain('isUpstashNotifiedEnabled()')
+    expect(source).toContain('upstashMarkNotifiedMany')
+    expect(source).toContain('reserveNotifiedItem')
+    expect(notifiedStore).toContain('UPSTASH_REDIS_REST_URL')
+    expect(notifiedStore).toContain('ZREMRANGEBYSCORE')
+    expect(notifiedStore).toContain('ZRANGE')
+    expect(notifiedStore).toContain('ZADD')
   })
 
   it('条件保存後に全条件run-nowを重ねて起動しない', () => {
@@ -91,6 +99,7 @@ describe('通知送信の回帰防止', () => {
     expect(runCheck).toContain('stringShard')
     expect(runCheck).toContain('検索グループ単位')
     expect(runCheck).toContain('await releaseHourlyNotificationReservation(userId)')
+    expect(runCheck).toContain('getNotifiedItemsStoreName()')
     expect(runCheck).toContain('手動実行でも1時間1通知の制御は維持')
     expect(runCheck).toContain('上限到達')
     expect(runCheck).toContain('isJstQuietHour')
@@ -206,6 +215,9 @@ describe('通知送信の回帰防止', () => {
     expect(backupWorkflow).toContain("CHECK_NEW_ITEMS_PER_USER_LIMIT: '500'")
     expect(backupWorkflow).toContain("HISTORY_UPSERT_BATCH_SIZE: '100'")
     expect(backupWorkflow).toContain("NOTIFIED_UPSERT_BATCH_SIZE: '200'")
+    expect(backupWorkflow).toContain('UPSTASH_REDIS_REST_URL')
+    expect(backupWorkflow).toContain('UPSTASH_REDIS_REST_TOKEN')
+    expect(backupWorkflow).toContain("NOTIFIED_ITEMS_STORE: 'auto'")
     expect(backupWorkflow).toContain('matrix:')
     expect(workflow).toContain("cron: '0 22,23 * * *'")
     expect(workflow).toContain("cron: '0 0-15 * * *'")
@@ -222,6 +234,9 @@ describe('通知送信の回帰防止', () => {
     expect(workflow).toContain("CHECK_NEW_ITEMS_PER_USER_LIMIT: '500'")
     expect(workflow).toContain("HISTORY_UPSERT_BATCH_SIZE: '100'")
     expect(workflow).toContain("NOTIFIED_UPSERT_BATCH_SIZE: '200'")
+    expect(workflow).toContain('UPSTASH_REDIS_REST_URL')
+    expect(workflow).toContain('UPSTASH_REDIS_REST_TOKEN')
+    expect(workflow).toContain("NOTIFIED_ITEMS_STORE: 'auto'")
     expect(workflow).toContain('matrix:')
     expect(conditionCard).toContain("hourCycle: 'h23'")
     expect(conditionCard).toContain("timeZone: 'Asia/Tokyo'")

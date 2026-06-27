@@ -10,11 +10,21 @@
 //   { "ok": false, "supabase": "error: ...", "ts": "..." }
 import { NextResponse } from 'next/server'
 import { describeSupabaseError, getSupabaseAdmin } from '@/lib/supabase'
+import { isUpstashNotifiedEnabled, notifiedItemsStoreName, upstashPing } from '@/lib/notified-store'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET() {
   const ts = new Date().toISOString()
+  const notifiedStore = notifiedItemsStoreName()
+  let notifiedItems = notifiedStore === 'upstash' ? 'upstash: configured' : 'supabase'
+  if (isUpstashNotifiedEnabled()) {
+    try {
+      notifiedItems = `upstash: ${await upstashPing()}`
+    } catch (e) {
+      notifiedItems = `upstash error: ${describeSupabaseError(e)}`
+    }
+  }
   try {
     // Supabase への接続確認（usersテーブルを1件だけ取得）
     const supabase = getSupabaseAdmin()
@@ -27,15 +37,15 @@ export async function GET() {
     // "PGRST116" = 0件ヒット（正常）、それ以外はエラー
     if (error && error.code !== 'PGRST116') {
       return NextResponse.json(
-        { ok: false, supabase: `error: ${describeSupabaseError(error)}`, ts },
+        { ok: false, supabase: `error: ${describeSupabaseError(error)}`, notifiedItems, ts },
         { status: 503 }
       )
     }
 
-    return NextResponse.json({ ok: true, supabase: 'connected', ts })
+    return NextResponse.json({ ok: true, supabase: 'connected', notifiedItems, ts })
   } catch (e) {
     return NextResponse.json(
-      { ok: false, supabase: `exception: ${describeSupabaseError(e)}`, ts },
+      { ok: false, supabase: `exception: ${describeSupabaseError(e)}`, notifiedItems, ts },
       { status: 503 }
     )
   }

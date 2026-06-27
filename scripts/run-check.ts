@@ -6,7 +6,7 @@
  * 実行: npx tsx scripts/run-check.ts
  * 環境変数: NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_KEY
  */
-import { getAllEnabledConditions, getAllNotifiedIds, markNotifiedMany, addHistories, updateCondition, cleanupOldNotified, cleanupOldHistory, resetStalledNotified, updateHistorySnapshots, addConditionCheckHistory } from '../lib/storage'
+import { getAllEnabledConditions, getAllNotifiedIds, markNotifiedMany, addHistories, updateCondition, cleanupOldNotified, cleanupOldHistory, resetStalledNotified, updateHistorySnapshots, addConditionCheckHistory, reserveNotifiedItem, releaseNotifiedItemReservation, getNotifiedItemsStoreName } from '../lib/storage'
 import { fetchAuctionRssWithMeta } from '../lib/scraper'
 import { selectConditionCandidates } from '../lib/condition-match'
 import { sendWebPushCheckComplete, sendWebPushSummary } from '../lib/webpush'
@@ -137,25 +137,12 @@ function hourlyNotificationMarker(): string {
 
 async function reserveHourlyNotification(userId: string): Promise<boolean> {
   const marker = hourlyNotificationMarker()
-  const { error } = await supabaseAdmin
-    .from('notified_items')
-    .insert({ user_id: userId, auction_id: marker })
-  if (!error) return true
-  if ('code' in error && error.code === '23505') return false
-  console.warn(`  ⚠️ [${userId.slice(0,8)}] 1時間通知マーカー予約失敗:`, error.message)
-  return false
+  return reserveNotifiedItem(userId, marker)
 }
 
 async function releaseHourlyNotificationReservation(userId: string): Promise<void> {
   const marker = hourlyNotificationMarker()
-  const { error } = await supabaseAdmin
-    .from('notified_items')
-    .delete()
-    .eq('user_id', userId)
-    .eq('auction_id', marker)
-  if (error) {
-    console.warn(`  ⚠️ [${userId.slice(0,8)}] 1時間通知マーカー解除失敗:`, error.message)
-  }
+  await releaseNotifiedItemReservation(userId, marker)
 }
 
 async function main() {
@@ -177,6 +164,7 @@ async function main() {
     throw new Error(`[設定エラー] 環境変数未設定: NEXT_PUBLIC_SUPABASE_URL=${!!supabaseUrl} SUPABASE_SERVICE_KEY=${!!serviceKey}`)
   }
   console.log(`[DB] Supabase接続先: ${supabaseUrl.slice(0, 40)}...`)
+  console.log(`[notified_items] 保存先: ${getNotifiedItemsStoreName()}`)
 
   // 全有効条件を取得（DB + JS の二重フィルター）
   // リトライ付き: Supabase瞬断(upstream timeout)対策で最大3回試みる
