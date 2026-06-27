@@ -8,6 +8,7 @@
 | **追加対策** | 連続通知を避けるため、主workflowはJST毎時00分の1回だけ起動。バックアップworkflowは手動専用に戻した。さらに `__notification_hour_YYYY-MM-DDTHH` マーカーで、同一ユーザーへのPushを新着/チェック完了を含めて1時間1回に制限。13:00 JSTのGitHub schedule抜けを受け、Mac miniのLaunchAgent保険起動は「同じJST時間帯にrunが無い時だけ」dispatchする方式で復活 |
 | **Google Cloud保険** | Mac miniを外しても同じ保険を動かせるよう、`ops/gcp-hourly-fallback/` に Cloud Run functions + Cloud Scheduler 用のHTTP関数を追加。JST 0時/7-23時の10,25,40,55分に呼び出し、同じJST時間帯にrunが無く、queued/in_progressも無い時だけGitHub Actions `cron.yml` を `workflow_dispatch` で起動する |
 | **新着なし通知の表現** | `新着はありませんでした` だけだと取得成功か不明に見えるため、チェック完了Pushを `取得完了: 新着はありませんでした（HH:mm確認）` に変更。条件チェック履歴も `条件チェック: 取得完了・新着はありませんでした` に変更 |
+| **取得失敗の警告通知** | Yahoo取得失敗があったユーザーには通常の `チェック完了` ではなく、タイトル `ヤフオクwatch 要確認`、本文 `警告: 取得エラーが発生しました（N条件 / HH:mm確認）` を送る。条件チェック履歴も `条件チェック: 警告・取得エラー` / `取得エラー` / `要確認` で残す |
 | **cleanup timeout対策** | 13:12 JST補填runでは取得・SummaryPush送信後、古い条件チェック履歴削除がSupabase statement timeoutとなりrunがfailureになった。通知後のcleanupはwarnで次回再試行にし、取得・通知済みrunをfailure扱いにしないよう変更 |
 | **残課題** | Google Cloud側はローカルに `gcloud` が未導入のため未デプロイ。GCPプロジェクト、GitHub token Secret、共有Secretを用意して `ops/gcp-hourly-fallback/deploy.sh` と `create-scheduler.sh` を実行する。次回の毎時runで、ユーザーあたり通知が1回に収まることも継続確認する |
 | **再発防止** | Actionsがsuccessでも巡回成功とは判断しない。`Run auction check` が実行されているか、`=== 完了` まで出ているか、`/api/health` が connected かを確認する。DB未応答時はfailureとして可視化し、大量履歴保存は小分けを維持する。通知頻度を増やす場合は、workflow scheduleだけでなく `run-check.ts` の1時間通知マーカーも同時に見直す |
