@@ -17,6 +17,14 @@ on:
         description: '通知せず、全有効条件の最終チェック時刻だけ現在時刻へ更新する'
         required: false
         default: 'false'
+      reset_notified_items:
+        description: '巡回前に全ユーザーの通知済み判定を削除し、現条件を再通知対象にする'
+        required: false
+        default: 'false'
+      clear_notification_history:
+        description: 'reset_notified_items=true の時、通知履歴も全削除して作り直す'
+        required: false
+        default: 'false'
 
 concurrency:
   group: yahoo-auction-watch-check
@@ -50,8 +58,40 @@ jobs:
           echo "Supabase が応答しませんでした。巡回停止を隠さないため、このrunは失敗扱いにします"
           exit 1
 
-  check:
+  reset:
     needs: precheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    steps:
+      - uses: actions/checkout@v5.0.1
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Reset notification state
+        if: ${{ github.event.inputs.stamp_last_checked_only != 'true' && github.event.inputs.reset_notified_items == 'true' }}
+        run: npx tsx scripts/reset-notified.ts
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_FETCH_TIMEOUT_MS: '120000'
+          RESET_NOTIFICATION_HISTORY: ${{ github.event.inputs.clear_notification_history || 'false' }}
+
+      - name: Skip reset
+        if: ${{ github.event.inputs.stamp_last_checked_only == 'true' || github.event.inputs.reset_notified_items != 'true' }}
+        run: echo "通知状態リセットなし"
+
+  check:
+    needs: reset
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
