@@ -3,7 +3,7 @@
  * フロントエンドからはAPI routes経由で呼ぶ
  * GitHub Actionsスクリプトからは直接 supabaseAdmin を使う
  */
-import { getSupabaseAdmin } from './supabase'
+import { describeSupabaseError, getSupabaseAdmin } from './supabase'
 const supabaseAdmin = { from: (...args: Parameters<ReturnType<typeof getSupabaseAdmin>['from']>) => getSupabaseAdmin().from(...args) }
 import { SearchCondition, User, NotificationRecord, PushSub } from './types'
 
@@ -27,8 +27,8 @@ const CONDITION_COLUMNS = [
   'last_found_count',
 ].join(',')
 
-function throwOnError(error: { message?: string } | null | undefined, context: string): void {
-  if (error) throw new Error(`[Supabase] ${context}: ${error.message ?? String(error)}`)
+function throwOnError(error: unknown, context: string): void {
+  if (error) throw new Error(`[Supabase] ${context}: ${describeSupabaseError(error)}`)
 }
 
 export function isSupabaseUnavailableError(error: unknown): boolean {

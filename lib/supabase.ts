@@ -3,6 +3,27 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js'
 let _client: SupabaseClient | null = null
 let _admin: SupabaseClient | null = null
 
+export function describeSupabaseError(error: unknown): string {
+  if (!error) return 'unknown error'
+  if (error instanceof Error) return `${error.name}: ${error.message}`
+  if (typeof error === 'string') return error
+
+  if (typeof error === 'object') {
+    const record = error as Record<string, unknown>
+    const parts = ['message', 'code', 'details', 'hint', 'status', 'statusText']
+      .map(key => record[key] ? `${key}=${String(record[key])}` : '')
+      .filter(Boolean)
+    if (parts.length > 0) return parts.join(' ')
+    try {
+      return JSON.stringify(error)
+    } catch {
+      return String(error)
+    }
+  }
+
+  return String(error)
+}
+
 export function getSupabase(): SupabaseClient {
   if (!_client) {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL!

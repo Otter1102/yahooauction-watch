@@ -10,6 +10,9 @@
 | **新着なし通知の表現** | `新着はありませんでした` だけだと取得成功か不明に見えるため、チェック完了Pushを `取得完了: 新着はありませんでした（HH:mm確認）` に変更。条件チェック履歴も `条件チェック: 取得完了・新着はありませんでした` に変更 |
 | **取得失敗の警告通知** | Yahoo取得失敗があったユーザーには通常の `チェック完了` ではなく、タイトル `ヤフオクwatch 要確認`、本文 `警告: 取得エラーが発生しました（N条件 / HH:mm確認）` を送る。条件チェック履歴も `条件チェック: 警告・取得エラー` / `取得エラー` / `要確認` で残す |
 | **cleanup timeout対策** | 13:12 JST補填runでは取得・SummaryPush送信後、古い条件チェック履歴削除がSupabase statement timeoutとなりrunがfailureになった。通知後のcleanupはwarnで次回再試行にし、取得・通知済みrunをfailure扱いにしないよう変更 |
+| **2026-06-27 18:19 JST追加確認** | GitHub Actions #890 は `Run auction check` へ入る前に、全6 shardのSupabase precheckが HTTP 522 を12回ずつ受けて失敗。買い切り版・トライアル版の `/api/health` も `status=522`。条件追加エラー、通知停止、履歴復旧不能の直接原因はSupabase RESTへの接続不可 |
+| **2026-06-27 18:19 JST追加対策** | ActionsのSupabase precheckをmatrix内から切り出し、単一 `precheck` jobが成功した時だけ6 shardを開始する形へ変更。障害時に最大72回の同時リトライを起こさない。ヘルスAPIは `error: undefined` ではなく `status=522` のように原因を表示するよう改善 |
+| **履歴復旧の扱い** | `scripts/restore-history.ts` は既存条件・直近 `notified_items` から `notification_history` を再投入できるが、Supabaseが522の間は読み書きできない。DB接続が `connected` に戻った後に実行する |
 | **残課題** | Google Cloud側はローカルに `gcloud` が未導入のため未デプロイ。GCPプロジェクト、GitHub token Secret、共有Secretを用意して `ops/gcp-hourly-fallback/deploy.sh` と `create-scheduler.sh` を実行する。次回の毎時runで、ユーザーあたり通知が1回に収まることも継続確認する |
 | **再発防止** | Actionsがsuccessでも巡回成功とは判断しない。`Run auction check` が実行されているか、`=== 完了` まで出ているか、`/api/health` が connected かを確認する。DB未応答時はfailureとして可視化し、大量履歴保存は小分けを維持する。通知頻度を増やす場合は、workflow scheduleだけでなく `run-check.ts` の1時間通知マーカーも同時に見直す |
 

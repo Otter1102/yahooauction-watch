@@ -9,7 +9,7 @@
 // レスポンス例（異常時）:
 //   { "ok": false, "supabase": "error: ...", "ts": "..." }
 import { NextResponse } from 'next/server'
-import { getSupabaseAdmin } from '@/lib/supabase'
+import { describeSupabaseError, getSupabaseAdmin } from '@/lib/supabase'
 
 export const dynamic = 'force-dynamic'
 
@@ -27,7 +27,7 @@ export async function GET() {
     // "PGRST116" = 0件ヒット（正常）、それ以外はエラー
     if (error && error.code !== 'PGRST116') {
       return NextResponse.json(
-        { ok: false, supabase: `error: ${error.message}`, ts },
+        { ok: false, supabase: `error: ${describeSupabaseError(error)}`, ts },
         { status: 503 }
       )
     }
@@ -35,7 +35,7 @@ export async function GET() {
     return NextResponse.json({ ok: true, supabase: 'connected', ts })
   } catch (e) {
     return NextResponse.json(
-      { ok: false, supabase: `exception: ${String(e)}`, ts },
+      { ok: false, supabase: `exception: ${describeSupabaseError(e)}`, ts },
       { status: 503 }
     )
   }
