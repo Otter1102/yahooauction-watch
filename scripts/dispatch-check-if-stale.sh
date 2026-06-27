@@ -7,7 +7,7 @@ REPO="Otter1102/yahooauction-watch"
 WORKFLOW_ID="260488766"
 LOG_DIR="/Users/sawadaakira/Projects/MOTHERSHIP/apps/yahoo-auction-watcher/logs"
 LOG_FILE="$LOG_DIR/dispatch-check.log"
-STALE_SECONDS=3000
+FALLBACK_AFTER_MINUTE=10
 
 mkdir -p "$LOG_DIR"
 
@@ -21,9 +21,16 @@ if [ "${ENABLE_YAHOO_AUCTION_DISPATCH_FALLBACK:-false}" != "true" ]; then
 fi
 
 hour="$(TZ=Asia/Tokyo date '+%H')"
+minute="$(TZ=Asia/Tokyo date '+%M')"
 hour_num=$((10#$hour))
+minute_num=$((10#$minute))
 if [ "$hour_num" -ge 1 ] && [ "$hour_num" -le 6 ]; then
   log "skip quiet hour: $hour"
+  exit 0
+fi
+
+if [ "$minute_num" -lt "$FALLBACK_AFTER_MINUTE" ]; then
+  log "skip: wait until minute ${FALLBACK_AFTER_MINUTE} for GitHub schedule (now ${hour}:${minute})"
   exit 0
 fi
 
@@ -42,12 +49,15 @@ fi
 latest_created="$(gh run list --repo "$REPO" --workflow "$WORKFLOW_ID" --limit 1 --json createdAt \
   --jq '.[0].createdAt // empty' 2>>"$LOG_FILE" || true)"
 
-now_epoch="$(date +%s)"
 if [ -n "$latest_created" ]; then
   latest_epoch="$(date -j -u -f "%Y-%m-%dT%H:%M:%SZ" "$latest_created" "+%s" 2>/dev/null || echo 0)"
-  age=$((now_epoch - latest_epoch))
-  if [ "$latest_epoch" -gt 0 ] && [ "$age" -lt "$STALE_SECONDS" ]; then
-    log "skip: latest run age ${age}s < ${STALE_SECONDS}s ($latest_created)"
+  latest_jst_hour=""
+  if [ "$latest_epoch" -gt 0 ]; then
+    latest_jst_hour="$(TZ=Asia/Tokyo date -r "$latest_epoch" '+%Y-%m-%dT%H')"
+  fi
+  current_jst_hour="$(TZ=Asia/Tokyo date '+%Y-%m-%dT%H')"
+  if [ "$latest_jst_hour" = "$current_jst_hour" ]; then
+    log "skip: run already exists for current JST hour ($latest_created)"
     exit 0
   fi
 fi
