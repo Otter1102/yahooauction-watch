@@ -515,7 +515,7 @@ export async function addConditionCheckHistory(
     ? '条件チェック: 取得できませんでした'
     : freshCount > 0
       ? `条件チェック: 新着${freshCount}件を確認しました`
-      : '条件チェック: 新着はありませんでした'
+      : '条件チェック: 取得完了・新着はありませんでした'
   const remaining = result.status === 'failed'
     ? '取得失敗'
     : `該当${matchedCount}件`
@@ -526,7 +526,7 @@ export async function addConditionCheckHistory(
     conditionName: condition.name,
     auctionId: `${CHECK_HISTORY_PREFIX}${condition.id}_${hourKey}`,
     title,
-    price: result.status === 'failed' ? '取得失敗' : freshCount > 0 ? `新着${freshCount}件` : '新着なし',
+    price: result.status === 'failed' ? '取得失敗' : freshCount > 0 ? `新着${freshCount}件` : '取得OK・新着なし',
     url: '/history',
     imageUrl: '',
     notifiedAt: now.toISOString(),

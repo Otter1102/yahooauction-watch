@@ -429,16 +429,20 @@ async function main() {
   // notification_history は削除せず、終了後24時間超の履歴は表示側で非表示。
   // notified_items は48時間通知対象 + 12時間バッファを超えた重複防止レコードだけ削除。
   if (CHECK_SHARD_INDEX === 0) {
-    await cleanupOldHistory()
-    await cleanupOldNotified()
+    try {
+      await cleanupOldHistory()
+      await cleanupOldNotified()
 
-    // ─── end_at なし旧レコードのYahoo確認クリーンアップ（安全網）───
-    await cleanupEndedAuctions()
+      // ─── end_at なし旧レコードのYahoo確認クリーンアップ（安全網）───
+      await cleanupEndedAuctions()
 
-    // ─── 幽霊ユーザー削除（通知設定なし + 14日以上経過）───
-    const ghostCount = await cleanupGhostUsers()
-    if (ghostCount > 0) {
-      console.log(`[幽霊ユーザー] ${ghostCount}件削除（通知設定なし+14日経過）`)
+      // ─── 幽霊ユーザー削除（通知設定なし + 14日以上経過）───
+      const ghostCount = await cleanupGhostUsers()
+      if (ghostCount > 0) {
+        console.log(`[幽霊ユーザー] ${ghostCount}件削除（通知設定なし+14日経過）`)
+      }
+    } catch (e: any) {
+      console.warn('[cleanup] 通知処理後の整理に失敗しました。次回再試行します:', e?.message ?? e)
     }
   } else {
     console.log(`[cleanup] shard ${CHECK_SHARD_INDEX + 1}/${CHECK_SHARD_TOTAL}: 全体cleanupはshard 1に集約`)
