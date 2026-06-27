@@ -1,3 +1,15 @@
+## 2026-06-27 — Supabase未応答で条件追加500・通知停止が再発
+
+| 項目 | 内容 |
+|------|------|
+| **症状** | 条件追加時に Internal Server Error が出る。通知履歴が消えたように見え、新着通知も来ない。GitHub Actions は success 表示でも通知が届かない |
+| **原因** | 買い切り版・トライアル版とも `/api/health` が Supabase `TimeoutError` で503。GitHub Actionsのprecheckも HTTP 000 で、巡回本体へ入らず全シャードskipしていた。DBに接続できないため、条件作成・履歴取得・通知済み判定・Push送信対象取得が動けない |
+| **対策** | 条件APIでSupabase timeout / fetch failure / invalid key系を500ではなく503 + 日本語メッセージで返すよう修正。ダッシュボードにDB接続障害バナーを追加。Actionsのprecheck待機を延長し、未応答時はsuccessで隠さずfailureに変更 |
+| **残課題** | Supabase接続自体は未復旧。対象プロジェクトの停止/アップグレード詰まり、またはVercel/GitHub ActionsのSupabaseキー不整合を確認する必要がある |
+| **再発防止** | Actionsがsuccessでも巡回成功とは判断しない。`Run auction check` が実行されているか、`/api/health` が connected かを確認する。DB未応答時はfailureとして可視化する |
+
+---
+
 ## 2026-06-26 — 通知履歴が空になる / 1時間巡回が失敗する
 
 | 項目 | 内容 |
