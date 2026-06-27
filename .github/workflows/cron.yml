@@ -2,11 +2,11 @@ name: ヤフオクwatch 自動チェック
 
 on:
   schedule:
-    # JST 25:00-06:59 は通知不要。JST 07:00-24:59 に毎時4回起動候補を置く。
-    # 通知は run-check 側の50分抑制で1時間に最大1回にする。
+    # JST 25:00-06:59 は通知不要。JST 07:00-24:00 の毎時00分に1回だけ起動する。
+    # 通知は run-check 側でもユーザーごとに1時間1回へ制限する。
     # GitHub Actions cron はUTCなので、JST 07-08時 = UTC 22-23時、JST 09-24時 = UTC 00-15時。
-    - cron: '7,22,37,52 22,23 * * *'
-    - cron: '7,22,37,52 0-15 * * *'
+    - cron: '0 22,23 * * *'
+    - cron: '0 0-15 * * *'
   workflow_dispatch:           # 手動実行ボタン
     inputs:
       force_check_complete:

@@ -1,11 +1,7 @@
 name: ヤフオクwatch バックアップチェック
 
 on:
-  schedule:
-    # 主チェックがGitHub schedule側で未発火になるケースの保険。
-    # run-check側の50分抑制で、主チェックと重なってもチェック完了通知は最大1時間1回にする。
-    - cron: '12,27,42,57 22,23 * * *'
-    - cron: '12,27,42,57 0-15 * * *'
+  # 通知は毎時00分の主workflowだけで送る。連続通知防止のため、バックアップは手動実行専用。
   workflow_dispatch:
 
 concurrency:

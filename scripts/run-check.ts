@@ -18,7 +18,7 @@ import { User, SearchCondition, AuctionItem } from '../lib/types'
 type RssKey = Pick<SearchCondition, 'keyword' | 'maxPrice' | 'minPrice' | 'minBids' | 'sellerType' | 'itemCondition' | 'sortBy' | 'sortOrder' | 'buyItNow'>
 interface ConditionGroup { key: RssKey; conditions: SearchCondition[] }
 type PendingNotification = { item: AuctionItem; cond: SearchCondition }
-const CHECK_COMPLETE_MARKER_PREFIX = '__check_complete_'
+const HOURLY_NOTIFICATION_MARKER_PREFIX = '__notification_hour_'
 
 function toHistoryRecord(cond: SearchCondition, item: AuctionItem) {
   return {
@@ -131,42 +131,30 @@ async function fetchWithRetry(key: RssKey, retries = 2, startOffset = 1): Promis
   return []
 }
 
-async function canSendCheckCompleteThisHour(userId: string): Promise<boolean> {
-  const cutoff = new Date(Date.now() - 50 * 60 * 1000).toISOString()
-  const { data, error } = await supabaseAdmin
-    .from('notified_items')
-    .select('auction_id')
-    .eq('user_id', userId)
-    .like('auction_id', `${CHECK_COMPLETE_MARKER_PREFIX}%`)
-    .gte('notified_at', cutoff)
-    .limit(1)
-  if (error) {
-    console.warn(`  ⚠️ [${userId.slice(0,8)}] チェック完了通知の重複確認失敗:`, error.message)
-    return true
-  }
-  return !data?.length
+function hourlyNotificationMarker(): string {
+  return `${HOURLY_NOTIFICATION_MARKER_PREFIX}${new Date().toISOString().slice(0, 13)}`
 }
 
-async function reserveCheckCompleteThisHour(userId: string): Promise<boolean> {
-  const marker = `${CHECK_COMPLETE_MARKER_PREFIX}${new Date().toISOString().slice(0, 13)}`
+async function reserveHourlyNotification(userId: string): Promise<boolean> {
+  const marker = hourlyNotificationMarker()
   const { error } = await supabaseAdmin
     .from('notified_items')
     .insert({ user_id: userId, auction_id: marker })
   if (!error) return true
   if ('code' in error && error.code === '23505') return false
-  console.warn(`  ⚠️ [${userId.slice(0,8)}] チェック完了通知マーカー予約失敗:`, error.message)
+  console.warn(`  ⚠️ [${userId.slice(0,8)}] 1時間通知マーカー予約失敗:`, error.message)
   return false
 }
 
-async function releaseCheckCompleteReservation(userId: string): Promise<void> {
-  const marker = `${CHECK_COMPLETE_MARKER_PREFIX}${new Date().toISOString().slice(0, 13)}`
+async function releaseHourlyNotificationReservation(userId: string): Promise<void> {
+  const marker = hourlyNotificationMarker()
   const { error } = await supabaseAdmin
     .from('notified_items')
     .delete()
     .eq('user_id', userId)
     .eq('auction_id', marker)
   if (error) {
-    console.warn(`  ⚠️ [${userId.slice(0,8)}] チェック完了通知マーカー解除失敗:`, error.message)
+    console.warn(`  ⚠️ [${userId.slice(0,8)}] 1時間通知マーカー解除失敗:`, error.message)
   }
 }
 
@@ -383,8 +371,14 @@ async function main() {
     await Promise.all(batch.map(async (userId) => {
       const items = pendingByUser.get(userId)
       if (items && items.length > 0) {
+        const reserved = await reserveHourlyNotification(userId)
+        if (!reserved) {
+          console.log(`  ↪️ [${userId.slice(0,8)}] 1時間以内に通知済みのため新着Pushをスキップ`)
+          return
+        }
         const delivered = await sendWebPushSummary(userId, items.length, items[0].item)
         if (!delivered) {
+          await releaseHourlyNotificationReservation(userId)
           console.warn(`  ⚠️ [${userId.slice(0,8)}] Push失敗: ${items.length}件は通知済みにせず次回再試行`)
           return
         }
@@ -400,20 +394,16 @@ async function main() {
         } catch (e: any) {
           console.error(`  ⚠️ [${userId.slice(0,8)}] 通知後一括記録失敗 ${freshItems.length}/${items.length}件（未記録分は次回再試行）:`, e?.message ?? e)
         }
+        return
       }
 
       if (SEND_NO_ITEMS_PUSH) {
-        const shouldSendCheckComplete = FORCE_CHECK_COMPLETE_PUSH || await canSendCheckCompleteThisHour(userId)
-        if (!shouldSendCheckComplete) {
-          console.log(`  ↪️ [${userId.slice(0,8)}] チェック完了Pushは50分以内に送信済みのためスキップ`)
-          return
-        }
         if (FORCE_CHECK_COMPLETE_PUSH) {
-          console.log(`  🔁 [${userId.slice(0,8)}] 手動実行のためチェック完了Push抑制を解除`)
+          console.log(`  🔁 [${userId.slice(0,8)}] 手動実行でも1時間1通知の制御は維持`)
         }
-        const reserved = await reserveCheckCompleteThisHour(userId)
+        const reserved = await reserveHourlyNotification(userId)
         if (!reserved) {
-          console.log(`  ↪️ [${userId.slice(0,8)}] チェック完了Pushは他シャードで処理済みのためスキップ`)
+          console.log(`  ↪️ [${userId.slice(0,8)}] 1時間以内に通知済みのためチェック完了Pushをスキップ`)
           return
         }
         const freshCount = items?.length ?? 0
@@ -428,7 +418,7 @@ async function main() {
           totalCheckCompleteNotified++
         }
         else {
-          await releaseCheckCompleteReservation(userId)
+          await releaseHourlyNotificationReservation(userId)
           console.warn(`  ⚠️ [${userId.slice(0,8)}] チェック完了Push失敗`)
         }
       }

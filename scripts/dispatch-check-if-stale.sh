@@ -15,6 +15,11 @@ log() {
   echo "[$(TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M:%S JST')] $*" >> "$LOG_FILE"
 }
 
+if [ "${ENABLE_YAHOO_AUCTION_DISPATCH_FALLBACK:-false}" != "true" ]; then
+  log "skip: dispatch fallback disabled"
+  exit 0
+fi
+
 hour="$(TZ=Asia/Tokyo date '+%H')"
 hour_num=$((10#$hour))
 if [ "$hour_num" -ge 1 ] && [ "$hour_num" -le 6 ]; then

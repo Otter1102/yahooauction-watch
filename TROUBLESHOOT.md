@@ -5,8 +5,9 @@
 | **症状** | 条件追加時に Internal Server Error が出る。通知履歴が消えたように見え、新着通知も来ない。GitHub Actions は success 表示でも通知が届かない。DB復旧後の手動runも30分でcancelledになる |
 | **原因** | 買い切り版・トライアル版とも `/api/health` が Supabase `TimeoutError` で503。GitHub Actionsのprecheckも HTTP 000 で、巡回本体へ入らず全シャードskipしていた。DB復旧後は巡回本体に入ったが、`GH_FETCH_PAGES=40` と大量新着の `notification_history` upsert により30分上限に到達し、履歴保存でも statement timeout が多発していた |
 | **対策** | 条件APIでSupabase timeout / fetch failure / invalid key系を500ではなく503 + 日本語メッセージで返すよう修正。ダッシュボードにDB接続障害バナーを追加。Actionsのprecheck待機を延長し、未応答時はsuccessで隠さずfailureに変更。DB復旧後の完走性対策として、Actions timeoutを30→45分、`GH_FETCH_PAGES`を40→20、1ユーザー新着上限を1000→500へ調整し、`notification_history` / `notified_items` 保存を小分け化 |
-| **残課題** | 追加対策後のGitHub Actions手動runで45分以内に完走するか確認する。完走ログで `notification_history` statement timeout が再発しないか確認する |
-| **再発防止** | Actionsがsuccessでも巡回成功とは判断しない。`Run auction check` が実行されているか、`=== 完了` まで出ているか、`/api/health` が connected かを確認する。DB未応答時はfailureとして可視化し、大量履歴保存は小分けを維持する |
+| **追加対策** | 連続通知を避けるため、主workflowはJST毎時00分の1回だけ起動。バックアップworkflowは手動専用に戻し、Mac miniのLaunchAgent保険起動もデフォルト停止。さらに `__notification_hour_YYYY-MM-DDTHH` マーカーで、同一ユーザーへのPushを新着/チェック完了を含めて1時間1回に制限 |
+| **残課題** | 次回の毎時00分runで、ユーザーあたり通知が1回に収まることを確認する |
+| **再発防止** | Actionsがsuccessでも巡回成功とは判断しない。`Run auction check` が実行されているか、`=== 完了` まで出ているか、`/api/health` が connected かを確認する。DB未応答時はfailureとして可視化し、大量履歴保存は小分けを維持する。通知頻度を増やす場合は、workflow scheduleだけでなく `run-check.ts` の1時間通知マーカーも同時に見直す |
 
 ---
 
