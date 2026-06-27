@@ -215,13 +215,14 @@ export async function sendWebPushCheckComplete(
     hourCycle: 'h23',
   }).format(now)
   const body = summary.failed
-    ? `取得できませんでした（${summary.fetchFailedCount ?? 1}条件 / ${checkedAt}確認）`
+    ? `警告: 取得エラーが発生しました（${summary.fetchFailedCount ?? 1}条件 / ${checkedAt}確認）`
     : summary.noItems
       ? `取得完了: 新着はありませんでした（${checkedAt}確認）`
       : `取得完了: 新着${summary.freshCount}件（${checkedAt}確認）`
+  const title = summary.failed ? 'ヤフオクwatch 要確認' : 'ヤフオクwatch チェック完了'
 
   const result = await sendToSub(sub, withReceipt({
-    title: 'ヤフオクwatch チェック完了',
+    title,
     body,
     url: APP_URL + '/history',
     imageUrl: null,
