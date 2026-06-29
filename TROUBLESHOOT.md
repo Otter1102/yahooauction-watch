@@ -1,3 +1,16 @@
+## 2026-06-29 — Yahoo取得一部失敗が「要確認」Pushになりすぎる
+
+| 項目 | 内容 |
+|------|------|
+| **症状** | 定期チェック自体は完走し、商品も大量に取得できているのに、一部ユーザーへ `ヤフオクwatch 要確認` / `警告: 取得エラーが発生しました` のPushが出る |
+| **原因** | GitHub Actionsログでは一部の長い複合キーワードや括弧・読点入り条件でYahooがHTTP 500/404を返していた。旧判定はユーザーの条件が1件でも取得失敗すると、そのユーザーの他条件が成功していても `failed=true` にしていた |
+| **対策** | `run-check.ts` でユーザー別に成功検索数 `successfulFetchByUser` も集計し、成功検索が1件でもある場合は通常のチェック完了通知にする。全検索が失敗した時だけ `要確認` Pushにする |
+| **追加対策** | `scraper.ts` でYahooへ送る検索語だけ括弧・読点・区切り記号を空白へ正規化し、Yahoo側の500を減らす。Actionsは `CHECK_FETCH_CONCURRENCY=2`、`CHECK_SHARD_STAGGER_MS=20000` へ下げて同時アクセスを抑制 |
+| **確認** | 修正前の手動run `28358284632` は全12 shard successだが、複数条件でHTTP 500が出ていた。修正後は `npm run build` と対象unit test成功。本番/トライアルともVercel productionへ反映し、`/api/health` はSupabase connected / Upstash PONG |
+| **再発防止** | 「Yahoo一部条件失敗」と「全体取得失敗」を通知文言で混同しない。長い検索条件を追加する時は、括弧や読点を多用しすぎない。Yahoo 500が増えた時はworkflowの取得並列数を先に疑う |
+
+---
+
 ## 2026-06-27 — Supabase容量逼迫対策として notified_items をUpstash Redisへ逃がす
 
 | 項目 | 内容 |
