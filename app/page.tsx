@@ -42,6 +42,7 @@ const CONDS_CACHE = 'yw_conditions_cache'
 const CHECK_DISPLAY_STAMP_KEY = 'yw_last_check_display_stamp'
 const PUSH_SETUP_REMINDER_KEY = 'yw_push_setup_reminder_at'
 const PUSH_SETUP_REMINDER_INTERVAL_MS = 6 * 60 * 60 * 1000
+const RECENT_HISTORY_NOTICE_WINDOW_MS = 24 * 60 * 60 * 1000
 
 async function showPushSetupReminder() {
   if (typeof window === 'undefined' || !('Notification' in window)) return
@@ -72,6 +73,20 @@ function isCheckRecord(record: NotificationRecord): boolean {
 function auctionOnly(records: unknown): NotificationRecord[] {
   const rows = Array.isArray(records) ? records as NotificationRecord[] : []
   return rows.filter(record => !isCheckRecord(record))
+}
+
+function recentFetchedHistory(records: NotificationRecord[]): NotificationRecord[] {
+  const cutoff = Date.now() - RECENT_HISTORY_NOTICE_WINDOW_MS
+  return records
+    .filter(record => {
+      const notifiedAtMs = new Date(record.notifiedAt).getTime()
+      return Number.isFinite(notifiedAtMs) && notifiedAtMs >= cutoff
+    })
+    .sort((a, b) => new Date(b.notifiedAt).getTime() - new Date(a.notifiedAt).getTime())
+}
+
+function compactTitle(title: string, maxLength = 34): string {
+  return title.length > maxLength ? `${title.slice(0, maxLength)}...` : title
 }
 
 export default function Dashboard() {
@@ -260,6 +275,9 @@ export default function Dashboard() {
   useEffect(() => { init() }, [])
 
   const activeCount = conditions.filter(c => c.enabled).length
+  const recentFetchedItems = useMemo(() => recentFetchedHistory(history), [history])
+  const latestFetchedItem = recentFetchedItems[0]
+  const hasFetchedItemsWithoutPush = recentFetchedItems.length > 0 && (!notifyReady || pushLost)
   const historyByCondition = useMemo(() => {
     const map = new Map<string, NotificationRecord[]>()
     for (const item of history) {
@@ -339,8 +357,42 @@ export default function Dashboard() {
               </div>
             )}
 
+            {/* ─── 新着取得済みだが通知未設定/失効しているユーザーへの案内 ─── */}
+            {hasFetchedItemsWithoutPush && (
+              <a href="/settings" style={{ display: 'block', marginBottom: 12, textDecoration: 'none' }}>
+                <div style={{
+                  background: 'var(--card)', borderRadius: 12,
+                  padding: '12px 16px',
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+                  border: '1px solid rgba(0,153,226,0.28)',
+                  boxShadow: 'var(--shadow-sm)',
+                }}>
+                  <div style={{ minWidth: 0 }}>
+                    <p style={{ fontWeight: 700, fontSize: 13, color: 'var(--accent)' }}>新着商品が見つかっています</p>
+                    <p style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2, fontWeight: 400, lineHeight: 1.55 }}>
+                      直近24時間で{recentFetchedItems.length}件を通知履歴に反映済みです。通知ONで次回から端末に届きます。
+                    </p>
+                    {latestFetchedItem && (
+                      <p style={{
+                        fontSize: 11, color: 'var(--text-secondary)', marginTop: 4,
+                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      }}>
+                        最新: {compactTitle(latestFetchedItem.title)}
+                      </p>
+                    )}
+                  </div>
+                  <span style={{
+                    height: 32, padding: '0 14px', borderRadius: 16,
+                    background: 'var(--grad-primary)', color: 'white',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 12, fontWeight: 700, flexShrink: 0,
+                  }}>通知ON</span>
+                </div>
+              </a>
+            )}
+
             {/* ─── 通知未設定バナー ─── */}
-            {!notifyReady && (
+            {!notifyReady && !hasFetchedItemsWithoutPush && (
               <a href="/settings" style={{ display: 'block', marginBottom: 12, textDecoration: 'none' }}>
                 <div style={{
                   background: 'var(--card)', borderRadius: 12,
@@ -364,7 +416,7 @@ export default function Dashboard() {
             )}
 
             {/* ─── 通知切れバナー（購読が失われた時） ─── */}
-            {notifyReady && pushLost && (
+            {notifyReady && pushLost && !hasFetchedItemsWithoutPush && (
               <a href="/settings" style={{ display: 'block', marginBottom: 12, textDecoration: 'none' }}>
                 <div style={{
                   background: 'var(--card)', borderRadius: 12,
