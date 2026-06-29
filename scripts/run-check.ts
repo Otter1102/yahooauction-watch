@@ -6,7 +6,7 @@
  * 実行: npx tsx scripts/run-check.ts
  * 環境変数: NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_KEY
  */
-import { getAllEnabledConditions, getAllNotifiedIds, markNotifiedMany, addHistories, updateCondition, cleanupOldNotified, cleanupOldHistory, resetStalledNotified, updateHistorySnapshots, addConditionCheckHistory, reserveNotifiedItem, releaseNotifiedItemReservation, getNotifiedItemsStoreName } from '../lib/storage'
+import { getAllEnabledConditions, getAllNotifiedIds, markNotifiedMany, addHistories, updateCondition, cleanupOldNotified, cleanupOldHistory, resetStalledNotified, addConditionCheckHistory, reserveNotifiedItem, releaseNotifiedItemReservation, getNotifiedItemsStoreName } from '../lib/storage'
 import { fetchAuctionRssWithMeta } from '../lib/scraper'
 import { selectConditionCandidates } from '../lib/condition-match'
 import { sendWebPushCheckComplete, sendWebPushSummary } from '../lib/webpush'
@@ -83,9 +83,13 @@ const ALLOW_NIGHT_NOTIFICATIONS = process.env.ALLOW_NIGHT_NOTIFICATIONS === 'tru
 const CHECK_SHARD_TOTAL = Math.max(1, Number.parseInt(process.env.CHECK_SHARD_TOTAL ?? '1', 10) || 1)
 const CHECK_SHARD_INDEX = Math.max(0, Number.parseInt(process.env.CHECK_SHARD_INDEX ?? '0', 10) || 0)
 const CHECK_SHARD_STAGGER_MS = Math.max(0, Number.parseInt(process.env.CHECK_SHARD_STAGGER_MS ?? '0', 10) || 0)
-const SNAPSHOT_UPDATE_LIMIT = Math.max(0, Number.parseInt(process.env.CHECK_SNAPSHOT_UPDATE_LIMIT ?? '200', 10) || 200)
 const NEW_ITEMS_PER_CONDITION_LIMIT = Math.max(1, Number.parseInt(process.env.CHECK_NEW_ITEMS_PER_CONDITION_LIMIT ?? '300', 10) || 300)
 const NEW_ITEMS_PER_USER_LIMIT = Math.max(1, Number.parseInt(process.env.CHECK_NEW_ITEMS_PER_USER_LIMIT ?? '1000', 10) || 1000)
+const DISPLAY_ITEMS_PER_CONDITION_LIMIT = Math.max(
+  1,
+  Number.parseInt(process.env.CHECK_DISPLAY_ITEMS_PER_CONDITION_LIMIT ?? String(NEW_ITEMS_PER_CONDITION_LIMIT), 10) ||
+    NEW_ITEMS_PER_CONDITION_LIMIT,
+)
 
 function getJstHour(date = new Date()): number {
   return Number(new Intl.DateTimeFormat('ja-JP', {
@@ -106,6 +110,10 @@ function stringShard(value: string, totalShards: number): number {
     hash = ((hash << 5) - hash + value.charCodeAt(i)) | 0
   }
   return Math.abs(hash) % totalShards
+}
+
+function addCount(map: Map<string, number>, key: string, count: number): void {
+  map.set(key, (map.get(key) ?? 0) + count)
 }
 
 async function fetchWithRetry(key: RssKey, retries = 2, startOffset = 1): Promise<AuctionItem[]> {
@@ -233,6 +241,8 @@ async function main() {
   let totalNotified = 0
   // ユーザーごとの新着アイテム収集（メインループ後にサマリー1回で通知）
   const pendingByUser = new Map<string, PendingNotification[]>()
+  const matchedByUser = new Map<string, number>()
+  const successfulFetchByUser = new Map<string, number>()
   const failedFetchByUser = new Map<string, number>()
 
   // 並列でRSSフェッチ（3並列）
@@ -257,6 +267,9 @@ async function main() {
         return
       }
       console.log(`  🔍 [${group.key.keyword}] 取得: ${items.length}件`)
+      for (const cond of group.conditions) {
+        addCount(successfulFetchByUser, cond.userId, 1)
+      }
       if (items.length === 0) {
         for (const cond of group.conditions) {
           if (!cond.enabled) continue
@@ -283,21 +296,26 @@ async function main() {
 
         const selection = selectConditionCandidates(cond, items)
         const candidateItems = selection.items
+        addCount(matchedByUser, cond.userId, candidateItems.length)
         if (selection.relaxed) {
           console.log(`  ↪️ [${cond.name}] 厳密一致0件のため入札数条件を候補条件として緩和: ${candidateItems.length}件`)
         }
 
         let conditionNotified = 0
-        let snapshotUpdates = 0
         let skippedByCap = 0
-        const snapshotRecords: ReturnType<typeof toHistoryRecord>[] = []
+        const displayRecords = candidateItems
+          .slice(0, DISPLAY_ITEMS_PER_CONDITION_LIMIT)
+          .map(item => toHistoryRecord(cond, item))
+        if (displayRecords.length > 0) {
+          try {
+            await addHistories(displayRecords)
+          } catch (e: any) {
+            console.warn(`  ⚠️ [${cond.name}] 表示用履歴保存失敗 (巡回継続):`, e?.message ?? e)
+          }
+        }
         for (const item of candidateItems) {
           // 通知済みチェック: 送信直前にキャッシュを参照（並列グループ間の重複防止）
           if (notifiedIdsCache.get(cond.userId)?.has(item.auctionId)) {
-            if (snapshotUpdates < SNAPSHOT_UPDATE_LIMIT) {
-              snapshotRecords.push(toHistoryRecord(cond, item))
-              snapshotUpdates++
-            }
             continue
           }
 
@@ -316,14 +334,12 @@ async function main() {
             conditionNotified++
           }
         }
-        if (snapshotRecords.length > 0) {
-          await updateHistorySnapshots(snapshotRecords)
-        }
-
         // 最終チェック時刻は、件数変化がなくても巡回成功の証跡として必ず更新する。
         await updateCondition(cond.id, {
           lastCheckedAt: new Date().toISOString(),
           lastFoundCount: candidateItems.length,
+        }).catch((e: any) => {
+          console.warn(`  ⚠️ [${cond.name}] 条件チェック時刻更新失敗 (巡回継続):`, e?.message ?? e)
         })
         await addConditionCheckHistory(cond, {
           status: 'ok',
@@ -395,11 +411,18 @@ async function main() {
           return
         }
         const freshCount = items?.length ?? 0
+        const matchedCount = matchedByUser.get(userId) ?? 0
+        const successfulFetchCount = successfulFetchByUser.get(userId) ?? 0
         const fetchFailedCount = failedFetchByUser.get(userId) ?? 0
+        const allFetchesFailed = fetchFailedCount > 0 && successfulFetchCount === 0
+        if (fetchFailedCount > 0 && !allFetchesFailed) {
+          console.log(`  ℹ️ [${userId.slice(0,8)}] 一部条件で取得失敗あり (${fetchFailedCount}条件) / 成功条件ありのため通常完了通知`)
+        }
         const delivered = await sendWebPushCheckComplete(userId, {
           freshCount,
-          noItems: freshCount === 0,
-          failed: fetchFailedCount > 0,
+          matchedCount,
+          noItems: matchedCount === 0 && freshCount === 0,
+          failed: allFetchesFailed,
           fetchFailedCount,
         })
         if (delivered) {

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getConditions, getNotifiedIds, markNotified, addHistory, updateCondition, updateHistorySnapshot, addConditionCheckHistory } from '@/lib/storage'
+import { getConditions, getNotifiedIds, markNotified, addHistory, addHistories, updateCondition, addConditionCheckHistory } from '@/lib/storage'
 import { getSupabaseAdmin } from '@/lib/supabase'
 import { fetchAuctionRssWithMeta, fetchAuctionRssSimple } from '@/lib/scraper'
 import { selectConditionCandidates } from '@/lib/condition-match'
@@ -12,6 +12,10 @@ import { User, SearchCondition, AuctionItem } from '@/lib/types'
 // 30条件 ÷ 5 = 6バッチ × ~2s = 12s << USER_TIMEOUT_MS(30s)
 const CONDITION_CONCURRENCY = 5
 const SEND_NO_ITEMS_PUSH = process.env.SEND_NO_ITEMS_PUSH === 'true'
+const DISPLAY_ITEMS_PER_CONDITION_LIMIT = Math.max(
+  1,
+  Number.parseInt(process.env.CHECK_DISPLAY_ITEMS_PER_CONDITION_LIMIT ?? '300', 10) || 300,
+)
 
 type RssKey = Pick<SearchCondition, 'keyword' | 'maxPrice' | 'minPrice' | 'minBids' | 'sellerType' | 'itemCondition' | 'sortBy' | 'sortOrder' | 'buyItNow'>
 
@@ -81,10 +85,6 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ error: 'user not found' }, { status: 404 })
 
     const hasPush = !!(user as any).pushSub?.endpoint
-    if (!user.ntfyTopic && !user.discordWebhook && !hasPush) {
-      return NextResponse.json({ error: '通知先が設定されていません' }, { status: 400 })
-    }
-
     const allConditions = await getConditions(userId)
     // cron経由・手動実行ともに有効な全条件を処理（上限なし）
     // CONDITION_CONCURRENCY=5 の並列バッチで30条件も12秒以内に完了
@@ -175,15 +175,17 @@ export async function POST(req: NextRequest) {
       let condPending = 0
       let condRecordErrors = 0
 
-      // 通知済みの商品は再通知しないが、価格・残り時間・画像は履歴上で最新化する。
-      for (const item of matchingItems) {
-        if (!notifiedIds.has(item.auctionId)) continue
-        try {
-          await updateHistorySnapshot(toHistoryRecord(userId, cond, item))
-        } catch (e: any) {
-          condRecordErrors++
-          console.warn('[run-now] 履歴更新失敗 (継続):', e?.message)
-        }
+      // 表示用の商品欄は、通知送信の成否とは独立して最新化する。
+      // Push失敗・未設定・履歴削除済みでも、アプリ上では取得商品を確認できるようにする。
+      try {
+        await addHistories(
+          matchingItems
+            .slice(0, DISPLAY_ITEMS_PER_CONDITION_LIMIT)
+            .map(item => toHistoryRecord(userId, cond, item)),
+        )
+      } catch (e: any) {
+        condRecordErrors++
+        console.warn('[run-now] 表示用履歴保存失敗 (継続):', e?.message)
       }
 
       // 新規商品はPush送信が成功するまで notified_items に入れない。

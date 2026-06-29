@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildSearchUrl } from '@/lib/scraper'
+import { buildSearchUrl, normalizeYahooSearchKeyword } from '@/lib/scraper'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 
@@ -55,5 +55,14 @@ describe('Yahoo検索URL生成', () => {
     expect(source).toContain('item.endtimeMs > now')
     expect(source).toContain('item.endtimeMs - now <= ENDING_SOON_WINDOW_MS')
     expect(buildSearchUrl({ ...baseKey, sellerType: 'all' }, 1)).not.toContain('aucend=')
+  })
+
+  it('Yahooへ送る検索語はHTTP 500になりやすい括弧・読点を空白へ正規化する', () => {
+    const keyword = '（COACH コーチ）(バッグ　鞄), リュック／ショルダー'
+    const normalized = normalizeYahooSearchKeyword(keyword)
+    expect(normalized).toBe('COACH コーチ バッグ 鞄 リュック ショルダー')
+
+    const url = new URL(buildSearchUrl({ ...baseKey, keyword, sellerType: 'all' }, 1))
+    expect(url.searchParams.get('p')).toBe(normalized)
   })
 })

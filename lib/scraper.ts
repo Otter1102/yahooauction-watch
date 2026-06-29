@@ -48,14 +48,26 @@ const YAHOO_HEADERS: Record<string, string> = {
 // ============================================================
 
 /** Yahoo Auctions 検索URLを構築する */
-export function buildSearchUrl(key: RssKey, offset: number): string {
+export function normalizeYahooSearchKeyword(keyword: string): string {
   // キーワード正規化:
   //   1. "miu miu"（スペース含む）→ "ミュウミュウ"
   //      理由: Yahoo検索でスペース区切りはOR区切り扱いになり "miu miu" → "miu" のみ検索
   //   2. "バレテンティノ" → "バレンティノ" (VALENTINO のタイポ修正)
-  const normalizedKeyword = key.keyword
+  //   3. 括弧・読点などを空白へ寄せる
+  //      理由: 長い複合条件でYahoo側がHTTP 500/404を返し、ユーザーへ取得エラー通知が出るため
+  return keyword
+    .normalize('NFKC')
     .replace(/miu\s+miu/gi, 'ミュウミュウ')
     .replace(/バレテンティノ/g, 'バレンティノ')
+    .replace(/[()[\]{}（）【】「」『』]/g, ' ')
+    .replace(/[、，,]+/g, ' ')
+    .replace(/[|｜／\/]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+export function buildSearchUrl(key: RssKey, offset: number): string {
+  const normalizedKeyword = normalizeYahooSearchKeyword(key.keyword)
   const params: Record<string, string> = {
     p:           normalizedKeyword,
     aucmaxprice: String(key.maxPrice),

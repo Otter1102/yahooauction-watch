@@ -1,6 +1,6 @@
 'use client'
-import { useEffect, useState } from 'react'
-import { SearchCondition } from '@/lib/types'
+import { useEffect, useMemo, useState } from 'react'
+import { NotificationRecord, SearchCondition } from '@/lib/types'
 import ConditionCard from '@/components/ConditionCard'
 import ConditionForm from '@/components/ConditionForm'
 import OnboardingGuide from '@/components/OnboardingGuide'
@@ -41,13 +41,14 @@ function SkeletonCard() {
 const CONDS_CACHE = 'yw_conditions_cache'
 const CHECK_DISPLAY_STAMP_KEY = 'yw_last_check_display_stamp'
 const PUSH_SETUP_REMINDER_KEY = 'yw_push_setup_reminder_at'
+const PUSH_SETUP_REMINDER_INTERVAL_MS = 6 * 60 * 60 * 1000
 
 async function showPushSetupReminder() {
   if (typeof window === 'undefined' || !('Notification' in window)) return
   if (Notification.permission !== 'granted') return
   try {
     const last = Number(localStorage.getItem(PUSH_SETUP_REMINDER_KEY) ?? '0')
-    if (Number.isFinite(last) && Date.now() - last < 24 * 60 * 60 * 1000) return
+    if (Number.isFinite(last) && Date.now() - last < PUSH_SETUP_REMINDER_INTERVAL_MS) return
     localStorage.setItem(PUSH_SETUP_REMINDER_KEY, String(Date.now()))
     const title = 'ヤフオクwatch 通知設定が必要です'
     const options = {
@@ -64,9 +65,19 @@ async function showPushSetupReminder() {
   } catch { /* ローカル通知の失敗は画面バナーで補う */ }
 }
 
+function isCheckRecord(record: NotificationRecord): boolean {
+  return record.kind === 'check' || record.auctionId.startsWith('__check_')
+}
+
+function auctionOnly(records: unknown): NotificationRecord[] {
+  const rows = Array.isArray(records) ? records as NotificationRecord[] : []
+  return rows.filter(record => !isCheckRecord(record))
+}
+
 export default function Dashboard() {
   const [userId, setUserId]         = useState('')
   const [conditions, setConditions] = useState<SearchCondition[]>([])
+  const [history, setHistory] = useState<NotificationRecord[]>([])
   const [displayCheckedAt, setDisplayCheckedAt] = useState<string | null>(null)
   const [showForm, setShowForm]     = useState(false)
   const [editingCondition, setEditingCondition] = useState<SearchCondition | null>(null)
@@ -76,6 +87,7 @@ export default function Dashboard() {
   const [pushLost, setPushLost] = useState(false)
   const [dbUnavailable, setDbUnavailable] = useState(false)
   const [duplicatingCondition, setDuplicatingCondition] = useState<SearchCondition | null>(null)
+  const [refreshingLatest, setRefreshingLatest] = useState(false)
 
   function completeOnboarding() {
     localStorage.setItem('yahoowatch_onboarded', '1')
@@ -120,7 +132,7 @@ export default function Dashboard() {
     }
 
     // 4つのAPIを並列実行。stampは起動確認の証跡で、商品取得や通知送信は行わない。
-    const [, settingsRes, conditionsRes, stampRes] = await Promise.allSettled([
+    const [, settingsRes, conditionsRes, stampRes, historyRes] = await Promise.allSettled([
       fetch('/api/user', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: id }) }),
       fetch(`/api/settings?userId=${id}`),
       fetch(`/api/conditions?userId=${id}`),
@@ -129,6 +141,7 @@ export default function Dashboard() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: id, checkedAt: startupCheckedAt }),
       }),
+      fetch(`/api/history?userId=${id}`),
     ])
 
     if (stampRes.status === 'fulfilled' && stampRes.value.ok) {
@@ -154,6 +167,13 @@ export default function Dashboard() {
     } catch { /* JSON parseエラーは無視 */ } finally {
       setLoading(false)
     }
+
+    try {
+      if (historyRes.status === 'fulfilled' && historyRes.value.ok) {
+        const data = await historyRes.value.json()
+        if (Array.isArray(data)) setHistory(auctionOnly(data))
+      }
+    } catch { /* 履歴表示は条件表示を優先する */ }
 
     // 設定はバックグラウンドで反映
     if (settingsRes.status === 'fulfilled' && settingsRes.value.ok) {
@@ -204,9 +224,51 @@ export default function Dashboard() {
     } catch { setDbUnavailable(true) }
   }
 
+  async function loadHistory(uid?: string) {
+    const id = uid ?? userId
+    if (!id) return
+    try {
+      const res = await fetch(`/api/history?userId=${id}`)
+      if (!res.ok) return
+      const data = await res.json()
+      if (Array.isArray(data)) setHistory(auctionOnly(data))
+    } catch { /* 履歴の再取得失敗は画面表示を維持 */ }
+  }
+
+  async function refreshLatestItems() {
+    if (!userId || refreshingLatest) return
+    setRefreshingLatest(true)
+    try {
+      const res = await fetch('/api/run-now', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, manual: true }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        window.alert(data.error ?? '最新商品の取得に失敗しました。少し時間をおいて再実行してください。')
+        return
+      }
+      await Promise.all([loadConditions(), loadHistory()])
+    } catch {
+      window.alert('通信エラーで最新商品を取得できませんでした。接続を確認してください。')
+    } finally {
+      setRefreshingLatest(false)
+    }
+  }
+
   useEffect(() => { init() }, [])
 
   const activeCount = conditions.filter(c => c.enabled).length
+  const historyByCondition = useMemo(() => {
+    const map = new Map<string, NotificationRecord[]>()
+    for (const item of history) {
+      if (!item.conditionId) continue
+      if (!map.has(item.conditionId)) map.set(item.conditionId, [])
+      map.get(item.conditionId)!.push(item)
+    }
+    return map
+  }, [history])
 
   return (
     <div
@@ -355,6 +417,28 @@ export default function Dashboard() {
               </div>
             )}
 
+            {conditions.length > 0 && (
+              <button
+                onClick={refreshLatestItems}
+                disabled={refreshingLatest || activeCount === 0}
+                style={{
+                  width: '100%',
+                  height: 44,
+                  borderRadius: 12,
+                  border: '1px solid rgba(0,153,226,0.22)',
+                  background: refreshingLatest ? 'var(--fill)' : 'rgba(0,153,226,0.08)',
+                  color: refreshingLatest || activeCount === 0 ? 'var(--text-tertiary)' : 'var(--accent)',
+                  fontWeight: 700,
+                  fontSize: 13,
+                  cursor: refreshingLatest || activeCount === 0 ? 'default' : 'pointer',
+                  fontFamily: 'inherit',
+                  marginBottom: 14,
+                }}
+              >
+                {refreshingLatest ? '最新商品を取得中...' : '最新商品を取得'}
+              </button>
+            )}
+
             {/* ─── Empty state ─── */}
             {conditions.length === 0 && (
               <div style={{ textAlign: 'center', paddingTop: 64, paddingBottom: 40 }}>
@@ -384,12 +468,13 @@ export default function Dashboard() {
                   <ConditionCard
                     key={c.id}
                     condition={c}
+                    recentItems={historyByCondition.get(c.id) ?? []}
                     displayCheckedAt={displayCheckedAt}
                     userId={userId}
-                    onChange={() => loadConditions()}
+                    onChange={() => { void loadConditions(); void loadHistory() }}
                     onEdit={cond => setEditingCondition(cond)}
                     onDuplicate={cond => { window.scrollTo({ top: 0, behavior: 'smooth' }); setDuplicatingCondition(cond) }}
-                    onEnable={() => loadConditions()}
+                    onEnable={() => { void loadConditions(); void loadHistory() }}
                   />
                 ))}
                 {/* 条件追加ボタン（条件がある時も常に表示） */}
@@ -437,7 +522,7 @@ export default function Dashboard() {
       {showForm && userId && (
         <ConditionForm
           userId={userId}
-          onSave={() => { setShowForm(false); loadConditions() }}
+          onSave={() => { setShowForm(false); void loadConditions(); void loadHistory() }}
           onClose={() => setShowForm(false)}
         />
       )}
@@ -445,7 +530,7 @@ export default function Dashboard() {
         <ConditionForm
           userId={userId}
           condition={editingCondition}
-          onSave={() => { setEditingCondition(null); loadConditions() }}
+          onSave={() => { setEditingCondition(null); void loadConditions(); void loadHistory() }}
           onClose={() => setEditingCondition(null)}
         />
       )}
@@ -455,7 +540,7 @@ export default function Dashboard() {
           condition={duplicatingCondition}
           isDuplicate
           existingConditions={conditions}
-          onSave={() => { setDuplicatingCondition(null); loadConditions() }}
+          onSave={() => { setDuplicatingCondition(null); void loadConditions(); void loadHistory() }}
           onClose={() => setDuplicatingCondition(null)}
         />
       )}

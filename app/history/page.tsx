@@ -32,6 +32,11 @@ function writeCachedHistory(records: NotificationRecord[]): void {
   try { localStorage.setItem(HISTORY_CACHE_KEY, JSON.stringify(records)) } catch {}
 }
 
+function auctionOnly(records: unknown): NotificationRecord[] {
+  const rows = Array.isArray(records) ? records as NotificationRecord[] : []
+  return rows.filter(record => !isCheckRecord(record))
+}
+
 // ─── Yahoo公式大カテゴリ分類 ───
 const CATEGORIES = [
   { id: 'all',        label: 'すべて' },
@@ -110,7 +115,10 @@ export default function HistoryPage() {
   const [loading, setLoading]       = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [activeTab, setActiveTab]   = useState<CategoryId>('all')
-  const [selectedCondition, setSelectedCondition] = useState<string>('all')
+  const [selectedCondition, setSelectedCondition] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'all'
+    return new URLSearchParams(window.location.search).get('conditionId') ?? 'all'
+  })
   const tabsRef     = useRef<HTMLDivElement>(null)
   const touchStartX = useRef(0)
   const touchStartY = useRef(0)
@@ -129,7 +137,7 @@ export default function HistoryPage() {
         body: JSON.stringify({ userId, records: cached }),
       })
       if (!res.ok) return
-      const restored = await fetch(`/api/history?userId=${userId}`).then(r => r.json())
+      const restored = auctionOnly(await fetch(`/api/history?userId=${userId}`).then(r => r.json()))
       if (Array.isArray(restored) && restored.length > 0) {
         setHistory(restored)
         writeCachedHistory(restored)
@@ -142,8 +150,8 @@ export default function HistoryPage() {
   const fetchHistory = useCallback(async () => {
     const id = getUserId()
     if (!id) return
-    const data = await fetch(`/api/history?userId=${id}`).then(r => r.json())
-    const cached = readCachedHistory()
+    const data = auctionOnly(await fetch(`/api/history?userId=${id}`).then(r => r.json()))
+    const cached = auctionOnly(readCachedHistory())
     if (Array.isArray(data) && data.length === 0 && cached.length > 0) {
       setHistory(cached)
       await restoreCachedHistory(id, cached)
@@ -156,7 +164,7 @@ export default function HistoryPage() {
 
   useEffect(() => {
     // キャッシュから即時表示（WKWebView強制終了後の再起動時に白画面にならないよう）
-    const cached = readCachedHistory()
+    const cached = auctionOnly(readCachedHistory())
     if (cached.length > 0) setHistory(cached)
     fetchHistory().finally(() => setLoading(false))
   }, [fetchHistory])
@@ -196,10 +204,19 @@ export default function HistoryPage() {
   }
 
   // ─── 条件名リスト（プルダウン用） ────────────────────────
-  const conditionNames = useMemo(() => {
-    const names = new Set(history.map(r => r.conditionName))
-    return Array.from(names).sort((a, b) => a.localeCompare(b, 'ja'))
+  const conditionOptions = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const record of history) {
+      if (!record.conditionId || map.has(record.conditionId)) continue
+      map.set(record.conditionId, record.conditionName)
+    }
+    return Array.from(map.entries())
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'ja'))
   }, [history])
+  const selectedConditionName = selectedCondition === 'all'
+    ? ''
+    : conditionOptions.find(option => option.id === selectedCondition)?.name ?? ''
 
   // ─── カテゴリ + 条件名フィルタ ───────────────────────────
   const filtered = useMemo(() => {
@@ -207,7 +224,7 @@ export default function HistoryPage() {
       ? history
       : history.filter(r => classifyCategory(r.title, r.conditionName) === activeTab)
     if (selectedCondition !== 'all') {
-      result = result.filter(r => r.conditionName === selectedCondition)
+      result = result.filter(r => r.conditionId === selectedCondition)
     }
     return result
   }, [history, activeTab, selectedCondition])
@@ -358,7 +375,7 @@ export default function HistoryPage() {
           </div>
 
           {/* Row 3: 条件名プルダウン（2件以上の時のみ表示） */}
-          {conditionNames.length > 1 && (
+          {conditionOptions.length > 1 && (
             <div style={{ padding: '8px 0 10px' }}>
               <div style={{ position: 'relative' }}>
                 <select
@@ -387,8 +404,8 @@ export default function HistoryPage() {
                   }}
                 >
                   <option value="all">すべての条件を表示</option>
-                  {conditionNames.map(name => (
-                    <option key={name} value={name}>{name}</option>
+                  {conditionOptions.map(option => (
+                    <option key={option.id} value={option.id}>{option.name}</option>
                   ))}
                 </select>
                 {/* カスタム矢印 */}
@@ -430,7 +447,7 @@ export default function HistoryPage() {
               {history.length === 0
                 ? 'まだ通知はありません'
                 : selectedCondition !== 'all'
-                  ? `「${selectedCondition}」の通知はありません`
+                  ? `「${selectedConditionName || 'この条件'}」の通知はありません`
                   : 'このカテゴリの通知はありません'}
             </p>
             <p style={{ fontSize: 13, color: 'var(--text-tertiary)', lineHeight: 1.65 }}>

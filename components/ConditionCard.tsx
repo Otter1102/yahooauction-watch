@@ -1,10 +1,12 @@
 'use client'
 import { useState } from 'react'
-import { SearchCondition } from '@/lib/types'
+import { NotificationRecord, SearchCondition } from '@/lib/types'
+import AuctionThumbnail from '@/components/AuctionThumbnail'
 
 interface Props {
   condition: SearchCondition
   userId: string
+  recentItems?: NotificationRecord[]
   onChange: () => void
   onEdit: (condition: SearchCondition) => void
   onDuplicate: (condition: SearchCondition) => void
@@ -37,7 +39,29 @@ function latestIso(a?: string | null, b?: string | null): string | null {
   return aTime >= bTime ? a : b
 }
 
-export default function ConditionCard({ condition, displayCheckedAt, userId, onChange, onEdit, onDuplicate, onEnable }: Props) {
+function formatNotifiedAt(value: string): string {
+  return new Intl.DateTimeFormat('ja-JP', {
+    timeZone: 'Asia/Tokyo',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).format(new Date(value))
+}
+
+function openAuction(url: string) {
+  window.open(url, '_blank', 'noopener,noreferrer')
+}
+
+export default function ConditionCard({
+  condition,
+  displayCheckedAt,
+  userId,
+  recentItems = [],
+  onChange,
+  onEdit,
+  onDuplicate,
+  onEnable,
+}: Props) {
   const [toggling, setToggling] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [showMenu, setShowMenu] = useState(false)
@@ -166,7 +190,6 @@ export default function ConditionCard({ condition, displayCheckedAt, userId, onC
             {lastChecked && (
               <p style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 5, fontWeight: 400, letterSpacing: '0.2px' }}>
                 最終チェック {lastChecked}
-                {condition.lastFoundCount !== undefined && ` · ${condition.lastFoundCount}件`}
               </p>
             )}
           </div>
@@ -188,6 +211,103 @@ export default function ConditionCard({ condition, displayCheckedAt, userId, onC
             >···</button>
           </div>
         </div>
+
+        {recentItems.length > 0 && (
+          <div style={{
+            marginTop: 12,
+            paddingTop: 10,
+            borderTop: '1px solid var(--border)',
+          }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: 6,
+            }}>
+              <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)' }}>
+                新着商品 {recentItems.length}件
+              </p>
+              <a
+                href={`/history?conditionId=${encodeURIComponent(condition.id)}`}
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  color: 'var(--accent)',
+                  textDecoration: 'none',
+                }}
+              >
+                もっと見る
+              </a>
+            </div>
+            <div>
+              {recentItems.slice(0, 3).map((item, idx) => (
+                <button
+                  key={item.id}
+                  onClick={() => openAuction(item.url)}
+                  style={{
+                    width: '100%',
+                    padding: idx === 0 ? '6px 0 7px' : '8px 0 7px',
+                    border: 'none',
+                    borderTop: idx > 0 ? '1px solid var(--border)' : 'none',
+                    background: 'transparent',
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: 10,
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  <AuctionThumbnail
+                    savedUrl={item.imageUrl ?? ''}
+                    auctionUrl={item.url}
+                    size={52}
+                    radius={8}
+                  />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 3 }}>
+                      <span style={{
+                        fontSize: 13,
+                        fontWeight: 700,
+                        color: item.price && item.price !== '価格不明' ? 'var(--accent)' : 'var(--text-tertiary)',
+                        fontVariantNumeric: 'tabular-nums',
+                        flexShrink: 0,
+                      }}>
+                        {item.price && item.price !== '価格不明' ? item.price : '価格不明'}
+                      </span>
+                      <span style={{
+                        fontSize: 10,
+                        color: 'var(--text-tertiary)',
+                        fontVariantNumeric: 'tabular-nums',
+                        flexShrink: 0,
+                      }}>
+                        {formatNotifiedAt(item.notifiedAt)}
+                      </span>
+                    </div>
+                    <p style={{
+                      fontSize: 12,
+                      fontWeight: 400,
+                      color: 'var(--text-primary)',
+                      lineHeight: 1.45,
+                      display: '-webkit-box',
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: 'vertical',
+                      overflow: 'hidden',
+                    }}>
+                      {item.title}
+                    </p>
+                    {item.remaining && (
+                      <p style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 3 }}>
+                        {item.remaining}
+                      </p>
+                    )}
+                  </div>
+                  <span style={{ fontSize: 16, color: 'var(--text-tertiary)', lineHeight: 1, paddingTop: 16 }}>›</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {showMenu && !confirmDelete && (
           <div style={{

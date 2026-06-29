@@ -100,7 +100,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3, 4, 5]
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -138,12 +138,13 @@ jobs:
           NOTIFIED_ITEMS_STORE: 'auto'
           SEND_NO_ITEMS_PUSH: 'true'
           FORCE_CHECK_COMPLETE_PUSH: ${{ github.event.inputs.force_check_complete || 'false' }}
-          GH_FETCH_PAGES: '20'
-          CHECK_SHARD_TOTAL: '6'
+          GH_FETCH_PAGES: '10'
+          CHECK_SHARD_TOTAL: '12'
           CHECK_SHARD_INDEX: ${{ matrix.shard }}
           CHECK_FETCH_CONCURRENCY: '2'
-          CHECK_SHARD_STAGGER_MS: '15000'
+          CHECK_SHARD_STAGGER_MS: '20000'
           CHECK_SNAPSHOT_UPDATE_LIMIT: '200'
+          CHECK_DISPLAY_ITEMS_PER_CONDITION_LIMIT: '50'
           CHECK_NEW_ITEMS_PER_CONDITION_LIMIT: '300'
           CHECK_NEW_ITEMS_PER_USER_LIMIT: '500'
           NOTIFIED_RETENTION_HOURS: '60'

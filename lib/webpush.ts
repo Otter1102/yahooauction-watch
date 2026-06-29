@@ -195,7 +195,7 @@ export async function sendWebPushNoItems(
 /** 定期チェック完了プッシュ: 新着件数、または取得失敗を知らせる */
 export async function sendWebPushCheckComplete(
   userId: string,
-  summary: { freshCount: number; noItems: boolean; failed?: boolean; fetchFailedCount?: number },
+  summary: { freshCount: number; noItems: boolean; matchedCount?: number; failed?: boolean; fetchFailedCount?: number },
   supabaseAdmin = getSupabaseAdmin(),
 ): Promise<boolean> {
   const { data } = await supabaseAdmin
@@ -214,11 +214,14 @@ export async function sendWebPushCheckComplete(
     minute: '2-digit',
     hourCycle: 'h23',
   }).format(now)
+  const matchedCount = summary.matchedCount ?? 0
   const body = summary.failed
     ? `警告: 取得エラーが発生しました（${summary.fetchFailedCount ?? 1}条件 / ${checkedAt}確認）`
-    : summary.noItems
-      ? `取得完了: 新着はありませんでした（${checkedAt}確認）`
-      : `取得完了: 新着${summary.freshCount}件（${checkedAt}確認）`
+    : summary.freshCount > 0
+      ? `取得完了: 新着${summary.freshCount}件（該当${matchedCount}件 / ${checkedAt}確認）`
+      : matchedCount > 0
+        ? `取得完了: 該当${matchedCount}件を確認済み。新着通知対象は0件です（${checkedAt}確認）`
+        : `取得完了: 条件に合う開催中商品は0件でした（${checkedAt}確認）`
   const title = summary.failed ? 'ヤフオクwatch 要確認' : 'ヤフオクwatch チェック完了'
 
   const result = await sendToSub(sub, withReceipt({

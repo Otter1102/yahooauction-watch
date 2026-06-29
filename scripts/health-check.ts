@@ -13,6 +13,11 @@ import {
   upstashPing,
 } from '../lib/notified-store'
 
+const UPSTASH_NOTIFIED_OVERFLOW_THRESHOLD = Math.max(
+  10_000,
+  Number.parseInt(process.env.UPSTASH_NOTIFIED_OVERFLOW_THRESHOLD ?? '50000', 10) || 50_000,
+)
+
 interface HealthReport {
   healthy: boolean
   issues: string[]
@@ -116,7 +121,7 @@ async function main() {
       const pong = await upstashPing()
       const count = await upstashCountNotifiedItems()
       lines.push(`📋 notified_items: Upstash Redis (${pong}) / ${count}件`)
-      if (count > 2000) {
+      if (count > UPSTASH_NOTIFIED_OVERFLOW_THRESHOLD) {
         issues.push(`NOTIFIED_ITEMS_OVERFLOW: Upstash notified_items が${count}件溜まっている`)
         fixes.push('RUN_RESET: npx tsx scripts/reset-notified.ts')
       }
