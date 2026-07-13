@@ -85,7 +85,9 @@ jobs:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
           UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
           NOTIFIED_ITEMS_STORE: 'auto'
+          HISTORY_STORE: 'auto'
           SUPABASE_FETCH_TIMEOUT_MS: '120000'
           RESET_NOTIFICATION_HISTORY: ${{ github.event.inputs.clear_notification_history || 'false' }}
 
@@ -122,6 +124,8 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          HISTORY_STORE: 'auto'
           SUPABASE_FETCH_TIMEOUT_MS: '120000'
 
       - name: Run auction check
@@ -135,7 +139,9 @@ jobs:
           VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
           UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
           UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
           NOTIFIED_ITEMS_STORE: 'auto'
+          HISTORY_STORE: 'auto'
           SEND_NO_ITEMS_PUSH: 'true'
           FORCE_CHECK_COMPLETE_PUSH: ${{ github.event.inputs.force_check_complete || 'false' }}
           GH_FETCH_PAGES: '10'

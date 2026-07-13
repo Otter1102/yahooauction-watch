@@ -11,6 +11,7 @@
 import { NextResponse } from 'next/server'
 import { describeSupabaseError, getSupabaseAdmin } from '@/lib/supabase'
 import { isUpstashNotifiedEnabled, notifiedItemsStoreName, upstashPing } from '@/lib/notified-store'
+import { describeNeonError, historyStoreBackend, isNeonEnabled, neonPing } from '@/lib/neon'
 
 export const dynamic = 'force-dynamic'
 
@@ -25,6 +26,19 @@ export async function GET() {
       notifiedItems = `upstash error: ${describeSupabaseError(e)}`
     }
   }
+
+  const historyBackend = historyStoreBackend()
+  let history: string = historyBackend
+  let historyOk = true
+  if (isNeonEnabled()) {
+    try {
+      history = `neon: ${await neonPing()}`
+    } catch (e) {
+      history = `neon error: ${describeNeonError(e)}`
+      historyOk = false
+    }
+  }
+
   try {
     // Supabase への接続確認（usersテーブルを1件だけ取得）
     const supabase = getSupabaseAdmin()
@@ -37,15 +51,22 @@ export async function GET() {
     // "PGRST116" = 0件ヒット（正常）、それ以外はエラー
     if (error && error.code !== 'PGRST116') {
       return NextResponse.json(
-        { ok: false, supabase: `error: ${describeSupabaseError(error)}`, notifiedItems, ts },
+        { ok: false, supabase: `error: ${describeSupabaseError(error)}`, notifiedItems, history, ts },
         { status: 503 }
       )
     }
 
-    return NextResponse.json({ ok: true, supabase: 'connected', notifiedItems, ts })
+    if (!historyOk) {
+      return NextResponse.json(
+        { ok: false, supabase: 'connected', notifiedItems, history, ts },
+        { status: 503 }
+      )
+    }
+
+    return NextResponse.json({ ok: true, supabase: 'connected', notifiedItems, history, ts })
   } catch (e) {
     return NextResponse.json(
-      { ok: false, supabase: `exception: ${describeSupabaseError(e)}`, notifiedItems, ts },
+      { ok: false, supabase: `exception: ${describeSupabaseError(e)}`, notifiedItems, history, ts },
       { status: 503 }
     )
   }

@@ -18,6 +18,12 @@ import {
   upstashReleaseNotifiedId,
   upstashReserveNotifiedId,
 } from './notified-store'
+import { isNeonEnabled, historyStoreBackend } from './neon'
+import * as neonHistory from './neon-history'
+
+export function getHistoryStoreBackend(): 'neon' | 'supabase' {
+  return historyStoreBackend()
+}
 
 const CONDITION_COLUMNS = [
   'id',
@@ -385,15 +391,19 @@ export async function resetStalledNotified(): Promise<string[]> {
   const supabase = getSupabaseAdmin()
   const cutoff48h = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString()
 
-  // 48時間以上通知がないユーザーを notification_history から取得
-  const { data: recentUsers, error: recentErr } = await supabase
-    .from('notification_history')
-    .select('user_id')
-    .not('auction_id', 'like', '__check_%')
-    .gte('notified_at', cutoff48h)
-  throwOnError(recentErr, '直近通知履歴取得エラー')
-
-  const recentSet = new Set((recentUsers ?? []).map(r => r.user_id as string))
+  // 48時間以内に auction 通知が発火したユーザーIDを取得（Neon 有効時は Neon から）
+  let recentSet: Set<string>
+  if (isNeonEnabled()) {
+    recentSet = await neonHistory.getRecentActiveUserIds(cutoff48h)
+  } else {
+    const { data: recentUsers, error: recentErr } = await supabase
+      .from('notification_history')
+      .select('user_id')
+      .not('auction_id', 'like', '__check_%')
+      .gte('notified_at', cutoff48h)
+    throwOnError(recentErr, '直近通知履歴取得エラー')
+    recentSet = new Set((recentUsers ?? []).map(r => r.user_id as string))
+  }
 
   // push_sub を持つ全ユーザーを取得し、各ユーザーの notified_items 件数を count で確認
   // limit(500) では多数のユーザー/商品がいる場合にサイレントに見落とすため、
@@ -431,6 +441,7 @@ export async function resetStalledNotified(): Promise<string[]> {
 }
 
 export async function cleanupOldHistory(): Promise<void> {
+  if (isNeonEnabled()) return neonHistory.cleanupOldHistory()
   const checkRetentionHours = Math.max(6, Number.parseInt(process.env.CHECK_HISTORY_RETENTION_HOURS ?? '36', 10) || 36)
   const unknownRetentionHours = Math.max(24, Number.parseInt(process.env.UNKNOWN_END_HISTORY_RETENTION_HOURS ?? '72', 10) || 72)
   const now = Date.now()
@@ -561,18 +572,22 @@ async function upsertHistories(records: HistoryInput[], refreshNotifiedAt: boole
 }
 
 export async function addHistory(record: HistoryInput): Promise<void> {
+  if (isNeonEnabled()) return neonHistory.addHistory(record)
   await upsertHistory(record, true)
 }
 
 export async function addHistories(records: HistoryInput[]): Promise<void> {
+  if (isNeonEnabled()) return neonHistory.addHistories(records)
   await upsertHistories(records, true)
 }
 
 export async function updateHistorySnapshot(record: HistoryInput): Promise<void> {
+  if (isNeonEnabled()) return neonHistory.updateHistorySnapshot(record)
   await upsertHistory(record, false)
 }
 
 export async function updateHistorySnapshots(records: HistoryInput[]): Promise<void> {
+  if (isNeonEnabled()) return neonHistory.updateHistorySnapshots(records)
   await upsertHistories(records, false)
 }
 
@@ -580,6 +595,8 @@ export async function addConditionCheckHistory(
   condition: SearchCondition,
   result: { status: 'ok' | 'failed'; matchedCount?: number; freshCount?: number }
 ): Promise<void> {
+  if (isNeonEnabled()) return neonHistory.addConditionCheckHistory(condition, result)
+
   const now = new Date()
   const hourKey = now.toISOString().slice(0, 13)
   const freshCount = result.freshCount ?? 0
@@ -610,6 +627,7 @@ export async function addConditionCheckHistory(
 }
 
 export async function getHistory(userId: string, limit = 500): Promise<NotificationRecord[]> {
+  if (isNeonEnabled()) return neonHistory.getHistory(userId, limit)
   const { data } = await supabaseAdmin
     .from('notification_history')
     .select('*')
@@ -642,6 +660,7 @@ export async function getHistory(userId: string, limit = 500): Promise<Notificat
 }
 
 export async function cleanupEndedHistoryForUser(userId: string): Promise<number> {
+  if (isNeonEnabled()) return neonHistory.cleanupEndedHistoryForUser(userId)
   const cutoff = new Date(Date.now() - ENDED_AUCTION_HISTORY_VISIBLE_MS).toISOString()
   const { data, error } = await supabaseAdmin
     .from('notification_history')
