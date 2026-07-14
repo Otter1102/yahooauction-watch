@@ -4,6 +4,7 @@ import { NotificationRecord, SearchCondition } from '@/lib/types'
 import ConditionCard from '@/components/ConditionCard'
 import ConditionForm from '@/components/ConditionForm'
 import OnboardingGuide from '@/components/OnboardingGuide'
+import ResurrectModal from '@/components/ResurrectModal'
 import { ensurePushSubscription } from '@/lib/push-client'
 
 function getUserId(): string {
@@ -40,6 +41,7 @@ function SkeletonCard() {
 
 const CONDS_CACHE = 'yw_conditions_cache'
 const CHECK_DISPLAY_STAMP_KEY = 'yw_last_check_display_stamp'
+const RESURRECT_DISMISSED_KEY = 'yw_resurrect_dismissed_v1'
 const PUSH_SETUP_REMINDER_KEY = 'yw_push_setup_reminder_at'
 const PUSH_SETUP_REMINDER_INTERVAL_MS = 6 * 60 * 60 * 1000
 const RECENT_HISTORY_NOTICE_WINDOW_MS = 24 * 60 * 60 * 1000
@@ -98,6 +100,7 @@ export default function Dashboard() {
   const [editingCondition, setEditingCondition] = useState<SearchCondition | null>(null)
   const [loading, setLoading]       = useState(true)
   const [showOnboarding, setShowOnboarding] = useState(false)
+  const [showResurrect, setShowResurrect] = useState(false)
   const [notifyReady, setNotifyReady] = useState(false)
   const [pushLost, setPushLost] = useState(false)
   const [dbUnavailable, setDbUnavailable] = useState(false)
@@ -146,6 +149,10 @@ export default function Dashboard() {
       setShowOnboarding(true)
     }
 
+    // 復帰ユーザー判定用（あとで conditions/history のレスポンスを見て確定させる）
+    const alreadyOnboarded = !!localStorage.getItem('yahoowatch_onboarded')
+    const resurrectDismissed = localStorage.getItem(RESURRECT_DISMISSED_KEY) === '1'
+
     // 4つのAPIを並列実行。stampは起動確認の証跡で、商品取得や通知送信は行わない。
     const [, settingsRes, conditionsRes, stampRes, historyRes] = await Promise.allSettled([
       fetch('/api/user', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: id }) }),
@@ -170,17 +177,25 @@ export default function Dashboard() {
     }
 
     // 条件を即表示（最優先）、キャッシュも更新
+    let neonConditionsCount = -1
     try {
       if (conditionsRes.status === 'fulfilled' && conditionsRes.value.ok) {
         const data = await conditionsRes.value.json()
         setConditions(data)
         setDbUnavailable(false)
+        neonConditionsCount = Array.isArray(data) ? data.length : 0
         try { localStorage.setItem(CONDS_CACHE, JSON.stringify(data)) } catch {}
       } else if (conditionsRes.status === 'fulfilled' && conditionsRes.value.status >= 500) {
         setDbUnavailable(true)
       }
     } catch { /* JSON parseエラーは無視 */ } finally {
       setLoading(false)
+    }
+
+    // 復帰ユーザー検知: 過去にオンボーディング完了済み & Neon に条件0件 & 未 dismiss
+    // → 旧 Supabase から Neon に条件が引き継げていないケース。再有効化モーダルを表示。
+    if (alreadyOnboarded && !resurrectDismissed && neonConditionsCount === 0) {
+      setShowResurrect(true)
     }
 
     try {
@@ -604,6 +619,22 @@ export default function Dashboard() {
           onComplete={completeOnboarding}
           onOpenConditionForm={() => {
             completeOnboarding()
+            openForm()
+          }}
+        />
+      )}
+
+      {/* ─── サーバー移行後の復帰ユーザー向け再有効化モーダル ─── */}
+      {showResurrect && !showOnboarding && userId && (
+        <ResurrectModal
+          userId={userId}
+          onClose={() => {
+            try { localStorage.setItem(RESURRECT_DISMISSED_KEY, '1') } catch {}
+            setShowResurrect(false)
+          }}
+          onOpenConditionForm={() => {
+            try { localStorage.setItem(RESURRECT_DISMISSED_KEY, '1') } catch {}
+            setShowResurrect(false)
             openForm()
           }}
         />
