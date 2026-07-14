@@ -42,13 +42,7 @@ export function getSupabaseAdmin(): SupabaseClient {
       global: {
         // GitHub Actions cron は Supabase の一時遅延で失敗しないよう環境変数で長めにできる。
         fetch: (url, options) =>
-          new Promise((resolve, reject) => {
-            const controller = new AbortController();
-            setTimeout(() => controller.abort(), timeoutMs);
-            fetch(url, { ...options, signal: controller.signal })
-              .then(resolve)
-              .catch(reject);
-          }),
+          fetch(url, { ...options, signal: AbortSignal.timeout(timeoutMs) }),
       },
     })
   }

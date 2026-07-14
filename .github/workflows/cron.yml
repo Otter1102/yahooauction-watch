@@ -38,24 +38,24 @@ jobs:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
-      - name: Supabase 起動確認（単一ジョブ）
+      - name: バックエンド起動確認（Neon primary 対応）
         run: |
-          echo "Supabase への接続確認中..."
+          echo "本番 /api/health への接続確認中..."
+          # /api/health は Neon 有効時に Supabase をスキップして 200 を返し、
+          # Neon 未設定時のみ Supabase の可用性を評価する。どちらの構成でも 1 発で判定できる。
           for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-              "${{ secrets.SUPABASE_URL }}/rest/v1/conditions?select=id&limit=1" \
-              -H "apikey: ${{ secrets.SUPABASE_SERVICE_KEY }}" \
-              -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_KEY }}" \
+              "https://yahooauction-watch.vercel.app/api/health" \
               --max-time 20) || STATUS=000
             echo "試行 $i: HTTP $STATUS"
-            if [ "$STATUS" = "200" ] || [ "$STATUS" = "206" ]; then
-              echo "Supabase 起動確認完了"
+            if [ "$STATUS" = "200" ]; then
+              echo "バックエンド起動確認完了"
               exit 0
             fi
-            echo "Supabase 起動待機中... 15秒後に再試行"
+            echo "バックエンド応答待機中... 15秒後に再試行"
             sleep 15
           done
-          echo "Supabase が応答しませんでした。巡回停止を隠さないため、このrunは失敗扱いにします"
+          echo "/api/health が応答しませんでした。巡回停止を隠さないため、このrunは失敗扱いにします"
           exit 1
 
   reset:

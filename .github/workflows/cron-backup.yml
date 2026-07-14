@@ -30,28 +30,26 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Supabase 起動確認
+      - name: バックエンド起動確認（Neon primary 対応）
         run: |
-          echo "Supabase への接続確認中..."
+          echo "本番 /api/health への接続確認中..."
           for i in 1 2 3 4 5 6 7 8; do
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-              "${{ secrets.SUPABASE_URL }}/rest/v1/conditions?select=id&limit=1" \
-              -H "apikey: ${{ secrets.SUPABASE_SERVICE_KEY }}" \
-              -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_KEY }}" \
+              "https://yahooauction-watch.vercel.app/api/health" \
               --max-time 20) || STATUS=000
             echo "試行 $i: HTTP $STATUS"
-            if [ "$STATUS" = "200" ] || [ "$STATUS" = "206" ]; then
-              echo "SUPABASE_READY=true" >> "$GITHUB_ENV"
+            if [ "$STATUS" = "200" ]; then
+              echo "BACKEND_READY=true" >> "$GITHUB_ENV"
               exit 0
             fi
             sleep 15
           done
-          echo "SUPABASE_READY=false" >> "$GITHUB_ENV"
-          echo "Supabase が応答しませんでした。巡回停止を隠さないため、このrunは失敗扱いにします"
+          echo "BACKEND_READY=false" >> "$GITHUB_ENV"
+          echo "/api/health が応答しませんでした。巡回停止を隠さないため、このrunは失敗扱いにします"
           exit 1
 
       - name: Run auction check (backup)
-        if: ${{ env.SUPABASE_READY == 'true' }}
+        if: ${{ env.BACKEND_READY == 'true' }}
         run: npx tsx scripts/run-check.ts
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
