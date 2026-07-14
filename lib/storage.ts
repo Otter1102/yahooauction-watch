@@ -20,6 +20,8 @@ import {
 } from './notified-store'
 import { isNeonEnabled, historyStoreBackend } from './neon'
 import * as neonHistory from './neon-history'
+import * as neonUsers from './neon-users'
+import * as neonConditions from './neon-conditions'
 
 export function getHistoryStoreBackend(): 'neon' | 'supabase' {
   return historyStoreBackend()
@@ -60,6 +62,7 @@ export const SUPABASE_UNAVAILABLE_MESSAGE =
 // ==================== Users ====================
 
 export async function userExists(userId: string): Promise<boolean> {
+  if (isNeonEnabled()) return neonUsers.userExists(userId)
   const { data, error } = await supabaseAdmin
     .from('users')
     .select('id')
@@ -70,6 +73,7 @@ export async function userExists(userId: string): Promise<boolean> {
 }
 
 export async function getOrCreateUser(userId: string): Promise<User> {
+  if (isNeonEnabled()) return neonUsers.getOrCreateUser(userId)
   const { data, error } = await supabaseAdmin
     .from('users')
     .select('*')
@@ -90,13 +94,31 @@ export async function getOrCreateUser(userId: string): Promise<User> {
   return dbToUser(created)
 }
 
+export async function getUser(userId: string): Promise<User | null> {
+  if (isNeonEnabled()) return neonUsers.getUser(userId)
+  const { data } = await supabaseAdmin
+    .from('users')
+    .select('id, push_sub')
+    .eq('id', userId)
+    .single()
+  if (!data) return null
+  return dbToUser(data)
+}
+
 export async function updateUser(userId: string, updates: Partial<User>): Promise<void> {
+  if (isNeonEnabled()) {
+    if ('pushSub' in updates) {
+      await neonUsers.setPushSub(userId, updates.pushSub ?? null)
+    }
+    return
+  }
   const row: Record<string, unknown> = {}
   if ('pushSub' in updates) row.push_sub = updates.pushSub ?? null
   await supabaseAdmin.from('users').update(row).eq('id', userId)
 }
 
 export async function getUsersWithPush(userIds: string[]): Promise<Map<string, PushSub>> {
+  if (isNeonEnabled()) return neonUsers.getUsersWithPush(userIds)
   const { data } = await supabaseAdmin
     .from('users')
     .select('id, push_sub')
@@ -107,6 +129,89 @@ export async function getUsersWithPush(userIds: string[]): Promise<Map<string, P
     if (row.push_sub) map.set(row.id as string, row.push_sub as PushSub)
   }
   return map
+}
+
+export async function getUsersMap(userIds: string[]): Promise<Map<string, User>> {
+  if (isNeonEnabled()) return neonUsers.getUsersMap(userIds)
+  const { data } = await supabaseAdmin
+    .from('users')
+    .select('id, push_sub')
+    .in('id', userIds)
+  const map = new Map<string, User>()
+  for (const row of data ?? []) map.set(row.id as string, dbToUser(row))
+  return map
+}
+
+export async function getAllPushEnabledUserIds(): Promise<string[]> {
+  if (isNeonEnabled()) return neonUsers.getAllPushEnabledUserIds()
+  const { data } = await supabaseAdmin
+    .from('users')
+    .select('id')
+    .not('push_sub', 'is', null)
+  return (data ?? []).map(r => r.id as string)
+}
+
+export async function getPushSub(userId: string): Promise<PushSub | null> {
+  if (isNeonEnabled()) return neonUsers.getPushSub(userId)
+  const { data } = await supabaseAdmin
+    .from('users')
+    .select('push_sub')
+    .eq('id', userId)
+    .single()
+  return (data?.push_sub as PushSub | null) ?? null
+}
+
+export async function clearPushSub(userId: string): Promise<void> {
+  if (isNeonEnabled()) {
+    await neonUsers.clearPushSub(userId)
+    return
+  }
+  await supabaseAdmin.from('users').update({ push_sub: null }).eq('id', userId)
+}
+
+export async function setDeviceFingerprint(
+  userId: string,
+  deviceFingerprint: string,
+  isTrial: boolean,
+): Promise<void> {
+  if (isNeonEnabled()) {
+    await neonUsers.setDeviceFingerprint(userId, deviceFingerprint, isTrial)
+    return
+  }
+  await supabaseAdmin
+    .from('users')
+    .update({ device_fingerprint: deviceFingerprint, is_trial: isTrial })
+    .eq('id', userId)
+}
+
+export async function clearPushSubForDuplicateDevice(
+  deviceFingerprint: string,
+  keepUserId: string,
+): Promise<string[]> {
+  if (isNeonEnabled()) return neonUsers.clearPushSubForDuplicateDevice(deviceFingerprint, keepUserId)
+  const { data } = await supabaseAdmin
+    .from('users')
+    .select('id')
+    .eq('device_fingerprint', deviceFingerprint)
+    .neq('id', keepUserId)
+  const ids = (data ?? []).map(r => r.id as string)
+  if (ids.length > 0) {
+    await supabaseAdmin.from('users').update({ push_sub: null }).in('id', ids)
+  }
+  return ids
+}
+
+export async function cleanupGhostUsers(cutoffIso: string): Promise<number> {
+  if (isNeonEnabled()) return neonUsers.cleanupGhostUsers(cutoffIso)
+  const { data } = await supabaseAdmin
+    .from('users')
+    .select('id')
+    .is('push_sub', null)
+    .lt('created_at', cutoffIso)
+  const ids = (data ?? []).map(r => r.id as string)
+  if (ids.length === 0) return 0
+  await supabaseAdmin.from('users').delete().in('id', ids)
+  return ids.length
 }
 
 function dbToUser(row: Record<string, unknown>): User {
@@ -122,6 +227,7 @@ function dbToUser(row: Record<string, unknown>): User {
 // ==================== Conditions ====================
 
 export async function getConditions(userId: string): Promise<SearchCondition[]> {
+  if (isNeonEnabled()) return neonConditions.getConditions(userId)
   const { data, error } = await supabaseAdmin
     .from('conditions')
     .select(CONDITION_COLUMNS)
@@ -132,6 +238,7 @@ export async function getConditions(userId: string): Promise<SearchCondition[]> 
 }
 
 export async function getAllEnabledConditions(): Promise<SearchCondition[]> {
+  if (isNeonEnabled()) return neonConditions.getAllEnabledConditions()
   const pageSize = 200
   const rows: Record<string, unknown>[] = []
 
@@ -152,10 +259,22 @@ export async function getAllEnabledConditions(): Promise<SearchCondition[]> {
   return rows.map(dbToCondition)
 }
 
+export async function verifyConditionOwnership(conditionId: string, userId: string): Promise<boolean> {
+  if (isNeonEnabled()) return neonConditions.verifyOwnership(conditionId, userId)
+  const { data } = await supabaseAdmin
+    .from('conditions')
+    .select('id')
+    .eq('id', conditionId)
+    .eq('user_id', userId)
+    .single()
+  return !!data
+}
+
 export async function createCondition(
   userId: string,
   input: Omit<SearchCondition, 'id' | 'userId' | 'createdAt'>
 ): Promise<SearchCondition> {
+  if (isNeonEnabled()) return neonConditions.createCondition(userId, input)
   // max_bids は migration_005 で追加。null の場合はカラムを省略し
   // migration未実行環境でも既存カラムへの INSERT が失敗しないようにする
   const insertRow: Record<string, unknown> = {
@@ -189,6 +308,7 @@ export async function updateCondition(
   conditionId: string,
   updates: Partial<SearchCondition>
 ): Promise<void> {
+  if (isNeonEnabled()) return neonConditions.updateCondition(conditionId, updates)
   const row: Record<string, unknown> = {}
   if (updates.name !== undefined) row.name = updates.name
   if (updates.keyword !== undefined) row.keyword = updates.keyword
@@ -208,6 +328,7 @@ export async function updateCondition(
 }
 
 export async function stampEnabledConditionsForUser(userId: string, checkedAt: string): Promise<number> {
+  if (isNeonEnabled()) return neonConditions.stampEnabledConditionsForUser(userId, checkedAt)
   const { data, error } = await supabaseAdmin
     .from('conditions')
     .update({ last_checked_at: checkedAt })
@@ -219,6 +340,7 @@ export async function stampEnabledConditionsForUser(userId: string, checkedAt: s
 }
 
 export async function deleteCondition(conditionId: string): Promise<void> {
+  if (isNeonEnabled()) return neonConditions.deleteCondition(conditionId)
   await supabaseAdmin.from('conditions').delete().eq('id', conditionId)
 }
 

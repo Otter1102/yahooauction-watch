@@ -11,8 +11,7 @@
 //   USER_TIMEOUT_MS=30s: 1バッチ × 30s = 30s << Vercel 60s制限 ✅
 //   run-now側: CONDITION_CONCURRENCY=5 × FETCH_PAGES=3 → ~5-10s << 30s ✅
 import { NextRequest, NextResponse } from 'next/server'
-import { getSupabaseAdmin } from '@/lib/supabase'
-import { cleanupOldNotified, cleanupOldHistory, resetStalledNotified } from '@/lib/storage'
+import { cleanupOldNotified, cleanupOldHistory, resetStalledNotified, getAllPushEnabledUserIds } from '@/lib/storage'
 
 const APP_URL         = process.env.NEXT_PUBLIC_APP_URL ?? 'https://yahooauction-watch.vercel.app'
 const CONCURRENCY     = 25
@@ -109,19 +108,19 @@ export async function GET(
   const cronSecret = (process.env.CRON_SECRET ?? '').trim()
 
   try {
-    // Supabase からユーザー取得（1回のみ・スタガーなし）
-    const supabase = getSupabaseAdmin()
-    const { data, error } = await supabase
-      .from('users')
-      .select('id')
-      .not('push_sub', 'is', null)
-    if (error || !data) {
-      const msg = error?.message ?? 'ユーザー取得失敗'
-      console.error(`[cron/shard${shard}] ${msg}`)
+    // Neon 優先でユーザー取得（1回のみ・スタガーなし）
+    let allIds: string[]
+    try {
+      allIds = await getAllPushEnabledUserIds()
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      console.error(`[cron/shard${shard}] ユーザー取得失敗: ${msg}`)
       return NextResponse.json({ error: msg }, { status: 500 })
     }
-    const users = data.filter(u => getUserShard(u.id, TOTAL_SHARDS) === shard)
-    console.log(`[cron/shard${shard}] 担当ユーザー数: ${users.length}/${data.length}`)
+    const users = allIds
+      .filter(id => getUserShard(id, TOTAL_SHARDS) === shard)
+      .map(id => ({ id }))
+    console.log(`[cron/shard${shard}] 担当ユーザー数: ${users.length}/${allIds.length}`)
     await processUsers(users, shard, cronSecret)
     await pingHealthcheck(shard)
   } catch (e) {

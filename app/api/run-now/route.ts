@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getConditions, getNotifiedIds, markNotified, addHistory, addHistories, updateCondition, addConditionCheckHistory } from '@/lib/storage'
-import { getSupabaseAdmin } from '@/lib/supabase'
+import { getConditions, getNotifiedIds, markNotified, addHistory, addHistories, updateCondition, addConditionCheckHistory, getUser as loadUser } from '@/lib/storage'
 import { fetchAuctionRssWithMeta, fetchAuctionRssSimple } from '@/lib/scraper'
 import { selectConditionCandidates } from '@/lib/condition-match'
 import { notifyUserSummary } from '@/lib/notifier'
@@ -52,19 +51,7 @@ function toHistoryRecord(userId: string, cond: SearchCondition, item: AuctionIte
 }
 
 async function getUser(userId: string): Promise<User | null> {
-  const { data } = await getSupabaseAdmin()
-    .from('users')
-    .select('id, push_sub')
-    .eq('id', userId)
-    .single()
-  if (!data) return null
-  return {
-    id: data.id,
-    ntfyTopic: '',
-    discordWebhook: '',
-    notificationChannel: 'webpush',
-    pushSub: data.push_sub ?? null,
-  }
+  return loadUser(userId)
 }
 
 export async function POST(req: NextRequest) {
@@ -219,7 +206,7 @@ export async function POST(req: NextRequest) {
       let delivered = false
       if (hasPush) {
         try {
-          delivered = await sendWebPushSummary(userId, allFreshForSummary.length, topItem, getSupabaseAdmin())
+          delivered = await sendWebPushSummary(userId, allFreshForSummary.length, topItem)
         } catch (e: any) {
           console.warn('[run-now] サマリーPush送信失敗 (継続):', e?.message)
         }
@@ -266,7 +253,7 @@ export async function POST(req: NextRequest) {
           noItems: allFreshForSummary.length === 0,
           failed: fetchFailedCount > 0,
           fetchFailedCount,
-        }, getSupabaseAdmin())
+        })
       } catch (e: any) {
         console.warn('[run-now] チェック完了Push送信失敗 (継続):', e?.message)
       }

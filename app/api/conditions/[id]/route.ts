@@ -1,18 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getSupabaseAdmin } from '@/lib/supabase'
-import { updateCondition, deleteCondition, getConditions } from '@/lib/storage'
+import { updateCondition, deleteCondition, getConditions, verifyConditionOwnership } from '@/lib/storage'
 import { rateGuard } from '@/lib/apiGuard'
 import { runInitialConditionCheck } from '@/lib/initial-check'
 
-/** conditionId が userId のものか確認 */
 async function verifyOwnership(conditionId: string, userId: string): Promise<boolean> {
-  const { data } = await getSupabaseAdmin()
-    .from('conditions')
-    .select('id')
-    .eq('id', conditionId)
-    .eq('user_id', userId)
-    .single()
-  return !!data
+  return verifyConditionOwnership(conditionId, userId)
 }
 
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {

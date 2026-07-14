@@ -3,17 +3,34 @@
 // cron-job.org や外部監視サービスから定期的にポーリングして
 // システムが正常に動作しているか確認できます。
 //
-// レスポンス例（正常時）:
-//   { "ok": true, "supabase": "connected", "ts": "2026-04-11T..." }
+// レスポンス例（Neon primary で正常時）:
+//   { "ok": true, "history": "neon: pong", "notifiedItems": "upstash: PONG",
+//     "supabase": "skipped(neon primary)", "ts": "..." }
 //
-// レスポンス例（異常時）:
-//   { "ok": false, "supabase": "error: ...", "ts": "..." }
+// Neon 未設定時は Supabase をチェックし、繋がらなければ 503 を返す。
 import { NextResponse } from 'next/server'
 import { describeSupabaseError, getSupabaseAdmin } from '@/lib/supabase'
 import { isUpstashNotifiedEnabled, notifiedItemsStoreName, upstashPing } from '@/lib/notified-store'
 import { describeNeonError, historyStoreBackend, isNeonEnabled, neonPing } from '@/lib/neon'
 
 export const dynamic = 'force-dynamic'
+
+async function checkSupabase(): Promise<{ text: string; ok: boolean }> {
+  try {
+    const supabase = getSupabaseAdmin()
+    const { error } = await supabase
+      .from('users')
+      .select('id')
+      .limit(1)
+      .single()
+    if (error && error.code !== 'PGRST116') {
+      return { text: `error: ${describeSupabaseError(error)}`, ok: false }
+    }
+    return { text: 'connected', ok: true }
+  } catch (e) {
+    return { text: `exception: ${describeSupabaseError(e)}`, ok: false }
+  }
+}
 
 export async function GET() {
   const ts = new Date().toISOString()
@@ -39,35 +56,27 @@ export async function GET() {
     }
   }
 
-  try {
-    // Supabase への接続確認（usersテーブルを1件だけ取得）
-    const supabase = getSupabaseAdmin()
-    const { error } = await supabase
-      .from('users')
-      .select('id')
-      .limit(1)
-      .single()
-
-    // "PGRST116" = 0件ヒット（正常）、それ以外はエラー
-    if (error && error.code !== 'PGRST116') {
-      return NextResponse.json(
-        { ok: false, supabase: `error: ${describeSupabaseError(error)}`, notifiedItems, history, ts },
-        { status: 503 }
-      )
+  // Neon が primary のとき Supabase は完全にスキップして良い。
+  // notification_history / users / conditions すべて Neon に載っているため、
+  // Supabase が dead (egress quota / paused) でも通知は流れ続ける。
+  if (isNeonEnabled()) {
+    const payload = {
+      ok: historyOk,
+      history,
+      notifiedItems,
+      supabase: 'skipped(neon primary)',
+      ts,
     }
-
-    if (!historyOk) {
-      return NextResponse.json(
-        { ok: false, supabase: 'connected', notifiedItems, history, ts },
-        { status: 503 }
-      )
-    }
-
-    return NextResponse.json({ ok: true, supabase: 'connected', notifiedItems, history, ts })
-  } catch (e) {
-    return NextResponse.json(
-      { ok: false, supabase: `exception: ${describeSupabaseError(e)}`, notifiedItems, history, ts },
-      { status: 503 }
-    )
+    return NextResponse.json(payload, { status: historyOk ? 200 : 503 })
   }
+
+  const supa = await checkSupabase()
+  const payload = {
+    ok: supa.ok,
+    supabase: supa.text,
+    history,
+    notifiedItems,
+    ts,
+  }
+  return NextResponse.json(payload, { status: supa.ok ? 200 : 503 })
 }

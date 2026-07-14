@@ -18,8 +18,7 @@
 //   4シャード合計 = 最大200ユーザー対応
 import { NextRequest, NextResponse } from 'next/server'
 import { waitUntil } from '@vercel/functions'
-import { getSupabaseAdmin } from '@/lib/supabase'
-import { cleanupOldNotified, cleanupOldHistory, resetStalledNotified } from '@/lib/storage'
+import { cleanupOldNotified, cleanupOldHistory, resetStalledNotified, getAllPushEnabledUserIds } from '@/lib/storage'
 
 const APP_URL         = process.env.NEXT_PUBLIC_APP_URL ?? 'https://yahooauction-watch.vercel.app'
 const CONCURRENCY     = 25   // 25ユーザーを1バッチで並列処理
@@ -80,36 +79,33 @@ async function runCronJob(shard: number, totalShards: number, cronSecret: string
     //       shard0: 0ms, shard1: 1000ms, shard2: 2000ms, ..., shard7: 7000ms
     if (shard > 0) await new Promise(r => setTimeout(r, shard * 1000))
 
-    const supabase = getSupabaseAdmin()
-
-    // ユーザー取得: タイムアウト・一時障害時は2回試行（リトライ1回）
-    // 理由: 3回試行（20秒×3 + 2秒×2 = 64秒）はmaxDuration(60秒)を超えてwaitUntilが強制終了される
-    //       shard×0.6s + 20秒×2 + 3秒 = 最大47.2秒 < 60秒 ✅
-    let allUsers: { id: string }[] | null = null
+    // ユーザー取得: Neon 優先で2回試行
+    let allIds: string[] | null = null
     let lastErrMsg = ''
     for (let attempt = 0; attempt < 2; attempt++) {
-      const { data, error } = await supabase
-        .from('users')
-        .select('id')
-        .not('push_sub', 'is', null)
-      if (!error && data) { allUsers = data; break }
-      lastErrMsg = error?.message ?? String(error)
-      console.warn(`[cron] ユーザー取得失敗 attempt${attempt + 1}/2: ${lastErrMsg}`)
-      if (attempt < 1) await new Promise(r => setTimeout(r, 3_000))
+      try {
+        allIds = await getAllPushEnabledUserIds()
+        break
+      } catch (e) {
+        lastErrMsg = e instanceof Error ? e.message : String(e)
+        console.warn(`[cron] ユーザー取得失敗 attempt${attempt + 1}/2: ${lastErrMsg}`)
+        if (attempt < 1) await new Promise(r => setTimeout(r, 3_000))
+      }
     }
-    if (!allUsers) {
+    if (!allIds) {
       console.error('[cron] ユーザー取得エラー（2回試行後）:', lastErrMsg)
       await alertAdmin(`ユーザー取得失敗: ${lastErrMsg}`)
       return
     }
-    if (!allUsers.length) {
+    if (!allIds.length) {
       console.log('[cron] 処理対象ユーザーなし')
       return
     }
 
-    const users = totalShards === 1
-      ? allUsers
-      : allUsers.filter(u => getUserShard(u.id, totalShards) === shard)
+    const users = (totalShards === 1
+      ? allIds
+      : allIds.filter(id => getUserShard(id, totalShards) === shard)
+    ).map(id => ({ id }))
 
     const isMainShard = shard === 0
     await processUsers(users, APP_URL, cronSecret, isMainShard)

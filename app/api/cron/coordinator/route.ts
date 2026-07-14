@@ -13,7 +13,7 @@
 //   シャード処理: 100ユーザー÷8シャード=13人/シャード → 並列30s
 //   合計: ~32s < 60s制限 ✅
 import { NextRequest, NextResponse } from 'next/server'
-import { getSupabaseAdmin } from '@/lib/supabase'
+import { getAllPushEnabledUserIds } from '@/lib/storage'
 
 const APP_URL      = process.env.NEXT_PUBLIC_APP_URL ?? 'https://yahooauction-watch.vercel.app'
 const TOTAL_SHARDS = 8
@@ -59,38 +59,36 @@ export async function GET(req: NextRequest) {
 }
 
 async function runCoordinator(cronSecret: string): Promise<void> {
-  const supabase = getSupabaseAdmin()
-
-  // ユーザーリストを1回だけ取得（Supabase接続 = 1本のみ）
-  let allUsers: { id: string }[] | null = null
+  // ユーザーリストを1回だけ取得（Neon優先、未設定時のみSupabaseフォールバック）
+  let allUserIds: string[] | null = null
   let lastErr = ''
   for (let attempt = 0; attempt < 2; attempt++) {
-    const { data, error } = await supabase
-      .from('users')
-      .select('id')
-      .not('push_sub', 'is', null)
-    if (!error && data) { allUsers = data; break }
-    lastErr = error?.message ?? String(error)
-    console.warn(`[coordinator] ユーザー取得失敗 attempt${attempt + 1}/2: ${lastErr}`)
-    if (attempt < 1) await new Promise(r => setTimeout(r, 3_000))
+    try {
+      allUserIds = await getAllPushEnabledUserIds()
+      break
+    } catch (e) {
+      lastErr = e instanceof Error ? e.message : String(e)
+      console.warn(`[coordinator] ユーザー取得失敗 attempt${attempt + 1}/2: ${lastErr}`)
+      if (attempt < 1) await new Promise(r => setTimeout(r, 3_000))
+    }
   }
 
-  if (!allUsers) {
+  if (!allUserIds) {
     console.error('[coordinator] ユーザー取得失敗（2回試行後）:', lastErr)
     await alertAdmin(`[coordinator] ユーザー取得失敗: ${lastErr}`)
     return
   }
-  if (!allUsers.length) {
+  if (!allUserIds.length) {
     console.log('[coordinator] 処理対象ユーザーなし')
     return
   }
 
   // ユーザーをシャードごとに振り分け
   const shardUsers: string[][] = Array.from({ length: TOTAL_SHARDS }, () => [])
-  for (const user of allUsers) {
-    shardUsers[getUserShard(user.id)].push(user.id)
+  for (const userId of allUserIds) {
+    shardUsers[getUserShard(userId)].push(userId)
   }
-  console.log(`[coordinator] 総ユーザー${allUsers.length}人 → ${TOTAL_SHARDS}シャードに配布:`, shardUsers.map(s => s.length))
+  console.log(`[coordinator] 総ユーザー${allUserIds.length}人 → ${TOTAL_SHARDS}シャードに配布:`, shardUsers.map(s => s.length))
 
   // ユーザーが割り当てられたシャードのみ起動（空シャードはスキップ）
   const activeShards = shardUsers

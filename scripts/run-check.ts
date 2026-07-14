@@ -6,14 +6,13 @@
  * 実行: npx tsx scripts/run-check.ts
  * 環境変数: NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_KEY
  */
-import { getAllEnabledConditions, getAllNotifiedIds, markNotifiedMany, addHistories, updateCondition, cleanupOldNotified, cleanupOldHistory, resetStalledNotified, addConditionCheckHistory, reserveNotifiedItem, releaseNotifiedItemReservation, getNotifiedItemsStoreName } from '../lib/storage'
+import { getAllEnabledConditions, getAllNotifiedIds, markNotifiedMany, addHistories, updateCondition, cleanupOldNotified, cleanupOldHistory, resetStalledNotified, addConditionCheckHistory, reserveNotifiedItem, releaseNotifiedItemReservation, getNotifiedItemsStoreName, getUsersMap, cleanupGhostUsers as cleanupGhostUsersStorage } from '../lib/storage'
 import { fetchAuctionRssWithMeta } from '../lib/scraper'
 import { selectConditionCandidates } from '../lib/condition-match'
 import { sendWebPushCheckComplete, sendWebPushSummary } from '../lib/webpush'
 import { sendAdminErrorAlert } from '../lib/emailer'
-import { getSupabaseAdmin } from '../lib/supabase'
-const supabaseAdmin = { from: (...args: Parameters<ReturnType<typeof getSupabaseAdmin>['from']>) => getSupabaseAdmin().from(...args) }
-import { User, SearchCondition, AuctionItem } from '../lib/types'
+import { historyStoreBackend } from '../lib/neon'
+import { SearchCondition, AuctionItem, User } from '../lib/types'
 
 type RssKey = Pick<SearchCondition, 'keyword' | 'maxPrice' | 'minPrice' | 'minBids' | 'sellerType' | 'itemCondition' | 'sortBy' | 'sortOrder' | 'buyItNow'>
 interface ConditionGroup { key: RssKey; conditions: SearchCondition[] }
@@ -37,21 +36,7 @@ function toHistoryRecord(cond: SearchCondition, item: AuctionItem) {
 }
 
 async function getAllUsers(userIds: string[]): Promise<Map<string, User>> {
-  const { data } = await supabaseAdmin
-    .from('users')
-    .select('id, push_sub')
-    .in('id', userIds)
-  const map = new Map<string, User>()
-  for (const row of data ?? []) {
-    map.set(row.id, {
-      id: row.id,
-      ntfyTopic: '',
-      discordWebhook: '',
-      notificationChannel: 'webpush',
-      pushSub: row.push_sub ?? null,
-    })
-  }
-  return map
+  return getUsersMap(userIds)
 }
 
 function groupConditions(conditions: SearchCondition[]): ConditionGroup[] {
@@ -165,13 +150,15 @@ async function main() {
     await new Promise(r => setTimeout(r, staggerMs))
   }
 
-  // Supabase接続確認（環境変数チェック）
+  // DB接続確認: Neon(NEON_DATABASE_URL) 優先。未設定時のみ Supabase フォールバック。
+  const neonUrl     = process.env.NEON_DATABASE_URL
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const serviceKey  = process.env.SUPABASE_SERVICE_KEY
-  if (!supabaseUrl || !serviceKey) {
-    throw new Error(`[設定エラー] 環境変数未設定: NEXT_PUBLIC_SUPABASE_URL=${!!supabaseUrl} SUPABASE_SERVICE_KEY=${!!serviceKey}`)
+  const backend     = historyStoreBackend()
+  if (backend === 'supabase' && (!supabaseUrl || !serviceKey)) {
+    throw new Error(`[設定エラー] Neon(NEON_DATABASE_URL)も Supabase(NEXT_PUBLIC_SUPABASE_URL/SUPABASE_SERVICE_KEY) も設定されていません`)
   }
-  console.log(`[DB] Supabase接続先: ${supabaseUrl.slice(0, 40)}...`)
+  console.log(`[DB] backend=${backend}${neonUrl ? ` / neon=${neonUrl.slice(0, 40)}...` : ''}${supabaseUrl ? ` / supabase=${supabaseUrl.slice(0, 40)}...` : ''}`)
   console.log(`[notified_items] 保存先: ${getNotifiedItemsStoreName()}`)
 
   // 全有効条件を取得（DB + JS の二重フィルター）
@@ -478,19 +465,7 @@ async function cleanupEndedAuctions(): Promise<void> {
 async function cleanupGhostUsers(): Promise<number> {
   const cutoff = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString()
   try {
-    // 幽霊ユーザー候補: push_sub なし かつ 14日以上前に作成
-    const { data: candidates } = await supabaseAdmin
-      .from('users')
-      .select('id')
-      .is('push_sub', null)
-      .lt('created_at', cutoff)
-    if (!candidates?.length) return 0
-
-    const ghostIds = candidates.map(u => u.id as string)
-    if (ghostIds.length === 0) return 0
-
-    await supabaseAdmin.from('users').delete().in('id', ghostIds)
-    return ghostIds.length
+    return await cleanupGhostUsersStorage(cutoff)
   } catch (err) {
     console.error('[幽霊ユーザー削除エラー]', err instanceof Error ? err.message : err)
     return 0

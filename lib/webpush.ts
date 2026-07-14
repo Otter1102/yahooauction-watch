@@ -1,5 +1,5 @@
 import webpush from 'web-push'
-import { getSupabaseAdmin } from './supabase'
+import { clearPushSub, getPushSub } from './storage'
 import type { AuctionItem, PushSub } from './types'
 
 // VAPID鍵は URL safe Base64（パディング `=` なし）が必須
@@ -44,19 +44,27 @@ function withReceipt(payload: Record<string, unknown>, userId: string, prefix: s
   }
 }
 
-/** ユーザーの push_sub にWeb Push送信。期限切れなら自動削除 */
+async function handleExpired(userId: string, label: string): Promise<void> {
+  try {
+    await clearPushSub(userId)
+    console.log(`  🗑️ 期限切れPush削除 [${label}] ${userId.slice(0, 8)}`)
+  } catch (e: any) {
+    console.warn(`  ⚠️ [${label}] push_sub 削除失敗:`, e?.message ?? e)
+  }
+}
+
+/**
+ * @deprecated storage.getPushSub を利用するよう内部を切り替えたため、
+ *             supabaseAdmin パラメータは無視される（既存呼び出しの後方互換用に受け取るのみ）。
+ */
+
 export async function sendWebPushToUser(
   userId: string,
   item: AuctionItem,
-  supabaseAdmin = getSupabaseAdmin(),
+  _supabaseAdmin?: unknown,
 ): Promise<number> {
-  const { data } = await supabaseAdmin
-    .from('users')
-    .select('push_sub')
-    .eq('id', userId)
-    .single()
-
-  const sub = data?.push_sub as PushSub | null
+  void _supabaseAdmin
+  const sub = await getPushSub(userId)
   if (!sub?.endpoint) return 0
 
   const priceText = (item.price && item.price !== '価格不明') ? item.price : '現在価格なし（入札0）'
@@ -75,10 +83,7 @@ export async function sendWebPushToUser(
 
   console.log(`  📱 Push [${userId.slice(0,8)}] → ${result} (${sub.endpoint.slice(8,40)}...)`)
 
-  if (result === 'expired') {
-    console.log(`  🗑️ 期限切れPush削除: ${userId.slice(0,8)}`)
-    await supabaseAdmin.from('users').update({ push_sub: null }).eq('id', userId)
-  }
+  if (result === 'expired') await handleExpired(userId, 'item')
 
   return result === 'ok' ? 1 : 0
 }
@@ -88,15 +93,10 @@ export async function sendWebPushSummary(
   userId: string,
   count: number,
   topItem: AuctionItem,
-  supabaseAdmin = getSupabaseAdmin(),
+  _supabaseAdmin?: unknown,
 ): Promise<boolean> {
-  const { data } = await supabaseAdmin
-    .from('users')
-    .select('push_sub')
-    .eq('id', userId)
-    .single()
-
-  const sub = data?.push_sub as PushSub | null
+  void _supabaseAdmin
+  const sub = await getPushSub(userId)
   if (!sub?.endpoint) return false
 
   const title = `ヤフオクwatch — 新着${count}件`
@@ -115,9 +115,7 @@ export async function sendWebPushSummary(
 
   console.log(`  📱 SummaryPush [${userId.slice(0, 8)}] ${count}件 → ${result}`)
 
-  if (result === 'expired') {
-    await supabaseAdmin.from('users').update({ push_sub: null }).eq('id', userId)
-  }
+  if (result === 'expired') await handleExpired(userId, 'summary')
 
   return result === 'ok'
 }
@@ -128,15 +126,10 @@ export async function sendWebPushInitialFetch(
   count: number,
   conditionName: string,
   topItem: AuctionItem,
-  supabaseAdmin = getSupabaseAdmin(),
+  _supabaseAdmin?: unknown,
 ): Promise<boolean> {
-  const { data } = await supabaseAdmin
-    .from('users')
-    .select('push_sub')
-    .eq('id', userId)
-    .single()
-
-  const sub = data?.push_sub as PushSub | null
+  void _supabaseAdmin
+  const sub = await getPushSub(userId)
   if (!sub?.endpoint) return false
 
   const title = `ヤフオクwatch — 取得完了しました`
@@ -153,9 +146,7 @@ export async function sendWebPushInitialFetch(
 
   console.log(`  📱 InitialFetchPush [${userId.slice(0, 8)}] ${count}件 → ${result}`)
 
-  if (result === 'expired') {
-    await supabaseAdmin.from('users').update({ push_sub: null }).eq('id', userId)
-  }
+  if (result === 'expired') await handleExpired(userId, 'initial')
 
   return result === 'ok'
 }
@@ -163,15 +154,10 @@ export async function sendWebPushInitialFetch(
 /** 新着なし通知プッシュ */
 export async function sendWebPushNoItems(
   userId: string,
-  supabaseAdmin = getSupabaseAdmin(),
+  _supabaseAdmin?: unknown,
 ): Promise<boolean> {
-  const { data } = await supabaseAdmin
-    .from('users')
-    .select('push_sub')
-    .eq('id', userId)
-    .single()
-
-  const sub = data?.push_sub as PushSub | null
+  void _supabaseAdmin
+  const sub = await getPushSub(userId)
   if (!sub?.endpoint) return false
 
   const result = await sendToSub(sub, withReceipt({
@@ -185,9 +171,7 @@ export async function sendWebPushNoItems(
 
   console.log(`  📱 NoItemsPush [${userId.slice(0, 8)}] → ${result}`)
 
-  if (result === 'expired') {
-    await supabaseAdmin.from('users').update({ push_sub: null }).eq('id', userId)
-  }
+  if (result === 'expired') await handleExpired(userId, 'no-items')
 
   return result === 'ok'
 }
@@ -196,15 +180,10 @@ export async function sendWebPushNoItems(
 export async function sendWebPushCheckComplete(
   userId: string,
   summary: { freshCount: number; noItems: boolean; matchedCount?: number; failed?: boolean; fetchFailedCount?: number },
-  supabaseAdmin = getSupabaseAdmin(),
+  _supabaseAdmin?: unknown,
 ): Promise<boolean> {
-  const { data } = await supabaseAdmin
-    .from('users')
-    .select('push_sub')
-    .eq('id', userId)
-    .single()
-
-  const sub = data?.push_sub as PushSub | null
+  void _supabaseAdmin
+  const sub = await getPushSub(userId)
   if (!sub?.endpoint) return false
 
   const now = new Date()
@@ -235,9 +214,7 @@ export async function sendWebPushCheckComplete(
 
   console.log(`  📱 CheckCompletePush [${userId.slice(0, 8)}] → ${result}`)
 
-  if (result === 'expired') {
-    await supabaseAdmin.from('users').update({ push_sub: null }).eq('id', userId)
-  }
+  if (result === 'expired') await handleExpired(userId, 'check-complete')
 
   return result === 'ok'
 }

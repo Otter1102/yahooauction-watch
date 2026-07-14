@@ -2,7 +2,6 @@ import type { AuctionItem, SearchCondition } from './types'
 import { fetchAuctionRssWithMeta } from './scraper'
 import { selectConditionCandidates } from './condition-match'
 import { addHistory, markNotified, updateCondition } from './storage'
-import { getSupabaseAdmin } from './supabase'
 import { sendWebPushInitialFetch } from './webpush'
 
 type RssKey = Pick<SearchCondition, 'keyword' | 'maxPrice' | 'minPrice' | 'minBids' | 'sellerType' | 'itemCondition' | 'sortBy' | 'sortOrder' | 'buyItNow'>
@@ -81,7 +80,6 @@ export async function runInitialConditionCheck(
         toRecord.length,
         condition.name,
         toRecord[0],
-        getSupabaseAdmin(),
       )
       if (notified) {
         await runInChunks(toRecord, 10, item => markNotified(userId, item.auctionId))
