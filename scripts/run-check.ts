@@ -380,7 +380,7 @@ async function main() {
           console.log(`  ↪️ [${userId.slice(0,8)}] 1時間以内に通知済みのため新着Pushをスキップ`)
           return
         }
-        const delivered = await sendWebPushSummary(userId, items.length, items[0].item)
+        const delivered = await sendWebPushSummary(userId, items.length, items[0].item, getSupabaseAdmin())
         if (!delivered) {
           await releaseHourlyNotificationReservation(userId)
           console.warn(`  ⚠️ [${userId.slice(0,8)}] Push失敗: ${items.length}件は通知済みにせず次回再試行`)
@@ -424,7 +424,7 @@ async function main() {
           noItems: matchedCount === 0 && freshCount === 0,
           failed: allFetchesFailed,
           fetchFailedCount,
-        })
+        }, getSupabaseAdmin())
         if (delivered) {
           totalCheckCompleteNotified++
         }
